@@ -26,10 +26,12 @@ dev = [
     "httpx>=0.27",
 ]
 
-# CPU-only PyTorch. On Linux (x86_64 CI or ARM), the default PyPI `torch` wheel
-# bundles CUDA (~2.5GB) which this project never uses — pin torch/torchvision to
-# the CPU index there. macOS arm64 keeps the default PyPI wheel (already CPU+MPS,
-# no CUDA variant exists), so the CPU index is gated to Linux only.
+# CPU-only PyTorch on ALL Linux (x86_64 CI *and* aarch64 Raspberry Pi). The
+# default PyPI Linux torch wheels pull CUDA: ~2.5GB on x86_64, and a CUDA/sbsa
+# build with nvidia-* deps on aarch64 — neither of which this project uses. The
+# CPU index (download.pytorch.org/whl/cpu) has both x86_64 and aarch64 +cpu
+# wheels, so pin all Linux to it. macOS arm64 keeps the PyPI wheel (CPU+MPS, no
+# CUDA variant exists).
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
