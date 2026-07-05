@@ -277,6 +277,11 @@ The whole pipeline runs fine headless with `DOGGY_WEB_ENABLED=false`.
 - Torch/Ultralytics wheels differ between macOS-arm64 and Pi-aarch64-Linux, so
   platform-specific handling is required (per-platform locks / install notes; use
   Ultralytics' documented Pi install path for a known-good torch/torchvision pair).
+- **CPU-only PyTorch (no CUDA).** `torch`/`torchvision` are pinned to the CPU wheel
+  index (`download.pytorch.org/whl/cpu`) on Linux via `[tool.uv.sources]` so CI /
+  x86_64 boxes don't pull the ~2.5GB CUDA build; macOS arm64 uses the default PyPI
+  wheel (already CPU+MPS, no CUDA variant). Inference device is auto-selected
+  (MPS/CPU), never CUDA on these targets.
 - Use pip/uv `opencv-python` (or `-headless` on Pi); do **not** mix with apt's
   `python3-opencv`.
 - On the Pi, export the model to **NCNN** once for speed; run inference via the

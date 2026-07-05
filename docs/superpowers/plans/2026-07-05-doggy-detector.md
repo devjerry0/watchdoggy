@@ -47,6 +47,8 @@ requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 dependencies = [
     "ultralytics>=8.3.0",
+    "torch>=2.2",
+    "torchvision>=0.17",
     "opencv-python>=4.10",
     "numpy>=1.26",
     "sounddevice>=0.4.7",
@@ -61,6 +63,19 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27",
 ]
+
+# CPU-only PyTorch. On Linux (x86_64 CI or ARM), the default PyPI `torch` wheel
+# bundles CUDA (~2.5GB) which this project never uses — pin torch/torchvision to
+# the CPU index there. macOS arm64 keeps the default PyPI wheel (already CPU+MPS,
+# no CUDA variant exists), so the CPU index is gated to Linux only.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]
