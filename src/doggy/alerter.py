@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import shutil
 import subprocess
 import sys
 import threading
@@ -77,11 +78,21 @@ class SoundDeviceAlerter(_ClipAlerter):
 
 
 class CommandAlerter(_ClipAlerter):
-    """Plays a random clip by shelling out to afplay/aplay (non-blocking)."""
+    """Plays a random clip by shelling out to a system player (non-blocking).
+
+    macOS -> afplay. Linux -> pw-play/paplay (route through PipeWire, so a
+    Bluetooth sink works) falling back to aplay (raw ALSA). Player-based
+    playback is more reliable than PortAudio for a headless PipeWire+BT setup.
+    Note: pw-play/paplay need WAV/FLAC clips, not mp3.
+    """
 
     def _emit(self, clip: Path, cfg: TunableSettings) -> None:
-        cmd = "afplay" if sys.platform == "darwin" else "aplay"
-        subprocess.Popen([cmd, str(clip)])
+        if sys.platform == "darwin":
+            player: str | None = "afplay"
+        else:
+            player = shutil.which("pw-play") or shutil.which("paplay") or shutil.which("aplay")
+        if player:
+            subprocess.Popen([player, str(clip)])
 
 
 def build_alerter(settings: Settings, runtime: RuntimeSettings) -> Alerter:
