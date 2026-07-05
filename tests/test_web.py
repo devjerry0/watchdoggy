@@ -86,3 +86,19 @@ def test_events_route_serves_thumbnail(tmp_path):
 def test_events_route_404_for_missing(tmp_path):
     c = _app_with_events(tmp_path)
     assert c.get("/events/nope.jpg").status_code == 404
+
+
+def test_write_env_roundtrips_zone_points(tmp_path, monkeypatch):
+    from doggy.web import _write_env
+    from doggy.config import Settings, TunableSettings
+    env = tmp_path / ".env"
+    env.write_text("DOGGY_CAMERA_INDEX=0\n")
+    _write_env(TunableSettings(zone_enabled=True,
+                               zone_points=[(0.1, 0.2), (0.3, 0.4), (0.5, 0.1)]), env)
+    text = env.read_text()
+    assert "DOGGY_ZONE_POINTS=[[0.1, 0.2], [0.3, 0.4], [0.5, 0.1]]" in text
+    assert "DOGGY_CAMERA_INDEX=0" in text            # structural key preserved
+    # and it re-parses:
+    monkeypatch.chdir(tmp_path)
+    s = Settings(_env_file=str(env))
+    assert s.zone_points == [(0.1, 0.2), (0.3, 0.4), (0.5, 0.1)]

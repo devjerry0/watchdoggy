@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -30,7 +31,11 @@ def _write_env(tunable: TunableSettings, path: Path = Path(".env")) -> None:
     """Persist the tunable settings into .env in place: update existing keys,
     append missing ones, and preserve comments and non-tunable (structural) keys.
     """
-    updates = {f"DOGGY_{k.upper()}": str(v) for k, v in tunable.model_dump().items()}
+    def _fmt(v: object) -> str:
+        if isinstance(v, (str, int, float, bool)) or isinstance(v, Path):
+            return str(v)
+        return json.dumps(v)   # lists/tuples -> JSON so pydantic-settings can re-parse
+    updates = {f"DOGGY_{k.upper()}": _fmt(v) for k, v in tunable.model_dump().items()}
     lines: list[str] = []
     seen: set[str] = set()
     if path.exists():

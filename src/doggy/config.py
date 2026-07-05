@@ -22,6 +22,9 @@ class TunableSettings(BaseModel):
     max_fires_per_hour: int = Field(6, ge=0)
     clips_dir: Path = Path("sounds")
     log_level: str = "INFO"
+    zone_enabled: bool = False
+    zone_points: list[tuple[float, float]] = Field(default_factory=list)
+    detect_interval_seconds: float = Field(0.7, ge=0.0)
 
     @model_validator(mode="after")
     def _check_ranges(self) -> "TunableSettings":

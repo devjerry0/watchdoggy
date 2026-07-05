@@ -44,3 +44,20 @@ def test_tunable_subset_extracted():
     assert isinstance(t, TunableSettings)
     assert t.confidence == 0.6
     assert not hasattr(t, "camera_index")
+
+
+def test_zone_defaults_disabled():
+    from doggy.config import Settings
+    s = Settings()
+    assert s.zone_enabled is False
+    assert s.zone_points == []
+    assert s.detect_interval_seconds == 0.7
+
+
+def test_zone_points_parsed_from_env(monkeypatch):
+    from doggy.config import Settings
+    monkeypatch.setenv("DOGGY_ZONE_ENABLED", "true")
+    monkeypatch.setenv("DOGGY_ZONE_POINTS", "[[0.1,0.2],[0.3,0.4],[0.5,0.1]]")
+    s = Settings()
+    assert s.zone_enabled is True
+    assert s.zone_points == [(0.1, 0.2), (0.3, 0.4), (0.5, 0.1)]
