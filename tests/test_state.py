@@ -36,5 +36,5 @@ def test_status_store_update_and_events():
     snap = ss.snapshot()
     assert snap.state == "CONFIRMING"
     assert snap.fps == 5.0
-    ss.add_event({"ts": 1.0, "confidence": 0.9})
+    ss.add_event({"ts": 1.0, "confidence": 0.9, "thumb": "fire_1.0.jpg"})
     assert ss.events()[-1]["confidence"] == 0.9
