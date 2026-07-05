@@ -46,6 +46,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/doggy"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/doggy/static" = "doggy/static"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
