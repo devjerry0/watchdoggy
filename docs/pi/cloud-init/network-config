@@ -1,0 +1,13 @@
+version: 2
+ethernets:
+  eth0:
+    dhcp4: true
+    optional: true
+wifis:
+  wlan0:
+    dhcp4: true
+    optional: true
+    regulatory-domain: "US"
+    access-points:
+      "<YOUR_WIFI_SSID>":
+        password: "<YOUR_WIFI_PASSWORD>"

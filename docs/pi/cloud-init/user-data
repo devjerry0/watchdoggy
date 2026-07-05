@@ -1,0 +1,16 @@
+#cloud-config
+hostname: doggypi
+manage_etc_hosts: true
+users:
+  - name: doggy
+    groups: adm,dialout,audio,netdev,video,plugdev,sudo,gpio,i2c,spi,input,render,users
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: "<OUTPUT OF: openssl passwd -6 'yourpassword'>"
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - "<YOUR ~/.ssh/id_ed25519.pub CONTENTS>"
+ssh_pwauth: true
+runcmd:
+  - systemctl enable ssh
+  - systemctl start ssh
