@@ -41,6 +41,7 @@ class Settings(TunableSettings, BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        protected_namespaces=(),
     )
 
     camera_backend: str = "opencv"  # opencv | file

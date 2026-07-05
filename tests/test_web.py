@@ -50,3 +50,15 @@ def test_save_persists(tmp_path):
     c.patch("/api/settings", json={"confidence": 0.65})
     assert c.post("/api/settings/save").status_code == 200
     assert saved["confidence"] == 0.65
+
+
+def test_write_env_preserves_structural_keys(tmp_path):
+    from doggy.web import _write_env
+    from doggy.config import TunableSettings
+    env = tmp_path / ".env"
+    env.write_text("DOGGY_CAMERA_INDEX=1\nDOGGY_CONFIDENCE=0.55\n# comment\n")
+    _write_env(TunableSettings(confidence=0.7), path=env)
+    text = env.read_text()
+    assert "DOGGY_CAMERA_INDEX=1" in text
+    assert "DOGGY_CONFIDENCE=0.7" in text
+    assert "# comment" in text

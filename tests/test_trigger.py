@@ -69,3 +69,22 @@ def test_refires_after_cooldown_with_fresh_confirm():
     assert t.update(DOG, now=1.0) is True
     assert t.update(DOG, now=12.0) is False   # cooldown expired -> fresh CONFIRMING
     assert t.update(DOG, now=13.0) is True     # confirmed again
+
+
+def test_no_fire_without_m_of_n_at_low_frame_rate():
+    # At low FPS the window never fills before confirm_seconds; a lone dog frame
+    # among misses must NOT fire (frame-rate independence + M-of-N).
+    t = make(window_m=4, window_n=6, confirm_seconds=1.0)
+    assert t.update(DOG, now=0.0) is False
+    assert t.update(NONE, now=0.33) is False
+    assert t.update(NONE, now=0.67) is False
+    assert t.update(NONE, now=1.0) is False   # 1.0>=confirm but sum=1<4 -> no fire
+    assert t.update(NONE, now=1.33) is False
+
+
+def test_sustained_dog_fires_once_m_of_n_met():
+    t = make(window_m=4, window_n=6, confirm_seconds=1.0)
+    fired = False
+    for ts in [0.0, 0.33, 0.67, 1.0]:
+        fired = t.update(DOG, now=ts)
+    assert fired is True  # 4 dog frames -> m_of_n (4>=4) and 1.0>=1.0

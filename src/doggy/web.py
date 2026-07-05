@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 import cv2
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
 
@@ -17,7 +17,22 @@ _STATIC = Path(__file__).parent / "static"
 
 
 def _write_env(tunable: TunableSettings, path: Path = Path(".env")) -> None:
-    lines = [f"DOGGY_{k.upper()}={v}" for k, v in tunable.model_dump().items()]
+    updates = {f"DOGGY_{k.upper()}": str(v) for k, v in tunable.model_dump().items()}
+    lines: list[str] = []
+    seen: set[str] = set()
+    if path.exists():
+        for raw in path.read_text().splitlines():
+            stripped = raw.strip()
+            if "=" in stripped and not stripped.startswith("#"):
+                key = stripped.split("=", 1)[0].strip()
+                if key in updates:
+                    lines.append(f"{key}={updates[key]}")
+                    seen.add(key)
+                    continue
+            lines.append(raw)
+    for key, val in updates.items():
+        if key not in seen:
+            lines.append(f"{key}={val}")
     path.write_text("\n".join(lines) + "\n")
 
 

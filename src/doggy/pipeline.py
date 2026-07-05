@@ -72,10 +72,14 @@ class Pipeline:
         return fired and not muted
 
     def _capture_loop(self, stop: threading.Event) -> None:
-        for frame in self.camera.frames():
-            if stop.is_set():
-                return
-            self.raw_buffer.set(frame)
+        try:
+            for frame in self.camera.frames():
+                if stop.is_set():
+                    return
+                self.raw_buffer.set(frame)
+        except Exception:
+            log.exception("capture thread failed; signaling shutdown")
+            stop.set()
 
     def run(self, stop: threading.Event) -> None:
         cap = threading.Thread(target=self._capture_loop, args=(stop,), daemon=True)

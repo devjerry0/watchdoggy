@@ -8,6 +8,7 @@ import numpy as np
 
 from doggy.config import Settings
 from doggy.detection import Detection
+from doggy.state import RuntimeSettings
 
 
 class Detector(Protocol):
@@ -30,8 +31,6 @@ def select_device() -> str:
     try:
         import torch
 
-        if torch.cuda.is_available():
-            return "cuda"
         if platform.machine() == "arm64" and torch.backends.mps.is_available():
             return "mps"
     except Exception:
@@ -40,16 +39,16 @@ def select_device() -> str:
 
 
 class YoloDetector:
-    def __init__(self, model_path: Path, confidence: float, device: str | None = None) -> None:
+    def __init__(self, model_path: Path, runtime: RuntimeSettings, device: str | None = None) -> None:
         from ultralytics import YOLO
 
         self._model = YOLO(str(model_path))
-        self._confidence = confidence
+        self._runtime = runtime
         self._device = device or select_device()
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self._model.predict(
-            frame, conf=self._confidence, device=self._device, verbose=False
+            frame, conf=self._runtime.get().confidence, device=self._device, verbose=False
         )
         out: list[Detection] = []
         for r in results:
@@ -63,5 +62,5 @@ class YoloDetector:
         return out
 
 
-def build_detector(settings: Settings) -> Detector:
-    return YoloDetector(settings.model_path, settings.confidence)
+def build_detector(settings: Settings, runtime: RuntimeSettings) -> Detector:
+    return YoloDetector(settings.model_path, runtime)

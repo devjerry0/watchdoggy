@@ -55,7 +55,7 @@ class TriggerLogic:
         if len(self._window) >= cfg.window_n and not m_of_n:
             self.state = TriggerState.IDLE
             return False
-        if now - self._confirm_start >= cfg.confirm_seconds:
+        if m_of_n and now - self._confirm_start >= cfg.confirm_seconds:
             self._cooldown_until = now + self._rng.uniform(
                 cfg.cooldown_min_seconds, cfg.cooldown_max_seconds
             )

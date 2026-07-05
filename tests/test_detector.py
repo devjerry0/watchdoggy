@@ -20,9 +20,11 @@ def test_select_device_returns_known_value():
 def test_yolo_detects_dog_and_ignores_empty_room():
     from pathlib import Path
     from doggy.detector import YoloDetector
+    from doggy.config import Settings, TunableSettings
+    from doggy.state import RuntimeSettings
     import cv2
 
-    det = YoloDetector(Path("models/yolo26n.pt"), confidence=0.4)
+    det = YoloDetector(Path("models/yolo26n.pt"), RuntimeSettings(TunableSettings(confidence=0.4)))
     dog = cv2.imread("tests/fixtures/dog.jpg")
     empty = cv2.imread("tests/fixtures/empty_room.jpg")
     assert any(d.label == "dog" for d in det.detect(dog))

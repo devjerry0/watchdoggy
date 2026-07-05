@@ -25,7 +25,7 @@ def main() -> None:
     annotated_buffer = FrameBuffer()
     safety = SafetyGovernor(runtime, settings.event_log_dir)
 
-    detector = build_detector(settings)   # loads model now (fail fast)
+    detector = build_detector(settings, runtime)   # loads model now (fail fast)
     camera = build_camera(settings)
     alerter = build_alerter(settings, runtime)
 
