@@ -95,6 +95,20 @@ SSH becomes key-only (a `00-` sshd drop-in overrides cloud-init's `50-` one that
 enables passwords), and an nftables firewall blocks all internet egress (loopback +
 LAN + DHCP + mDNS only). Both persist across reboots.
 
+## 6. SD-card longevity (optional but recommended)
+
+```sh
+./scripts/reduce-sd-writes.sh doggy@doggypi.local
+```
+
+Switches systemd-journald to volatile (RAM) storage — the biggest source of
+constant SD writes — while keeping BT pairing and `.env` tunables persistent
+(unlike a full read-only/overlay root, which would make both volatile). **The
+real fix for card death is stable power**: use a proper 5V/3A supply (a laptop
+USB-C *wall brick* is fine; a laptop's *ports* or a flaky charger are not).
+Brownout power-cycling from a flaky supply is what bricks cards — verify clean
+power on the Pi with `vcgencmd get_throttled` (want `0x0`).
+
 ## Result
 
 Dashboard: `http://doggypi.local:8000` (from any device on the LAN).
