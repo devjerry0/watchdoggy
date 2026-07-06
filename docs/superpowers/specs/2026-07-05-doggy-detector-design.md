@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-05
 **Status:** Approved (design), pending implementation plan
-**Repo:** https://github.com/devjerry0/doggy
+**Repo:** https://github.com/devjerry0/watchdoggy
 
 ## 1. Goal
 
