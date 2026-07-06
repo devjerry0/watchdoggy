@@ -91,9 +91,20 @@
 
   .events{display:flex;flex-direction:column;gap:.55rem}
   .events .ev{display:flex;align-items:center;gap:.7rem}
-  .events img{height:44px;width:58px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+  .events img{height:44px;width:58px;object-fit:cover;border-radius:6px;border:1px solid var(--border);
+              cursor:pointer;transition:border-color .15s}
+  .events img:hover{border-color:var(--accent)}
   .events .ev .c{font-weight:600;font-size:.92rem}
   .events .empty{color:var(--muted);font-size:.85rem}
+
+  .lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:50;
+            align-items:center;justify-content:center;padding:1.5rem}
+  .lightbox.open{display:flex}
+  .lb-inner{display:flex;flex-direction:column;gap:.85rem;max-width:100%;max-height:100%;align-items:center}
+  .lb-inner img{max-width:100%;max-height:80vh;border-radius:10px;border:1px solid var(--border)}
+  .lb-bar{display:flex;gap:.6rem}
+  .lb-bar a{font:inherit;font-weight:600;font-size:.9rem;padding:.6rem 1.1rem;border-radius:9px;
+            background:var(--accent);color:#04122e;text-decoration:none;cursor:pointer;border:1px solid var(--accent)}
 
   @media(max-width:640px){
     .wrap{padding:.9rem}
@@ -217,6 +228,16 @@
   </div>
 </div>
 
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+  <div class="lb-inner" onclick="event.stopPropagation()">
+    <img id="lb-img" src="" alt="reaction snapshot" />
+    <div class="lb-bar">
+      <a id="lb-dl" download>Download</a>
+      <button onclick="closeLightbox()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const KNOBS = ["confidence","confirm_seconds","window_m","window_n","cooldown_min_seconds",
                "cooldown_max_seconds","max_fires_per_hour","detect_interval_seconds",
@@ -246,6 +267,15 @@ async function save(){
   const b = document.querySelector("button.primary"); const t = b.textContent;
   await fetch("/api/settings/save",{method:"POST"}); b.textContent = "Saved"; setTimeout(()=>b.textContent=t, 1200);
 }
+function openLightbox(src){
+  document.getElementById("lb-img").src = src;
+  const dl = document.getElementById("lb-dl");
+  dl.href = src;
+  dl.setAttribute("download", "watchdoggy-" + (src.split("/").pop() || "snapshot.jpg"));
+  document.getElementById("lightbox").classList.add("open");
+}
+function closeLightbox(){ document.getElementById("lightbox").classList.remove("open"); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
 
 async function poll(){
   const s = await (await fetch("/api/status")).json();
@@ -279,7 +309,8 @@ async function poll(){
 
   const evs = s.events.slice(-10).reverse();
   document.getElementById("events").innerHTML = evs.length
-    ? evs.map(e => `<div class="ev"><img src="/events/${e.thumb}" alt="">`+
+    ? evs.map(e => `<div class="ev"><img src="/events/${e.thumb}" alt="" title="Click to enlarge" `+
+        `onclick="openLightbox('/events/${e.thumb}')">`+
         `<span class="c">${pct(e.confidence)} sure it was a dog</span></div>`).join("")
     : '<div class="empty">No reactions yet.</div>';
 
