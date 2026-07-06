@@ -125,19 +125,20 @@ def test_pipeline_records_trigger_confidence_not_empty_fire_frame(tmp_path):
     dog = [Detection("dog", 0.9, (0, 0, 10, 10))]
     none: list[Detection] = []
     status = StatusStore()
+    store = EventStore(tmp_path, 10, 0)
     clock = iter([0.0, 0.5, 1.0])
     pipe = Pipeline(
         settings=settings, detector=StubDetector([dog, dog, none]),
         camera=FakeCamera([np.zeros((16, 16, 3), np.uint8)], loop=True),
         alerter=FakeAlerter(), runtime=runtime, status=status,
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)),
+        safety=SafetyGovernor(runtime, store),
         clock=lambda: next(clock), rng=random.Random(0),
     )
     frame = np.zeros((16, 16, 3), np.uint8)
     fired = [pipe.run_once(frame) for _ in range(3)]
     assert fired[2] is True                       # fires on the empty 3rd frame
-    assert status.events()[-1]["confidence"] == 0.9   # not 0.0
+    assert store.list()[0].confidence == 0.9   # not 0.0
 
 
 def test_pipeline_suppresses_person_misclassified_as_dog(tmp_path):

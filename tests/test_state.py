@@ -30,20 +30,19 @@ def test_frame_buffer_keeps_latest():
     assert fb.get().sum() == 4  # the newest frame won
 
 
-def test_status_store_update_and_events():
+def test_status_store_update_and_snapshot():
     ss = StatusStore()
     ss.update(state="CONFIRMING", fps=5.0)
     snap = ss.snapshot()
     assert snap.state == "CONFIRMING"
     assert snap.fps == 5.0
-    ss.add_event({"ts": 1.0, "confidence": 0.9, "thumb": "fire_1.0.jpg"})
-    assert ss.events()[-1]["confidence"] == 0.9
 
 
 def test_status_has_thermal_fields():
     from doggy.state import Status, StatusStore
     assert Status().temp_c is None
     assert Status().detect_interval_effective == 0.0
-    s = StatusStore(); s.update(temp_c=76.5, detect_interval_effective=1.0)
+    s = StatusStore()
+    s.update(temp_c=76.5, detect_interval_effective=1.0)
     assert s.snapshot().temp_c == 76.5
     assert s.snapshot().detect_interval_effective == 1.0

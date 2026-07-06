@@ -1,22 +1,25 @@
+import numpy as np
 from fastapi.testclient import TestClient
 
 from doggy.alerter import FakeAlerter
 from doggy.config import Settings
+from doggy.events import EventStore
 from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
 from doggy.web import create_app
 
 
-def client(saved=None):
-    settings = Settings()
+def client(tmp_path, saved=None):
+    settings = Settings(event_log_dir=tmp_path)
     runtime = RuntimeSettings(settings.tunable())
     alerter = FakeAlerter()
-    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), alerter,
+    store = EventStore(tmp_path, 100, 0)
+    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), alerter, store,
                      save_env=lambda t: saved.update(t.model_dump()) if saved is not None else None)
     return TestClient(app), runtime, alerter
 
 
-def test_status_returns_settings_and_state():
-    c, _, _ = client()
+def test_status_returns_settings_and_state(tmp_path):
+    c, _, _ = client(tmp_path)
     r = c.get("/api/status")
     assert r.status_code == 200
     body = r.json()
@@ -24,29 +27,29 @@ def test_status_returns_settings_and_state():
     assert body["settings"]["confidence"] == 0.55
 
 
-def test_patch_updates_runtime():
-    c, runtime, _ = client()
+def test_patch_updates_runtime(tmp_path):
+    c, runtime, _ = client(tmp_path)
     r = c.patch("/api/settings", json={"confidence": 0.8})
     assert r.status_code == 200
     assert runtime.get().confidence == 0.8
     assert c.get("/api/status").json()["settings"]["confidence"] == 0.8
 
 
-def test_patch_rejects_invalid():
-    c, _, _ = client()
+def test_patch_rejects_invalid(tmp_path):
+    c, _, _ = client(tmp_path)
     r = c.patch("/api/settings", json={"window_m": 9, "window_n": 3})
     assert r.status_code == 422
 
 
-def test_test_sound_triggers_alerter():
-    c, _, alerter = client()
+def test_test_sound_triggers_alerter(tmp_path):
+    c, _, alerter = client(tmp_path)
     assert c.post("/api/test-sound").status_code == 200
     assert alerter.calls == 1
 
 
-def test_save_persists():
+def test_save_persists(tmp_path):
     saved = {}
-    c, _, _ = client(saved=saved)
+    c, _, _ = client(tmp_path, saved=saved)
     c.patch("/api/settings", json={"confidence": 0.65})
     assert c.post("/api/settings/save").status_code == 200
     assert saved["confidence"] == 0.65
@@ -65,13 +68,10 @@ def test_write_env_preserves_structural_keys(tmp_path):
 
 
 def _app_with_events(tmp_path):
-    from doggy.alerter import FakeAlerter
-    from doggy.config import Settings
-    from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
-
     settings = Settings(event_log_dir=tmp_path)
     runtime = RuntimeSettings(settings.tunable())
-    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter())
+    store = EventStore(tmp_path, 100, 0)
+    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store)
     return TestClient(app)
 
 
@@ -104,27 +104,82 @@ def test_write_env_roundtrips_zone_points(tmp_path, monkeypatch):
     assert s.zone_points == [(0.1, 0.2), (0.3, 0.4), (0.5, 0.1)]
 
 
-def test_index_has_zone_controls():
-    from fastapi.testclient import TestClient
-    from doggy.web import create_app
-    from doggy.config import Settings
-    from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
-    from doggy.alerter import FakeAlerter
-    s = Settings()
-    app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(), FakeAlerter())
+def test_index_has_zone_controls(tmp_path):
+    s = Settings(event_log_dir=tmp_path)
+    store = EventStore(tmp_path, 100, 0)
+    app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(),
+                     FakeAlerter(), store)
     html = TestClient(app).get("/").text
     assert "Save area" in html and "Clear area" in html
     assert "detect_interval_seconds" in html
 
 
-def test_index_has_temp_readout():
-    from fastapi.testclient import TestClient
-    from doggy.web import create_app
-    from doggy.config import Settings
-    from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
-    from doggy.alerter import FakeAlerter
-    s = Settings()
-    app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(), FakeAlerter())
+def test_index_has_temp_readout(tmp_path):
+    s = Settings(event_log_dir=tmp_path)
+    store = EventStore(tmp_path, 100, 0)
+    app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(),
+                     FakeAlerter(), store)
     html = TestClient(app).get("/").text
     assert 'id="temp"' in html
     assert "Temperature" in html
+
+
+def _seeded_store(tmp_path, n=2):
+    store = EventStore(tmp_path, 100, 0)
+    ids = []
+    for i in range(n):
+        r = store.add(np.zeros((8, 8, 3), np.uint8), 0.8, 1.0, 1000.0 + i, float(i))
+        ids.append(r.id)
+    return store, ids
+
+
+def _app_with_store(tmp_path, store):
+    settings = Settings(event_log_dir=tmp_path)
+    runtime = RuntimeSettings(settings.tunable())
+    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store)
+    return TestClient(app)
+
+
+def test_events_list_and_delete(tmp_path):
+    store, ids = _seeded_store(tmp_path, 2)
+    c = _app_with_store(tmp_path, store)
+    r = c.get("/api/events").json()
+    assert len(r["events"]) == 2 and "age_seconds" in r["events"][0]
+    assert c.delete(f"/api/events/{ids[0]}").status_code == 200
+    assert len(c.get("/api/events").json()["events"]) == 1
+    assert c.delete("/api/events/nope").status_code == 404
+
+
+def test_stats_endpoint(tmp_path):
+    store, _ = _seeded_store(tmp_path, 0)
+    c = _app_with_store(tmp_path, store)
+    assert "today" in c.get("/api/stats").json()
+
+
+def test_clear(tmp_path):
+    store, _ = _seeded_store(tmp_path, 2)
+    c = _app_with_store(tmp_path, store)
+    c.post("/api/events/clear")
+    assert c.get("/api/events").json()["events"] == []
+
+
+def test_events_age_prefers_wall_time(tmp_path):
+    store, _ = _seeded_store(tmp_path, 1)
+    c = _app_with_store(tmp_path, store)
+    ev = c.get("/api/events").json()["events"][0]
+    # wall_time is a real (old) epoch -> age comes from the wall clock and is large.
+    assert ev["wall_time"] is not None and ev["age_seconds"] > 0
+
+
+def test_events_limit(tmp_path):
+    store, _ = _seeded_store(tmp_path, 3)
+    c = _app_with_store(tmp_path, store)
+    assert len(c.get("/api/events", params={"limit": 1}).json()["events"]) == 1
+
+
+def test_clips_route_serves_and_404(tmp_path):
+    (tmp_path / "clip.mp4").write_bytes(b"data")
+    store, _ = _seeded_store(tmp_path, 0)
+    c = _app_with_store(tmp_path, store)
+    assert c.get("/clips/clip.mp4").content == b"data"
+    assert c.get("/clips/missing.mp4").status_code == 404

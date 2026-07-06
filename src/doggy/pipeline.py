@@ -119,9 +119,6 @@ class Pipeline:
                 frame, self.trigger.fire_confidence, self.trigger.fire_latency,
                 time.time(), now,
             )
-            self.status.add_event(
-                {"ts": record.ts, "confidence": record.confidence, "thumb": record.thumb}
-            )
             self.status.update(last_fire_ts=record.ts, last_fire_thumb=record.thumb)
         self.status.update(state=self.trigger.state.value, confidence=round(top, CONFIDENCE_DECIMALS),
                            dogs=len(in_zone), people=len(people) if cfg.person_suppression_enabled else 0,
