@@ -18,6 +18,7 @@ class TunableSettings(BaseModel):
     cooldown_min_seconds: float = Field(12.0, ge=0.0)
     cooldown_max_seconds: float = Field(20.0, ge=0.0)
     max_volume: float = Field(0.8, ge=0.0, le=1.0)
+    selected_sound: str = "random"  # filename in clips_dir, or "random"
     safety_enabled: bool = True
     max_fires_per_hour: int = Field(6, ge=0)
     clips_dir: Path = Path("sounds")

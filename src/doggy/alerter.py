@@ -45,10 +45,19 @@ class _ClipAlerter:
 
     def alert(self) -> None:
         cfg = self._runtime.get()
-        clip = pick_clip(cfg.clips_dir, self._rng)
+        clip = self._choose_clip(cfg)
         if clip is None:
             return
         self._emit(clip, cfg)
+
+    def _choose_clip(self, cfg: TunableSettings) -> Path | None:
+        """Play the user-selected clip when set (and present), else a random one."""
+        if cfg.selected_sound and cfg.selected_sound != "random":
+            # Path(...).name strips any directory components → no path traversal.
+            chosen = Path(cfg.clips_dir) / Path(cfg.selected_sound).name
+            if chosen.is_file():
+                return chosen
+        return pick_clip(cfg.clips_dir, self._rng)
 
     def _emit(self, clip: Path, cfg: TunableSettings) -> None:
         raise NotImplementedError
@@ -92,7 +101,19 @@ class CommandAlerter(_ClipAlerter):
         else:
             player = shutil.which("pw-play") or shutil.which("paplay") or shutil.which("aplay")
         if player:
-            subprocess.Popen([player, str(clip)])
+            subprocess.Popen([player, *_volume_args(player, cfg.max_volume), str(clip)])
+
+
+def _volume_args(player: str, volume: float) -> list[str]:
+    """Volume flag for the chosen player. pw-play/afplay take a 0.0-1.0 gain;
+    aplay has no volume control, so it is left at the sink's level."""
+    name = Path(player).name
+    vol = str(max(0.0, min(1.0, volume)))
+    if name in ("pw-play", "paplay"):
+        return ["--volume", vol]
+    if name == "afplay":
+        return ["-v", vol]
+    return []
 
 
 def build_alerter(settings: Settings, runtime: RuntimeSettings) -> Alerter:

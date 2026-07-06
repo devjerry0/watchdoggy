@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 import cv2
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi import status as http_status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
@@ -27,6 +27,8 @@ _MJPEG_FRAME_INTERVAL_SECONDS = 0.1
 _HTTP_422 = getattr(http_status, "HTTP_422_UNPROCESSABLE_CONTENT", None) or getattr(
     http_status, "HTTP_422_UNPROCESSABLE_ENTITY", 422
 )
+# Audio clips the UI may list and accept as uploads (pw-play/afplay-friendly).
+_AUDIO_EXTS = {".wav", ".mp3", ".ogg"}
 
 
 def _event_dict(record: EventRecord) -> dict:
@@ -134,6 +136,26 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
             raise HTTPException(status_code=_HTTP_422, detail=str(exc)) from exc
         runtime.update(updated)
         return updated.model_dump(mode="json")
+
+    @app.get("/api/sounds")
+    def api_sounds() -> dict:
+        clips_dir = Path(settings.clips_dir)
+        sounds = sorted(
+            p.name for p in clips_dir.glob("*")
+            if p.is_file() and p.suffix.lower() in _AUDIO_EXTS
+        ) if clips_dir.is_dir() else []
+        return {"sounds": sounds, "selected": runtime.get().selected_sound}
+
+    @app.post("/api/sounds")
+    def api_upload_sound(file: UploadFile = File(...)) -> dict:
+        # Path(...).name strips any directory components → no path traversal.
+        name = Path(file.filename or "").name
+        if Path(name).suffix.lower() not in _AUDIO_EXTS:
+            raise HTTPException(status_code=_HTTP_422, detail="unsupported audio type")
+        clips_dir = Path(settings.clips_dir)
+        clips_dir.mkdir(parents=True, exist_ok=True)
+        (clips_dir / name).write_bytes(file.file.read())
+        return {"ok": True, "name": name}
 
     @app.post("/api/test-sound")
     def api_test_sound() -> dict:
