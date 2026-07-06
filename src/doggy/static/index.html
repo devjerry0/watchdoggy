@@ -15,8 +15,10 @@
   img { max-width: 100%; border: 2px solid #333; border-radius: 8px; }
   .row { display: flex; gap: 2rem; flex-wrap: wrap; }
   .panel { flex: 1; min-width: 280px; }
-  #vidwrap { position: relative; display: block; width: 100%; line-height: 0; }
-  #live { display: block; width: 100%; }
+  /* inline-block wrapper hugs the video at its native size (desktop) and caps
+     at the panel width via `img { max-width:100% }` (fills a phone screen when
+     stacked). The zone canvas overlays it and is JS-sized to the img. */
+  #vidwrap { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
   #zonecanvas { position: absolute; left: 0; top: 0; cursor: crosshair;
                 touch-action: manipulation; }
   label { display: block; margin: .6rem 0 .2rem; font-size: .85rem; color: #aaa; }
