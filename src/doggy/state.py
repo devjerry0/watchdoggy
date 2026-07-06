@@ -63,6 +63,8 @@ class Status:
     last_fire_ts: float | None = None
     last_fire_thumb: str | None = None
     muted: bool = False
+    temp_c: float | None = None
+    detect_interval_effective: float = 0.0
 
 
 _DEFAULT_MAX_EVENTS = 50  # recent fire events retained for the dashboard

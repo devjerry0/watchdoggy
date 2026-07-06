@@ -35,3 +35,11 @@ def test_interval_never_faster_than_normal():
     cfg = CFG.model_copy(update={"detect_interval_seconds": 2.0,
                                  "thermal_cooldown_interval_seconds": 1.5})
     assert ThermalGovernor().effective_interval(90.0, cfg) == 2.0
+
+def test_governor_picks_cooldown_when_hot(tmp_path):
+    from doggy.config import TunableSettings
+    from doggy.thermal import ThermalGovernor
+    f = tmp_path / "temp"; f.write_text("83000\n")
+    g = ThermalGovernor(str(f))
+    cfg = TunableSettings(detect_interval_seconds=0.5, thermal_cooldown_interval_seconds=1.5)
+    assert g.effective_interval(g.read_temp_c(), cfg) == 1.5

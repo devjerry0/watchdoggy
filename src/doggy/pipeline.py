@@ -17,6 +17,7 @@ from doggy.detector import Detector
 from doggy.pacer import Pacer
 from doggy.safety import SafetyGovernor
 from doggy.state import CONFIDENCE_DECIMALS, FrameBuffer, RuntimeSettings, StatusStore
+from doggy.thermal import ThermalGovernor
 from doggy.trigger import TriggerLogic
 from doggy.zone import ZoneFilter
 
@@ -76,6 +77,7 @@ class Pipeline:
         self.trigger = TriggerLogic(runtime, rng=rng or random.Random())
         self.zone = ZoneFilter()
         self.pacer = Pacer(clock=clock)
+        self.governor = ThermalGovernor()
 
     def run_once(self, frame: np.ndarray) -> bool:
         """Process a single frame: detect, annotate, trigger, maybe fire."""
@@ -117,7 +119,11 @@ class Pipeline:
             if frame is None:
                 time.sleep(_IDLE_POLL_SECONDS)
                 continue
-            self.pacer.wait(self.runtime.get().detect_interval_seconds)
+            cfg = self.runtime.get()
+            temp = self.governor.read_temp_c()
+            interval = self.governor.effective_interval(temp, cfg)
+            self.status.update(temp_c=temp, detect_interval_effective=interval)
+            self.pacer.wait(interval)
             self.run_once(frame)
             now = self.clock()
             dt = now - last
