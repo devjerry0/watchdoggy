@@ -1,29 +1,27 @@
 # watchdoggy
 
-**Counter Watch** — a ~$62 Raspberry Pi appliance that watches your kitchen counter, detects when the dog jumps up, and plays a deterrent sound. It only reacts inside an area you draw, ignores people, and self-regulates its temperature.
+Counter Watch is a ~$62 Raspberry Pi appliance that watches your kitchen counter, spots the dog when it jumps up, and plays a deterrent sound. It only reacts inside an area you draw, ignores people, and manages its own temperature.
 
-> **100% local. No cloud, no accounts, no internet.** All detection runs on the device. After a one-time model download at setup, it runs fully disconnected — and it's firewalled to your LAN so it *cannot* phone home. Your camera feed never leaves your network.
+It runs entirely on the device with no internet access. The model downloads once during setup, then the Pi is firewalled to your local network and never talks to the outside. Your camera feed stays on your network.
 
 ![Counter Watch dashboard](docs/dashboard.png)
 
 ## What it does
 
-- **On-device dog detection** — YOLO running locally (NCNN) on the Pi's CPU. No cloud vision API.
-- **Watch area** — only acts on dogs inside a zone you draw on the live view by tapping corners.
-- **Ignores people** — suppresses a person misclassified as a dog, so it won't false-alarm on you.
-- **Deterrent** — plays a sound through a Bluetooth/USB speaker, with randomized cooldowns and an hourly cap.
-- **Adaptive thermal governor** — scales its work rate with CPU temperature so a fanless Pi never throttles.
-- **Plain-language dashboard** — live view plus simple settings, served on your LAN (shown above).
+- Detects dogs with YOLO running locally on the Pi's CPU (via NCNN). No cloud vision API.
+- Only acts on dogs inside a watch area you draw on the live view.
+- Ignores people, so someone mistaken for a dog won't set it off.
+- Plays a deterrent sound through a Bluetooth or USB speaker, with cooldowns and an hourly cap.
+- Scales its work rate with CPU temperature so a fanless Pi doesn't throttle.
+- Serves a plain-language dashboard on your network for the live view and settings.
 
-## Fully local & self-contained
+## Fully local
 
-This is deliberately an offline appliance — privacy and reliability by design:
-
-- **All inference is on-device.** No cloud, no external API, no account, no subscription.
-- **No internet needed to run.** The YOLO model is downloaded once during setup; after that the appliance runs completely disconnected.
-- **Firewalled to the LAN.** [`scripts/harden-pi.sh`](scripts/harden-pi.sh) installs an nftables egress firewall that blocks all outbound traffic except your local network. It literally cannot reach the internet.
-- **Your video never leaves the device.** The dashboard is served only on your LAN; nothing is uploaded, stored remotely, or shared.
-- **No telemetry.** Ultralytics analytics are disabled during setup.
+- All detection runs on the device. No cloud, no account, no subscription.
+- No internet needed to run. The model is downloaded once at setup, then it works offline.
+- `scripts/harden-pi.sh` installs an nftables firewall that blocks outbound traffic except your local network, so it can't reach the internet.
+- The dashboard is served only on your LAN. Nothing is uploaded or stored anywhere else.
+- Ultralytics telemetry is turned off during setup.
 
 ## Hardware (~$62)
 
@@ -32,20 +30,20 @@ This is deliberately an offline appliance — privacy and reliability by design:
 | Raspberry Pi 4 Model B | $35 |
 | Aluminum heatsink case | $12 |
 | 1080p USB webcam | $15 |
-| **Total** | **~$62** |
+| Total | ~$62 |
 
-Plus any Bluetooth or USB speaker you already have for the deterrent (this build uses a JBL Go).
+Plus any Bluetooth or USB speaker you already have for the sound (this build uses a JBL Go).
 
 ## How it works
 
 ```
-USB webcam → capture thread → YOLO (NCNN, on-CPU)
-           → watch-area filter → person suppression
-           → M-of-N + confirm-timer trigger → safety limits (cooldown, hourly cap)
-           → deterrent sound
+USB webcam -> capture thread -> YOLO (NCNN, on-CPU)
+           -> watch-area filter -> person suppression
+           -> M-of-N + confirm-timer trigger -> safety limits (cooldown, hourly cap)
+           -> deterrent sound
 ```
 
-A FastAPI app streams the annotated view (MJPEG) and exposes the live-tunable settings. An adaptive governor reads the CPU temperature each loop and paces detection to hold the board below its throttle point.
+A FastAPI app streams the annotated view over MJPEG and exposes the live-tunable settings. A governor reads the CPU temperature each loop and paces detection to keep the board below its throttle point.
 
 ## Quick start (dev, on a Mac)
 
@@ -57,7 +55,7 @@ uv run yolo export model=yolo26n.pt format=ncnn   # downloads yolo26n.pt
 uv run doggy                  # dashboard at http://127.0.0.1:8000
 ```
 
-Grant your terminal camera permission (System Settings → Privacy → Camera), or OpenCV returns empty frames silently.
+Grant your terminal camera permission (System Settings, Privacy, Camera), or OpenCV returns empty frames with no error.
 
 ## Deploy to a Raspberry Pi
 
@@ -65,36 +63,34 @@ Grant your terminal camera permission (System Settings → Privacy → Camera), 
 ./scripts/deploy-to-pi.sh <user@host>
 ```
 
-Syncs the code, installs dependencies with `uv`, downloads and NCNN-exports the model for ARM, writes a Pi `.env`, and installs a systemd service that runs on boot.
+This syncs the code, installs dependencies with `uv`, downloads and NCNN-exports the model for ARM, writes a Pi `.env`, and installs a systemd service that runs on boot.
 
-Optional extras:
+Optional:
 
-- [`scripts/setup-bt-speaker.sh`](scripts/setup-bt-speaker.sh) — Bluetooth speaker with hands-free auto-reconnect (PipeWire).
-- [`scripts/harden-pi.sh`](scripts/harden-pi.sh) — lock it down: LAN-only egress firewall + key-only SSH.
+- `scripts/setup-bt-speaker.sh` sets up a Bluetooth speaker with hands-free auto-reconnect (PipeWire).
+- `scripts/harden-pi.sh` locks it down with a LAN-only egress firewall and key-only SSH.
 
 ## Using the dashboard
 
 Open `http://<pi-host>:8000` from any device on your network.
 
-- Status pill shows **Watching / Dog spotted / Cooling down**.
-- **Draw the watch area** by tapping corners around the counter on the live view, then **Save area**.
-- Simple settings: how sure it must be it's a dog, how long the dog must linger, wait between reactions, hourly cap, and **Ignore people**.
-- **Advanced** holds the detection-window and person-matching knobs; **System** shows temperature, power, and processing speed.
-- **Test sound** plays the deterrent; **Save settings** persists to the Pi's `.env`.
+- The status pill shows Watching, Dog spotted, or Cooling down.
+- Draw the watch area by tapping corners around the counter on the live view, then Save area.
+- Simple settings cover how sure it must be, how long the dog must linger, the wait between reactions, the hourly cap, and Ignore people.
+- Advanced holds the detection-window and person-matching knobs. System shows temperature, power, and speed.
+- Test sound plays the deterrent. Save settings writes to the Pi's `.env`.
 
 ## Configuration
 
-All config is set via `DOGGY_*` environment variables (see `.env.example`). Live-tunable params are also editable from the dashboard; structural params (camera, model, audio backend) require a restart.
-
-> The CLI and Python package are named `doggy` (env prefix `DOGGY_`); the repository was renamed from `doggy` → `watchdoggy`.
+Config is set with `DOGGY_*` environment variables (see `.env.example`). Live-tunable params are also editable from the dashboard. Structural params (camera, model, audio backend) need a restart.
 
 ## Tests
 
 ```sh
 uv run pytest -m "not slow"    # fast suite, no hardware or weights
-uv run pytest -m slow          # detector test (needs the model + fixtures)
+uv run pytest -m slow          # detector test (needs the model and fixtures)
 ```
 
 ## License
 
-AGPL-3.0-or-later (matches YOLO26n, which is AGPL).
+AGPL-3.0-or-later, matching YOLO26n.
