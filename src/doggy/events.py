@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -116,6 +118,52 @@ class EventStore:
         if limit is not None:
             return recent_first[:limit]
         return recent_first
+
+    def delete(self, id: str) -> bool:
+        for i, record in enumerate(self._records):
+            if record.id == id:
+                self._delete_files(record)
+                del self._records[i]
+                self._rewrite()
+                return True
+        return False
+
+    def clear(self) -> None:
+        for record in self._records:
+            self._delete_files(record)
+        self._records = []
+        self._rewrite()
+
+    def attach_clip(self, id: str, clip_name: str) -> None:
+        for record in self._records:
+            if record.id == id:
+                record.clip = clip_name
+                self._rewrite()
+                return
+
+    def stats(self) -> dict:
+        """Activity summary for the dashboard, bucketed by local wall-clock time."""
+        today = datetime.fromtimestamp(self._clock()).date()
+        # Last 7 calendar days, oldest -> newest, with today last.
+        days = [today - timedelta(days=n) for n in range(6, -1, -1)]
+        counts: dict = {day: 0 for day in days}
+        hours: list[int] = []
+        for record in self._records:
+            if record.wall_time is None:
+                continue
+            dt = datetime.fromtimestamp(record.wall_time)
+            hours.append(dt.hour)
+            if dt.date() in counts:
+                counts[dt.date()] += 1
+
+        latencies = [r.latency_s for r in self._records if r.latency_s is not None]
+        return {
+            "today": counts[today],
+            "this_week": sum(counts.values()),
+            "per_day": [{"day": day.isoformat(), "count": counts[day]} for day in days],
+            "busiest_hour": Counter(hours).most_common(1)[0][0] if hours else None,
+            "avg_latency_s": sum(latencies) / len(latencies) if latencies else None,
+        }
 
     def _delete_files(self, record: EventRecord) -> None:
         for name in (record.thumb, record.clip):

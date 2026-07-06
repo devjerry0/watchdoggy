@@ -68,3 +68,40 @@ def test_prune_by_age(tmp_path):
     s.prune()
     ids = [e.id for e in s.list()]
     assert fresh.id in ids and old.id not in ids
+
+
+def test_delete_removes_record_and_file(tmp_path):
+    s = EventStore(tmp_path, 10, 0)
+    r = s.add(_img(), 0.5, None, 1.0, 1.0)
+    assert s.delete(r.id) is True
+    assert s.list() == [] and not (tmp_path / r.thumb).exists()
+    assert s.delete("nope") is False
+
+
+def test_clear_removes_all(tmp_path):
+    s = EventStore(tmp_path, 10, 0)
+    s.add(_img(), 0.5, None, 1.0, 1.0)
+    s.add(_img(), 0.5, None, 2.0, 2.0)
+    s.clear()
+    assert s.list() == []
+    assert (tmp_path / "events.jsonl").read_text() == ""
+
+
+def test_stats_counts_and_latency(tmp_path):
+    # fixed "now" = 2026-07-06 18:00 UTC; two events today, one 3 days ago
+    now = 1783360800.0
+    s = EventStore(tmp_path, 100, 0, clock=lambda: now)
+    s.add(_img(), 0.5, 1.0, now - 3600, 1.0)          # today, 1h ago
+    s.add(_img(), 0.5, 2.0, now - 7200, 2.0)          # today, 2h ago
+    s.add(_img(), 0.5, 3.0, now - 3 * 86400, 3.0)     # 3 days ago
+    st = s.stats()
+    assert st["today"] == 2 and st["this_week"] == 3
+    assert abs(st["avg_latency_s"] - 2.0) < 1e-9
+    assert isinstance(st["busiest_hour"], int)
+    assert len(st["per_day"]) == 7
+
+
+def test_stats_busiest_hour_none_without_wall_time(tmp_path):
+    s = EventStore(tmp_path, 100, 0)
+    s.add(_img(), 0.5, 1.0, None, 1.0)
+    assert s.stats()["busiest_hour"] is None
