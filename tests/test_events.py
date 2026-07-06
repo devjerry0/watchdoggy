@@ -80,11 +80,27 @@ def test_delete_removes_record_and_file(tmp_path):
 
 def test_clear_removes_all(tmp_path):
     s = EventStore(tmp_path, 10, 0)
-    s.add(_img(), 0.5, None, 1.0, 1.0)
-    s.add(_img(), 0.5, None, 2.0, 2.0)
+    a = s.add(_img(), 0.5, None, 1.0, 1.0)
+    b = s.add(_img(), 0.5, None, 2.0, 2.0)
+    thumbs = [tmp_path / a.thumb, tmp_path / b.thumb]
+    assert all(p.exists() for p in thumbs)
     s.clear()
     assert s.list() == []
     assert (tmp_path / "events.jsonl").read_text() == ""
+    assert not any(p.exists() for p in thumbs)  # thumbnails removed from disk
+
+
+def test_attach_clip_sets_and_persists(tmp_path):
+    s = EventStore(tmp_path, 10, 0)
+    r = s.add(_img(), 0.5, None, 1.0, 1.0)
+    s.attach_clip(r.id, "clip.mp4")
+    assert s.list()[0].clip == "clip.mp4"
+    # A fresh store on the same dir must reload the clip from events.jsonl.
+    reloaded = EventStore(tmp_path, 10, 0)
+    assert reloaded.list()[0].clip == "clip.mp4"
+    # Unknown id is a silent no-op: no raise, nothing changes.
+    s.attach_clip("nope", "x.mp4")
+    assert [e.clip for e in s.list()] == ["clip.mp4"]
 
 
 def test_stats_counts_and_latency(tmp_path):
