@@ -113,7 +113,7 @@ def test_index_has_zone_controls():
     s = Settings()
     app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(), FakeAlerter())
     html = TestClient(app).get("/").text
-    assert "Finish zone" in html and "Clear zone" in html
+    assert "Save area" in html and "Clear area" in html
     assert "detect_interval_seconds" in html
 
 
@@ -127,4 +127,4 @@ def test_index_has_temp_readout():
     app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(), FakeAlerter())
     html = TestClient(app).get("/").text
     assert 'id="temp"' in html
-    assert "COOLING" in html
+    assert "Temperature" in html
