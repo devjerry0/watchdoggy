@@ -20,7 +20,7 @@ echo "==> Deploying $REPO_DIR  ->  $TARGET:~/$REMOTE_DIR"
 #    .env (the Pi gets its own below).
 rsync -az --delete \
   --exclude '.venv' --exclude '.git' --exclude '__pycache__' --exclude '.pytest_cache' \
-  --exclude 'models' --exclude 'events' --exclude '*.mp4' --exclude '.env' \
+  --exclude 'models' --exclude 'events' --exclude '*.mp4' --exclude '*.mp3' --exclude '.env' \
   "$REPO_DIR"/ "$TARGET:$REMOTE_DIR"/
 
 # 2. Remote provisioning.
