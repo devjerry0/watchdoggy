@@ -1,24 +1,25 @@
 from __future__ import annotations
 
-import json
 from collections import deque
-from pathlib import Path
 
-import cv2
 import numpy as np
 
-from doggy.state import CONFIDENCE_DECIMALS, FireEvent, RuntimeSettings
+from doggy.events import EventRecord, EventStore
+from doggy.state import RuntimeSettings
 
 _HOUR = 3600.0
 
 
 class SafetyGovernor:
-    """Guards firing: master off switch, per-hour rate limit, and an event log."""
+    """Guards firing: master off switch, per-hour rate limit, event delegation.
 
-    def __init__(self, runtime: RuntimeSettings, event_log_dir: Path) -> None:
+    The single writer of the event log is the injected ``EventStore``; this
+    class only decides whether a fire is allowed and delegates persistence.
+    """
+
+    def __init__(self, runtime: RuntimeSettings, event_store: EventStore) -> None:
         self._runtime = runtime
-        self._dir = Path(event_log_dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self._store = event_store
         self._fires: deque[float] = deque()
 
     def _prune(self, now: float) -> None:
@@ -35,15 +36,13 @@ class SafetyGovernor:
             return False
         return self.fires_last_hour(now) < cfg.max_fires_per_hour
 
-    def record_fire(self, frame: np.ndarray, confidence: float, now: float) -> FireEvent:
+    def record_fire(
+        self,
+        frame: np.ndarray,
+        confidence: float,
+        latency_s: float,
+        wall_time: float,
+        now: float,
+    ) -> EventRecord:
         self._fires.append(now)
-        thumb_name = f"fire_{now:.3f}.jpg"
-        cv2.imwrite(str(self._dir / thumb_name), frame)
-        event: FireEvent = {
-            "ts": now,
-            "confidence": round(float(confidence), CONFIDENCE_DECIMALS),
-            "thumb": thumb_name,
-        }
-        with (self._dir / "events.jsonl").open("a") as fh:
-            fh.write(json.dumps(event) + "\n")
-        return event
+        return self._store.add(frame, confidence, latency_s, wall_time, mono_ts=now)

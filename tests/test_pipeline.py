@@ -1,5 +1,4 @@
 import random
-import threading
 
 import numpy as np
 
@@ -8,10 +7,10 @@ from doggy.camera import FakeCamera
 from doggy.config import Settings
 from doggy.detection import Detection
 from doggy.detector import StubDetector
+from doggy.events import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
 from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
-from doggy.trigger import TriggerLogic
 
 
 def test_pipeline_fires_after_confirmation(tmp_path):
@@ -31,7 +30,7 @@ def test_pipeline_fires_after_confirmation(tmp_path):
         status=StatusStore(),
         raw_buffer=FrameBuffer(),
         annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path),
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)),
         clock=lambda: next(clock),
         rng=random.Random(0),
     )
@@ -59,7 +58,7 @@ def test_pipeline_counts_multiple_dogs(tmp_path):
         status=status,
         raw_buffer=FrameBuffer(),
         annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path),
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)),
         clock=lambda: 0.0,
         rng=random.Random(0),
     )
@@ -85,7 +84,7 @@ def test_pipeline_ignores_dogs_outside_zone(tmp_path):
         camera=FakeCamera([np.zeros((100, 100, 3), np.uint8)], loop=True),
         alerter=FakeAlerter(), runtime=runtime, status=status,
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path), clock=lambda: 0.0,
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)), clock=lambda: 0.0,
         rng=random.Random(0),
     )
     fired = pipe.run_once(np.zeros((100, 100, 3), np.uint8))
@@ -109,7 +108,7 @@ def test_pipeline_fires_for_dog_inside_zone(tmp_path):
         camera=FakeCamera([np.zeros((100, 100, 3), np.uint8)], loop=True),
         alerter=alerter, runtime=runtime, status=StatusStore(),
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path), clock=lambda: 0.0,
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)), clock=lambda: 0.0,
         rng=random.Random(0),
     )
     assert pipe.run_once(np.zeros((100, 100, 3), np.uint8)) is False
@@ -132,7 +131,7 @@ def test_pipeline_records_trigger_confidence_not_empty_fire_frame(tmp_path):
         camera=FakeCamera([np.zeros((16, 16, 3), np.uint8)], loop=True),
         alerter=FakeAlerter(), runtime=runtime, status=status,
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path),
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)),
         clock=lambda: next(clock), rng=random.Random(0),
     )
     frame = np.zeros((16, 16, 3), np.uint8)
@@ -156,7 +155,7 @@ def test_pipeline_suppresses_person_misclassified_as_dog(tmp_path):
         camera=FakeCamera([np.zeros((200, 200, 3), np.uint8)], loop=True),
         alerter=FakeAlerter(), runtime=runtime, status=status,
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path), clock=lambda: 0.0,
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)), clock=lambda: 0.0,
         rng=random.Random(0),
     )
     frame = np.zeros((200, 200, 3), np.uint8)
@@ -182,7 +181,7 @@ def test_pipeline_real_dog_near_person_still_fires(tmp_path):
         camera=FakeCamera([np.zeros((200, 200, 3), np.uint8)], loop=True),
         alerter=alerter, runtime=runtime, status=status,
         raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
-        safety=SafetyGovernor(runtime, tmp_path), clock=lambda: 0.0,
+        safety=SafetyGovernor(runtime, EventStore(tmp_path, 10, 0)), clock=lambda: 0.0,
         rng=random.Random(0),
     )
     frame = np.zeros((200, 200, 3), np.uint8)

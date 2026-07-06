@@ -8,6 +8,7 @@ from doggy.alerter import build_alerter
 from doggy.camera import build_camera
 from doggy.config import load_settings
 from doggy.detector import build_detector
+from doggy.events import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
 from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
@@ -23,7 +24,13 @@ def main() -> None:
     status = StatusStore()
     raw_buffer = FrameBuffer()
     annotated_buffer = FrameBuffer()
-    safety = SafetyGovernor(runtime, settings.event_log_dir)
+    # Single writer of the event log; the web endpoints read the same dir.
+    event_store = EventStore(
+        settings.event_log_dir,
+        settings.event_retention_max,
+        settings.event_retention_days,
+    )
+    safety = SafetyGovernor(runtime, event_store)
 
     detector = build_detector(settings, runtime)   # loads model now (fail fast)
     camera = build_camera(settings)

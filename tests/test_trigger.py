@@ -112,3 +112,12 @@ def test_fire_confidence_tracks_max_across_confirm_window():
     assert t.update(dog(0.95), now=0.5) is False
     assert t.update(dog(0.80), now=1.0) is True
     assert t.fire_confidence == 0.95
+
+
+def test_fire_latency_is_time_since_first_sighting():
+    t = make()  # window_m=2, window_n=3, confirm_seconds=1.0
+    d = [Detection("dog", 0.9, (0, 0, 10, 10))]
+    t.update(d, now=0.0)
+    t.update(d, now=0.5)
+    assert t.update(d, now=1.0) is True
+    assert t.fire_latency == 1.0

@@ -113,9 +113,16 @@ class Pipeline:
             # Log the confidence that actually triggered the fire (peak over the
             # confirm window), not this frame's `top` -- the fire edge can land on
             # a flicker frame with no current detection, which logged "conf 0".
-            event = self.safety.record_fire(frame, self.trigger.fire_confidence, now)
-            self.status.add_event(event)
-            self.status.update(last_fire_ts=event["ts"], last_fire_thumb=event["thumb"])
+            # `now` is the injected monotonic clock (event ts / rate limiting);
+            # time.time() supplies wall-clock time for the persisted record.
+            record = self.safety.record_fire(
+                frame, self.trigger.fire_confidence, self.trigger.fire_latency,
+                time.time(), now,
+            )
+            self.status.add_event(
+                {"ts": record.ts, "confidence": record.confidence, "thumb": record.thumb}
+            )
+            self.status.update(last_fire_ts=record.ts, last_fire_thumb=record.thumb)
         self.status.update(state=self.trigger.state.value, confidence=round(top, CONFIDENCE_DECIMALS),
                            dogs=len(in_zone), people=len(people) if cfg.person_suppression_enabled else 0,
                            fires_this_hour=self.safety.fires_last_hour(now), muted=muted)

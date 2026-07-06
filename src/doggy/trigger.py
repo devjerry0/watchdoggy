@@ -32,6 +32,10 @@ class TriggerLogic:
         # the pipeline to log the event. Valid only immediately after update()
         # returns True.
         self.fire_confidence: float = 0.0
+        # Time-to-react of the most recent fire: seconds from first sighting
+        # (CONFIRMING start) to the fire edge. Valid only immediately after
+        # update() returns True.
+        self.fire_latency: float = 0.0
 
     def update(self, detections: list[Detection], now: float) -> bool:
         cfg = self._runtime.get()
@@ -73,5 +77,6 @@ class TriggerLogic:
             )
             self.state = TriggerState.COOLDOWN
             self.fire_confidence = self._confirm_max
+            self.fire_latency = now - self._confirm_start
             return True
         return False
