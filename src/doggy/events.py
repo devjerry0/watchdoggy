@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -10,6 +11,8 @@ import cv2
 import numpy as np
 
 from doggy.state import CONFIDENCE_DECIMALS
+
+log = logging.getLogger("doggy")
 
 EVENTS_FILE = "events.jsonl"
 
@@ -62,19 +65,24 @@ class EventStore:
             line = line.strip()
             if not line:
                 continue
-            obj = json.loads(line)
-            thumb = obj["thumb"]
-            records.append(
-                EventRecord(
-                    id=obj.get("id") or Path(thumb).stem,
-                    ts=obj["ts"],
-                    wall_time=obj.get("wall_time"),
-                    confidence=obj["confidence"],
-                    latency_s=obj.get("latency_s"),
-                    thumb=thumb,
-                    clip=obj.get("clip"),
+            # An abrupt power loss on the SD card can leave a torn/truncated final
+            # line; a single bad line must not sink the whole history.
+            try:
+                obj = json.loads(line)
+                thumb = obj["thumb"]
+                records.append(
+                    EventRecord(
+                        id=obj.get("id") or Path(thumb).stem,
+                        ts=obj["ts"],
+                        wall_time=obj.get("wall_time"),
+                        confidence=obj["confidence"],
+                        latency_s=obj.get("latency_s"),
+                        thumb=thumb,
+                        clip=obj.get("clip"),
+                    )
                 )
-            )
+            except (json.JSONDecodeError, KeyError, ValueError):
+                log.warning("skipping malformed events.jsonl line: %r", line)
         return records
 
     def add(

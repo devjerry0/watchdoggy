@@ -44,6 +44,23 @@ def test_prune_by_count_deletes_files(tmp_path):
     assert not (tmp_path / r0.thumb).exists()   # oldest file removed
 
 
+def test_load_skips_malformed_lines(tmp_path):
+    # A torn/truncated line (abrupt power loss on the SD card) or a line missing
+    # required keys must not sink the whole history: valid events still load.
+    good_a = json.dumps({"id": "fire_1", "ts": 1.0, "confidence": 0.5, "thumb": "fire_1.jpg"})
+    good_b = json.dumps({"id": "fire_2", "ts": 2.0, "confidence": 0.6, "thumb": "fire_2.jpg"})
+    (tmp_path / "events.jsonl").write_text(
+        good_a + "\n"
+        + "{not json\n"                                  # torn/garbage line
+        + json.dumps({"ts": 3.0, "confidence": 0.7}) + "\n"  # missing "thumb"
+        + "\n"                                            # blank line
+        + good_b + "\n")
+    s = EventStore(tmp_path, max_events=10, max_age_days=0)
+    events = s.list()  # most-recent-first
+    assert [e.id for e in events] == ["fire_2", "fire_1"]
+    assert len(events) == 2
+
+
 def test_prune_by_age(tmp_path):
     s = EventStore(tmp_path, max_events=100, max_age_days=1, clock=lambda: 1_000_000.0)
     old = s.add(_img(), 0.5, None, 1_000_000.0 - 2 * 86400, 1.0)  # 2 days old by wall_time
