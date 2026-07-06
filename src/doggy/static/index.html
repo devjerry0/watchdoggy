@@ -34,7 +34,8 @@
     <div class="stat">State: <span id="state">–</span></div>
     <div>FPS: <span id="fps">–</span> · dogs: <span id="dogs">–</span>
          · conf: <span id="conf">–</span>
-         · fires/hr: <span id="fires">–</span> <span id="muted"></span></div>
+         · fires/hr: <span id="fires">–</span>
+         · 🌡️ <span id="temp">–</span>°C <span id="cooling"></span> <span id="muted"></span></div>
     <label>confidence <span id="confidence_v"></span></label>
     <input id="confidence" type="range" min="0" max="1" step="0.01" />
     <label>confirm_seconds <span id="confirm_seconds_v"></span></label>
@@ -83,6 +84,9 @@ async function poll(){
   document.getElementById("dogs").textContent = s.dogs;
   document.getElementById("fires").textContent = s.fires_this_hour;
   document.getElementById("muted").innerHTML = s.muted ? '<span class="muted">MUTED</span>' : '';
+  document.getElementById("temp").textContent = s.temp_c == null ? "–" : s.temp_c.toFixed(1);
+  const cooling = s.detect_interval_effective > s.settings.detect_interval_seconds;
+  document.getElementById("cooling").innerHTML = cooling ? '<span style="color:#fa0">COOLING</span>' : '';
   for (const k of KNOBS){
     const el = document.getElementById(k);
     if (document.activeElement !== el){ el.value = s.settings[k]; }

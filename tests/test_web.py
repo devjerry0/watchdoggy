@@ -115,3 +115,16 @@ def test_index_has_zone_controls():
     html = TestClient(app).get("/").text
     assert "Finish zone" in html and "Clear zone" in html
     assert "detect_interval_seconds" in html
+
+
+def test_index_has_temp_readout():
+    from fastapi.testclient import TestClient
+    from doggy.web import create_app
+    from doggy.config import Settings
+    from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+    from doggy.alerter import FakeAlerter
+    s = Settings()
+    app = create_app(s, RuntimeSettings(s.tunable()), FrameBuffer(), StatusStore(), FakeAlerter())
+    html = TestClient(app).get("/").text
+    assert 'id="temp"' in html
+    assert "COOLING" in html
