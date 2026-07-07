@@ -1,8 +1,8 @@
 import random
 
-from doggy.config import TunableSettings
+from doggy.core.config import TunableSettings
 from doggy.detection import Detection
-from doggy.state import RuntimeSettings
+from doggy.core.runtime import RuntimeSettings
 from doggy.trigger import TriggerLogic, TriggerState
 
 DOG = [Detection(label="dog", confidence=0.9, box=(0, 0, 10, 10))]

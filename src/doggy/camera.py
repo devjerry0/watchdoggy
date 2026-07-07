@@ -7,7 +7,7 @@ from typing import Iterator, Protocol
 import cv2
 import numpy as np
 
-from doggy.config import Settings
+from doggy.core.config import Settings
 
 # Consecutive failed reads tolerated before OpenCVCamera gives up, and the
 # backoff between reconnect attempts.

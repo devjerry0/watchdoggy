@@ -5,7 +5,7 @@ from collections import deque
 from enum import Enum
 
 from doggy.detection import Detection, TARGET_LABEL
-from doggy.state import RuntimeSettings
+from doggy.core.runtime import RuntimeSettings
 
 
 class TriggerState(str, Enum):

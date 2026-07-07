@@ -4,13 +4,14 @@ import numpy as np
 
 from doggy.alerter import FakeAlerter
 from doggy.camera import FakeCamera
-from doggy.config import Settings
+from doggy.core.config import Settings
 from doggy.detection import Detection
 from doggy.detector import StubDetector
 from doggy.events import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
-from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import FrameBuffer, StatusStore
 
 
 def test_pipeline_fires_after_confirmation(tmp_path):

@@ -1,4 +1,4 @@
-from doggy.pacer import Pacer
+from doggy.core.pacer import Pacer
 
 def make(clock_values):
     it = iter(clock_values)

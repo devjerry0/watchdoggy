@@ -13,10 +13,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
 
 from doggy.alerter import Alerter
-from doggy.config import Settings, TunableSettings
+from doggy.core.config import Settings, TunableSettings
 from doggy.events import EventRecord, EventStore
 from doggy.safety import SafetyGovernor
-from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import FrameBuffer, StatusStore
 
 _STATIC = Path(__file__).parent / "static"
 # Min interval between streamed JPEG frames (~10 FPS) so the MJPEG encode loop

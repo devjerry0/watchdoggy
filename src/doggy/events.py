@@ -13,7 +13,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from doggy.state import CONFIDENCE_DECIMALS
+from doggy.core.status import CONFIDENCE_DECIMALS
 
 log = logging.getLogger("doggy")
 

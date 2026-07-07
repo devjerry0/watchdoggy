@@ -3,9 +3,10 @@ import dataclasses
 import numpy as np
 import pytest
 
-from doggy.config import TunableSettings
+from doggy.core.config import TunableSettings
 from doggy.detection import Detection
-from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import FrameBuffer, StatusStore
 
 
 def test_detection_is_frozen():
@@ -39,7 +40,7 @@ def test_status_store_update_and_snapshot():
 
 
 def test_status_has_thermal_fields():
-    from doggy.state import Status, StatusStore
+    from doggy.core.status import Status, StatusStore
     assert Status().temp_c is None
     assert Status().detect_interval_effective == 0.0
     s = StatusStore()

@@ -1,7 +1,7 @@
 import numpy as np
 
 from doggy.camera import FakeCamera, build_camera
-from doggy.config import Settings
+from doggy.core.config import Settings
 
 
 def test_fake_camera_yields_given_frames():

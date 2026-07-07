@@ -6,12 +6,13 @@ import threading
 
 from doggy.alerter import build_alerter
 from doggy.camera import build_camera
-from doggy.config import load_settings
+from doggy.core.config import load_settings
 from doggy.detector import build_detector
 from doggy.events import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
-from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import FrameBuffer, StatusStore
 
 
 def main() -> None:

@@ -8,8 +8,8 @@ import threading
 from pathlib import Path
 from typing import Protocol
 
-from doggy.config import Settings, TunableSettings
-from doggy.state import RuntimeSettings
+from doggy.core.config import Settings, TunableSettings
+from doggy.core.runtime import RuntimeSettings
 
 _CLIP_EXTS = {".wav", ".flac", ".ogg", ".mp3"}
 

@@ -2,10 +2,11 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from doggy.alerter import FakeAlerter
-from doggy.config import Settings
+from doggy.core.config import Settings
 from doggy.events import EventStore
 from doggy.safety import SafetyGovernor
-from doggy.state import FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import FrameBuffer, StatusStore
 from doggy.web import create_app
 
 
@@ -59,7 +60,7 @@ def test_save_persists(tmp_path):
 
 def test_write_env_preserves_structural_keys(tmp_path):
     from doggy.web import _write_env
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
     env = tmp_path / ".env"
     env.write_text("DOGGY_CAMERA_INDEX=1\nDOGGY_CONFIDENCE=0.55\n# comment\n")
     _write_env(TunableSettings(confidence=0.7), path=env)
@@ -93,7 +94,7 @@ def test_events_route_404_for_missing(tmp_path):
 
 def test_write_env_roundtrips_zone_points(tmp_path, monkeypatch):
     from doggy.web import _write_env
-    from doggy.config import Settings, TunableSettings
+    from doggy.core.config import Settings, TunableSettings
     env = tmp_path / ".env"
     env.write_text("DOGGY_CAMERA_INDEX=0\n")
     _write_env(TunableSettings(zone_enabled=True,

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from doggy.config import Settings, TunableSettings, load_settings
+from doggy.core.config import Settings, TunableSettings, load_settings
 
 
 def test_defaults(monkeypatch, tmp_path):
@@ -47,7 +47,7 @@ def test_tunable_subset_extracted():
 
 
 def test_zone_defaults_disabled():
-    from doggy.config import Settings
+    from doggy.core.config import Settings
     s = Settings()
     assert s.zone_enabled is False
     assert s.zone_points == []
@@ -55,7 +55,7 @@ def test_zone_defaults_disabled():
 
 
 def test_zone_points_parsed_from_env(monkeypatch):
-    from doggy.config import Settings
+    from doggy.core.config import Settings
     monkeypatch.setenv("DOGGY_ZONE_ENABLED", "true")
     monkeypatch.setenv("DOGGY_ZONE_POINTS", "[[0.1,0.2],[0.3,0.4],[0.5,0.1]]")
     s = Settings()
@@ -64,7 +64,7 @@ def test_zone_points_parsed_from_env(monkeypatch):
 
 
 def test_thermal_defaults():
-    from doggy.config import Settings
+    from doggy.core.config import Settings
     s = Settings()
     assert s.thermal_enabled is True
     assert s.thermal_target_c == 74.0
@@ -74,6 +74,6 @@ def test_thermal_defaults():
 def test_thermal_target_must_be_le_max():
     import pytest
     from pydantic import ValidationError
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
     with pytest.raises(ValidationError):
         TunableSettings(thermal_target_c=90.0, thermal_max_c=80.0)

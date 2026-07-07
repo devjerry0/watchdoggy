@@ -24,8 +24,8 @@ def test_pick_clip_is_deterministic_with_seed(tmp_path):
 
 def test_build_alerter_passes_audio_device():
     from doggy.alerter import SoundDeviceAlerter, build_alerter
-    from doggy.config import Settings
-    from doggy.state import RuntimeSettings
+    from doggy.core.config import Settings
+    from doggy.core.runtime import RuntimeSettings
 
     s = Settings(alerter_backend="sounddevice", audio_device="USB Speaker")
     a = build_alerter(s, RuntimeSettings(s.tunable()))
@@ -40,8 +40,8 @@ def test_sounddevice_play_passes_configured_device(monkeypatch, tmp_path):
     import numpy as np
 
     from doggy.alerter import SoundDeviceAlerter
-    from doggy.config import TunableSettings
-    from doggy.state import RuntimeSettings
+    from doggy.core.config import TunableSettings
+    from doggy.core.runtime import RuntimeSettings
 
     calls = {}
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
@@ -63,8 +63,8 @@ def test_sounddevice_play_scales_samples_by_volume(monkeypatch, tmp_path):
     import numpy as np
 
     from doggy.alerter import SoundDeviceAlerter
-    from doggy.config import TunableSettings
-    from doggy.state import RuntimeSettings
+    from doggy.core.config import TunableSettings
+    from doggy.core.runtime import RuntimeSettings
 
     captured = {}
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
@@ -83,7 +83,7 @@ def _command_alerter(monkeypatch, tmp_path, tunable):
     """Build a CommandAlerter with a stubbed pw-play + Popen, returning captured cmd."""
     import doggy.alerter as alerter_mod
     from doggy.alerter import CommandAlerter
-    from doggy.state import RuntimeSettings
+    from doggy.core.runtime import RuntimeSettings
 
     calls = {}
     monkeypatch.setattr(alerter_mod.sys, "platform", "linux")
@@ -95,7 +95,7 @@ def _command_alerter(monkeypatch, tmp_path, tunable):
 
 
 def test_command_alerter_plays_selected_clip(monkeypatch, tmp_path):
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
 
     for name in ["bark.wav", "growl.wav", "whistle.wav"]:
         (tmp_path / name).write_bytes(b"RIFF")
@@ -106,7 +106,7 @@ def test_command_alerter_plays_selected_clip(monkeypatch, tmp_path):
 
 
 def test_command_alerter_applies_volume_flag(monkeypatch, tmp_path):
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
 
     (tmp_path / "bark.wav").write_bytes(b"RIFF")
     tun = TunableSettings(clips_dir=tmp_path, selected_sound="bark.wav", max_volume=0.3)
@@ -118,7 +118,7 @@ def test_command_alerter_applies_volume_flag(monkeypatch, tmp_path):
 
 
 def test_command_alerter_falls_back_to_random(monkeypatch, tmp_path):
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
 
     for name in ["bark.wav", "growl.wav"]:
         (tmp_path / name).write_bytes(b"RIFF")
@@ -129,7 +129,7 @@ def test_command_alerter_falls_back_to_random(monkeypatch, tmp_path):
 
 
 def test_command_alerter_missing_selected_falls_back_to_random(monkeypatch, tmp_path):
-    from doggy.config import TunableSettings
+    from doggy.core.config import TunableSettings
 
     (tmp_path / "bark.wav").write_bytes(b"RIFF")
     tun = TunableSettings(clips_dir=tmp_path, selected_sound="does-not-exist.wav")

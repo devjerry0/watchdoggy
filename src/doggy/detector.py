@@ -6,9 +6,9 @@ from typing import Protocol
 
 import numpy as np
 
-from doggy.config import Settings
+from doggy.core.config import Settings
 from doggy.detection import Detection, PERSON_LABEL, TARGET_LABEL
-from doggy.state import RuntimeSettings
+from doggy.core.runtime import RuntimeSettings
 
 # Classes the detector surfaces: the target (dog) plus people, which the pipeline
 # uses to suppress people misclassified as dogs. Both come free from one inference.

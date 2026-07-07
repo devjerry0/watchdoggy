@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from doggy.config import TunableSettings
+from doggy.core.config import TunableSettings
 
 _SYSFS_TEMP = "/sys/class/thermal/thermal_zone0/temp"
 

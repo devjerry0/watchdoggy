@@ -12,15 +12,16 @@ import numpy as np
 from doggy.alerter import Alerter
 from doggy.camera import Camera
 from doggy.clips import ClipBuffer, encode_clip
-from doggy.config import Settings
+from doggy.core.config import Settings
 from doggy.detection import PERSON_LABEL, TARGET_LABEL
 from doggy.detector import Detector
 from doggy.events import EventStore
-from doggy.pacer import Pacer
+from doggy.core.pacer import Pacer
 from doggy.people import suppress_dogs_overlapping_people
 from doggy.power import PowerMonitor
 from doggy.safety import SafetyGovernor
-from doggy.state import CONFIDENCE_DECIMALS, FrameBuffer, RuntimeSettings, StatusStore
+from doggy.core.runtime import RuntimeSettings
+from doggy.core.status import CONFIDENCE_DECIMALS, FrameBuffer, StatusStore
 from doggy.thermal import ThermalGovernor
 from doggy.trigger import TriggerLogic
 from doggy.zone import ZoneFilter

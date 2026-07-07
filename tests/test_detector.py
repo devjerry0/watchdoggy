@@ -20,8 +20,8 @@ def test_select_device_returns_known_value():
 def test_yolo_detects_dog_and_ignores_empty_room():
     from pathlib import Path
     from doggy.detector import YoloDetector
-    from doggy.config import Settings, TunableSettings
-    from doggy.state import RuntimeSettings
+    from doggy.core.config import Settings, TunableSettings
+    from doggy.core.runtime import RuntimeSettings
     import cv2
 
     det = YoloDetector(Path("models/yolo26n.pt"), RuntimeSettings(TunableSettings(confidence=0.4)))

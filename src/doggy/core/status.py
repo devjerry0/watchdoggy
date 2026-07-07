@@ -5,26 +5,8 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from doggy.config import TunableSettings
-
 # Decimal places for the confidence value shown in the dashboard and event log.
 CONFIDENCE_DECIMALS = 3
-
-
-class RuntimeSettings:
-    """Thread-safe holder for the live-tunable settings, swapped atomically."""
-
-    def __init__(self, tunable: TunableSettings) -> None:
-        self._lock = threading.Lock()
-        self._tunable = tunable
-
-    def get(self) -> TunableSettings:
-        with self._lock:
-            return self._tunable
-
-    def update(self, tunable: TunableSettings) -> None:
-        with self._lock:
-            self._tunable = tunable
 
 
 class FrameBuffer:
