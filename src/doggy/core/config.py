@@ -67,6 +67,10 @@ class TunableSettings(BaseModel):
     log_level: str = "INFO"
     zone_enabled: bool = False
     zone_points: list[tuple[float, float]] = Field(default_factory=list)
+    # Least fraction of an animal's box that must lie inside the watch area
+    # before it can trigger; stops a box that only scrapes the edge. Inventory
+    # ignores this (see ZoneInclusionFilter.apply).
+    zone_overlap: float = Field(0.4, ge=0.0, le=1.0)
     detect_interval_seconds: float = Field(0.7, ge=0.0)
     thermal_enabled: bool = True
     thermal_target_c: float = Field(74.0, ge=0.0)

@@ -361,6 +361,11 @@
           <input id="confidence" type="range" min="0" max="1" step="0.01" />
         </div>
         <div class="field">
+          <div class="row"><label>How much of the animal must be inside the area</label><span class="val" id="zone_overlap_v"></span></div>
+          <div class="desc">Stops a box that only scrapes the edge from setting it off.</div>
+          <input id="zone_overlap" type="range" min="0" max="1" step="0.05" />
+        </div>
+        <div class="field">
           <div class="row"><label>How long the dog must stay before reacting</label><span class="val" id="confirm_seconds_v"></span></div>
           <input id="confirm_seconds" type="range" min="0" max="5" step="0.1" />
         </div>
@@ -482,7 +487,7 @@
 </div>
 
 <script>
-const KNOBS = ["confidence","confirm_seconds","window_m","window_n","cooldown_min_seconds",
+const KNOBS = ["confidence","zone_overlap","confirm_seconds","window_m","window_n","cooldown_min_seconds",
                "cooldown_max_seconds","max_fires_per_hour","detect_interval_seconds",
                "person_iou_threshold","max_volume"];
 const pct = v => Math.round(v * 100) + "%";
@@ -491,7 +496,7 @@ const secs = v => (Math.round(v * 10) / 10) + "s";
 const PLURALS = {"sandwich":"sandwiches", "wine glass":"wine glasses",
                  "knife":"knives", "broccoli":"broccoli"};
 const plural = label => PLURALS[label] || label + "s";
-const FMT = {confidence:pct, person_iou_threshold:pct, max_volume:pct, confirm_seconds:secs,
+const FMT = {confidence:pct, zone_overlap:pct, person_iou_threshold:pct, max_volume:pct, confirm_seconds:secs,
              cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs};
 const fmt = (k, v) => (FMT[k] || String)(v);
 const STATE = {IDLE:["Watching","state-watching"], CONFIRMING:["Dog spotted","state-spotted"],

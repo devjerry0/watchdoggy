@@ -101,3 +101,13 @@ def test_weekend_gap_is_off_duty():
     armed, _ = armed_state(_cfg(armed_windows=[WINDOW_NIGHT]),
                            datetime(2026, 7, 11, 12, 0).timestamp())   # Saturday
     assert not armed
+
+
+def test_sunday_night_wraps_into_monday_morning():
+    # Sunday=6; a 21:00-07:00 window belongs to its start day, so Monday
+    # 2026-07-06 03:00 is covered by Sunday 2026-07-05's night. This pins the
+    # week-wrap: Monday's weekday 0 must map back to day 6, not day -1.
+    sunday_night = {"days": [6], "start": "21:00", "end": "07:00"}
+    armed, _ = armed_state(_cfg(armed_windows=[sunday_night]),
+                           datetime(2026, 7, 6, 3, 0).timestamp())
+    assert armed
