@@ -288,6 +288,42 @@ def armed_state(cfg, wall_now):
 
 ---
 
+### Task 2b: Zone overlap threshold (stop edge-scrape alarms)
+
+User-reported failure: an animal in an allowed spot whose box merely
+scrapes the watch-area boundary fires the alarm, because
+`ZoneInclusionFilter.in_zone` passes on ANY mask pixel under the box
+(`mask[y1:y2, x1:x2].any()`). Fix: require a minimum FRACTION of the
+box's area inside the zone.
+
+**Files:**
+- Modify: `src/doggy/vision/filters/zone.py`, `src/doggy/core/config.py`, `src/doggy/web/static/index.html`
+- Test: `tests/vision/filters/test_zone.py`
+
+**Interfaces:**
+- Produces: `TunableSettings.zone_overlap: float = Field(0.4, ge=0.0, le=1.0)`; `ZoneInclusionFilter.overlap_fraction(box, points, shape) -> float` (mask pixels under the clipped box / clipped-box area; 0.0 for degenerate boxes); `in_zone(box, points, shape, min_overlap)` passes iff `overlap_fraction >= min_overlap` (with `min_overlap == 0.0` preserving today's any-pixel behavior via `> 0` semantics: use `fraction > 0 if min_overlap == 0 else fraction >= min_overlap`); `filter(...)` and `apply(...)` take/read the threshold from cfg.
+- Inventory zone-scoping deliberately KEEPS any-overlap (items half-off
+  the counter should still count; inventory never alerts) — `apply`
+  narrows candidates with the threshold and inventory without it. Comment
+  this in the code.
+
+- [ ] **Step 1: Failing tests** (`tests/vision/filters/test_zone.py`): a
+  box 30% inside the zone with `zone_overlap=0.4` is excluded from
+  candidates; the same box with `zone_overlap=0.2` passes; fraction math
+  pinned with a half-in box (`overlap_fraction == pytest.approx(0.5,
+  abs=0.02)` on a rectangle straddling a rectangular zone); inventory
+  list still uses any-overlap under a high threshold; degenerate box ->
+  0.0; `zone_overlap=0` preserves any-pixel semantics.
+- [ ] **Step 2: Implement** — `overlap_fraction` uses the existing cached
+  mask: `self._mask[y1:y2, x1:x2].sum() / ((x2-x1)*(y2-y1))` after the
+  existing clipping; guard zero-area. `apply` reads `cfg.zone_overlap`.
+- [ ] **Step 3: Dashboard** — slider in Settings under the watch-area
+  hint: label "How much of the animal must be inside the area", desc
+  "Stops a box that only scrapes the edge from setting it off.", range
+  0-1 step 0.05, percent formatting (add `zone_overlap` to KNOBS and
+  FMT: pct).
+- [ ] **Step 4: Gates, commit** — `feat: zone overlap threshold (no more edge-scrape alarms)`.
+
 ### Task 3: Push-to-talk
 
 **Files:**
