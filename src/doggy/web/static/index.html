@@ -706,16 +706,20 @@ function notifyCatch(e){
 
 // ---- Catch log ----
 let _evKey = "";
-let _newestId;   // newest event id seen; undefined = not loaded, null = loaded-but-empty
+let _seenIds = null;   // ids seen on a prior poll; null = not loaded yet (skip the backlog)
 async function loadEvents(){
   let data;
   try { data = await (await fetch("/api/events")).json(); } catch(e){ return; }
-  const evs = data.events || [];
-  const newest = evs.length ? evs[0].id : null;   // event_store.list() is recent-first
-  if (newest !== _newestId){
-    // Skip the backlog on the first load; nudge only for genuinely new catches.
-    if (_newestId !== undefined && newest && notifyArmed()){ notifyCatch(evs[0]); }
-    _newestId = newest;
+  const evs = data.events || [];   // event_store.list() is recent-first
+  const ids = new Set(evs.map(e => e.id));
+  if (_seenIds === null){
+    _seenIds = ids;   // first load: record the backlog, never nudge for it
+  } else {
+    // Nudge only for ids never seen before, so deleting the newest can't re-fire
+    // for an event already shown. evs is recent-first, so the first unseen is newest.
+    const fresh = evs.filter(e => !_seenIds.has(e.id));
+    if (fresh.length && notifyArmed()){ notifyCatch(fresh[0]); }
+    _seenIds = ids;
   }
   const key = evs.map(e => e.id).join(",");   // skip re-render (and scroll reset) when unchanged
   if (key === _evKey) return;
