@@ -2,7 +2,7 @@ import random
 
 import numpy as np
 
-from doggy.alerter import FakeAlerter
+from doggy.reaction.sound import FakeAlerter
 from doggy.vision.camera import FakeCamera
 from doggy.core.config import Settings
 from doggy.vision.analysis import DetectionAnalyzer

@@ -1,6 +1,18 @@
 import random
 
-from doggy.alerter import FakeAlerter, pick_clip
+from doggy.reaction.sound import FakeAlerter, pick_clip
+
+
+class _SyncThread:
+    """Runs the target inline on start() so alert()'s daemon thread is deterministic."""
+
+    def __init__(self, target=None, args=(), daemon=None, **kwargs):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        if self._target is not None:
+            self._target(*self._args)
 
 
 def test_fake_alerter_counts_calls():
@@ -23,9 +35,9 @@ def test_pick_clip_is_deterministic_with_seed(tmp_path):
 
 
 def test_build_alerter_passes_audio_device():
-    from doggy.alerter import SoundDeviceAlerter, build_alerter
     from doggy.core.config import Settings
     from doggy.core.runtime import RuntimeSettings
+    from doggy.reaction.sound import SoundDeviceAlerter, build_alerter
 
     s = Settings(alerter_backend="sounddevice", audio_device="USB Speaker")
     a = build_alerter(s, RuntimeSettings(s.tunable()))
@@ -39,9 +51,9 @@ def test_sounddevice_play_passes_configured_device(monkeypatch, tmp_path):
 
     import numpy as np
 
-    from doggy.alerter import SoundDeviceAlerter
     from doggy.core.config import TunableSettings
     from doggy.core.runtime import RuntimeSettings
+    from doggy.reaction.sound import SoundDeviceAlerter
 
     calls = {}
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
@@ -62,9 +74,9 @@ def test_sounddevice_play_scales_samples_by_volume(monkeypatch, tmp_path):
 
     import numpy as np
 
-    from doggy.alerter import SoundDeviceAlerter
     from doggy.core.config import TunableSettings
     from doggy.core.runtime import RuntimeSettings
+    from doggy.reaction.sound import SoundDeviceAlerter
 
     captured = {}
     monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(
@@ -81,15 +93,16 @@ def test_sounddevice_play_scales_samples_by_volume(monkeypatch, tmp_path):
 
 def _command_alerter(monkeypatch, tmp_path, tunable):
     """Build a CommandAlerter with a stubbed pw-play + Popen, returning captured cmd."""
-    import doggy.alerter as alerter_mod
-    from doggy.alerter import CommandAlerter
+    import doggy.reaction.sound as sound_mod
     from doggy.core.runtime import RuntimeSettings
+    from doggy.reaction.sound import CommandAlerter
 
     calls = {}
-    monkeypatch.setattr(alerter_mod.sys, "platform", "linux")
-    monkeypatch.setattr(alerter_mod.shutil, "which",
+    monkeypatch.setattr(sound_mod.threading, "Thread", _SyncThread)
+    monkeypatch.setattr(sound_mod.sys, "platform", "linux")
+    monkeypatch.setattr(sound_mod.shutil, "which",
                         lambda name: "/usr/bin/pw-play" if name == "pw-play" else None)
-    monkeypatch.setattr(alerter_mod.subprocess, "Popen",
+    monkeypatch.setattr(sound_mod.subprocess, "Popen",
                         lambda cmd, *a, **k: calls.__setitem__("cmd", cmd))
     return CommandAlerter(RuntimeSettings(tunable), rng=random.Random(0)), calls
 

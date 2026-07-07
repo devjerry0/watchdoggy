@@ -4,7 +4,7 @@ import logging
 import signal
 import threading
 
-from doggy.alerter import build_alerter
+from doggy.reaction.sound import build_alerter
 from doggy.vision.camera import build_camera
 from doggy.core.config import load_settings
 from doggy.vision.analysis import DetectionAnalyzer

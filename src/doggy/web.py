@@ -12,7 +12,7 @@ from fastapi import status as http_status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
 
-from doggy.alerter import Alerter
+from doggy.reaction.sound import Alerter
 from doggy.core.config import Settings, TunableSettings
 from doggy.events.store import EventRecord, EventStore
 from doggy.safety import SafetyGovernor

@@ -1,7 +1,7 @@
 import numpy as np
 from fastapi.testclient import TestClient
 
-from doggy.alerter import FakeAlerter
+from doggy.reaction.sound import FakeAlerter
 from doggy.core.config import Settings
 from doggy.events.store import EventStore
 from doggy.safety import SafetyGovernor

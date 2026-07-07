@@ -9,7 +9,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from doggy.alerter import Alerter
+from doggy.reaction.sound import Alerter
 from doggy.vision.camera import Camera
 from doggy.clips import ClipBuffer, encode_clip
 from doggy.core.config import Settings

@@ -33,10 +33,12 @@ class FakeAlerter:
         self.calls += 1
 
 
-class _ClipAlerter:
-    """Shared plumbing for clip-playing alerters: pick a random clip, then emit it.
+class BaseAlerter:
+    """Template Method base for clip-playing alerters.
 
-    Subclasses implement _emit() with their playback mechanism.
+    ``alert()`` owns the shared skeleton: read the current config, resolve the
+    clip to play, clamp the volume once, then hand a background daemon thread to
+    the subclass's ``_play`` hook. Subclasses implement only ``_play``.
     """
 
     def __init__(self, runtime: RuntimeSettings, rng: random.Random | None = None) -> None:
@@ -45,12 +47,13 @@ class _ClipAlerter:
 
     def alert(self) -> None:
         cfg = self._runtime.get()
-        clip = self._choose_clip(cfg)
+        clip = self._resolve_clip(cfg)
         if clip is None:
             return
-        self._emit(clip, cfg)
+        volume = max(0.0, min(1.0, cfg.max_volume))
+        threading.Thread(target=self._play, args=(clip, volume), daemon=True).start()
 
-    def _choose_clip(self, cfg: TunableSettings) -> Path | None:
+    def _resolve_clip(self, cfg: TunableSettings) -> Path | None:
         """Play the user-selected clip when set (and present), else a random one."""
         if cfg.selected_sound and cfg.selected_sound != "random":
             # Path(...).name strips any directory components → no path traversal.
@@ -59,12 +62,12 @@ class _ClipAlerter:
                 return chosen
         return pick_clip(cfg.clips_dir, self._rng)
 
-    def _emit(self, clip: Path, cfg: TunableSettings) -> None:
+    def _play(self, clip: Path, volume: float) -> None:
         raise NotImplementedError
 
 
-class SoundDeviceAlerter(_ClipAlerter):
-    """Plays a random clip on a background thread (fire-and-forget).
+class SoundDeviceAlerter(BaseAlerter):
+    """Plays a clip through PortAudio on a background thread (fire-and-forget).
 
     `device` selects the output (e.g. a USB speaker on the Pi); None = default.
     """
@@ -74,20 +77,17 @@ class SoundDeviceAlerter(_ClipAlerter):
         super().__init__(runtime, rng)
         self._device = device
 
-    def _emit(self, clip: Path, cfg: TunableSettings) -> None:
-        threading.Thread(target=self._play, args=(clip, cfg.max_volume), daemon=True).start()
-
     def _play(self, clip: Path, volume: float) -> None:
         import soundfile as sf
         import sounddevice as sd
 
         data, samplerate = sf.read(str(clip), dtype="float32")
-        sd.play(data * max(0.0, min(1.0, volume)), samplerate, device=self._device)
+        sd.play(data * volume, samplerate, device=self._device)
         sd.wait()
 
 
-class CommandAlerter(_ClipAlerter):
-    """Plays a random clip by shelling out to a system player (non-blocking).
+class CommandAlerter(BaseAlerter):
+    """Plays a clip by shelling out to a system player (non-blocking).
 
     macOS -> afplay. Linux -> pw-play/paplay (route through PipeWire, so a
     Bluetooth sink works) falling back to aplay (raw ALSA). Player-based
@@ -95,30 +95,45 @@ class CommandAlerter(_ClipAlerter):
     Note: pw-play/paplay need WAV/FLAC clips, not mp3.
     """
 
-    def _emit(self, clip: Path, cfg: TunableSettings) -> None:
+    def _play(self, clip: Path, volume: float) -> None:
         if sys.platform == "darwin":
             player: str | None = "afplay"
         else:
             player = shutil.which("pw-play") or shutil.which("paplay") or shutil.which("aplay")
         if player:
-            subprocess.Popen([player, *_volume_args(player, cfg.max_volume), str(clip)])
+            subprocess.Popen([player, *self._volume_args(player, volume), str(clip)])
+
+    @staticmethod
+    def _volume_args(player: str, volume: float) -> list[str]:
+        """Volume flag for the chosen player. pw-play/afplay take a 0.0-1.0 gain;
+        aplay has no volume control, so it is left at the sink's level."""
+        name = Path(player).name
+        vol = str(volume)
+        if name in ("pw-play", "paplay"):
+            return ["--volume", vol]
+        if name == "afplay":
+            return ["-v", vol]
+        return []
 
 
-def _volume_args(player: str, volume: float) -> list[str]:
-    """Volume flag for the chosen player. pw-play/afplay take a 0.0-1.0 gain;
-    aplay has no volume control, so it is left at the sink's level."""
-    name = Path(player).name
-    vol = str(max(0.0, min(1.0, volume)))
-    if name in ("pw-play", "paplay"):
-        return ["--volume", vol]
-    if name == "afplay":
-        return ["-v", vol]
-    return []
+class LogAlerter(BaseAlerter):
+    """No-op backend: resolves a clip but plays nothing (headless/dev use)."""
+
+    def _play(self, clip: Path, volume: float) -> None:
+        pass
+
+
+_BACKENDS = {
+    "sounddevice": lambda settings, runtime: SoundDeviceAlerter(
+        runtime, device=settings.audio_device
+    ),
+    "command": lambda settings, runtime: CommandAlerter(runtime),
+    "log": lambda settings, runtime: LogAlerter(runtime),
+}
 
 
 def build_alerter(settings: Settings, runtime: RuntimeSettings) -> Alerter:
-    if settings.alerter_backend == "log":
-        return FakeAlerter()
-    if settings.alerter_backend == "command":
-        return CommandAlerter(runtime)
-    return SoundDeviceAlerter(runtime, device=settings.audio_device)
+    # Unknown backends fall back to the sounddevice default, matching the prior
+    # behaviour where anything other than "log"/"command" built a SoundDeviceAlerter.
+    factory = _BACKENDS.get(settings.alerter_backend, _BACKENDS["sounddevice"])
+    return factory(settings, runtime)
