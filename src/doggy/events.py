@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -53,6 +54,11 @@ class EventStore:
         self._max_age_days = max_age_days
         self._clip_retention = clip_retention
         self._clock = clock
+        # The pipeline thread writes (add/prune/attach_clip) while the web thread
+        # reads and mutates (list/delete/clear/stats); every public method that
+        # touches _records or the jsonl takes this lock. RLock so add -> prune
+        # (and any other) nesting is safe.
+        self._lock = threading.RLock()
         # Records kept in memory ordered oldest -> newest.
         self._records: list[EventRecord] = self._load()
 
@@ -113,39 +119,44 @@ class EventStore:
             clip=None,
         )
         cv2.imwrite(str(self._dir / thumb), frame)
-        with self._jsonl.open("a") as fh:
-            fh.write(json.dumps(asdict(record)) + "\n")
-        self._records.append(record)
-        self.prune()
+        with self._lock:
+            with self._jsonl.open("a") as fh:
+                fh.write(json.dumps(asdict(record)) + "\n")
+            self._records.append(record)
+            self.prune()
         return record
 
     def list(self, limit: int | None = None) -> list[EventRecord]:
-        recent_first = list(reversed(self._records))
+        with self._lock:
+            recent_first = list(reversed(self._records))
         if limit is not None:
             return recent_first[:limit]
         return recent_first
 
     def delete(self, id: str) -> bool:
-        for i, record in enumerate(self._records):
-            if record.id == id:
-                self._delete_files(record)
-                del self._records[i]
-                self._rewrite()
-                return True
-        return False
+        with self._lock:
+            for i, record in enumerate(self._records):
+                if record.id == id:
+                    self._delete_files(record)
+                    del self._records[i]
+                    self._rewrite()
+                    return True
+            return False
 
     def clear(self) -> None:
-        for record in self._records:
-            self._delete_files(record)
-        self._records = []
-        self._rewrite()
+        with self._lock:
+            for record in self._records:
+                self._delete_files(record)
+            self._records = []
+            self._rewrite()
 
     def attach_clip(self, id: str, clip_name: str) -> None:
-        for record in self._records:
-            if record.id == id:
-                record.clip = clip_name
-                self._rewrite()
-                return
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.clip = clip_name
+                    self._rewrite()
+                    return
 
     def stats(self) -> dict:
         """Activity summary for the dashboard, bucketed by local wall-clock time."""
@@ -154,7 +165,9 @@ class EventStore:
         days = [today - timedelta(days=n) for n in range(6, -1, -1)]
         counts: dict = {day: 0 for day in days}
         hours: list[int] = []
-        for record in self._records:
+        with self._lock:
+            records = list(self._records)
+        for record in records:
             if record.wall_time is None:
                 continue
             dt = datetime.fromtimestamp(record.wall_time)
@@ -162,7 +175,7 @@ class EventStore:
             if dt.date() in counts:
                 counts[dt.date()] += 1
 
-        latencies = [r.latency_s for r in self._records if r.latency_s is not None]
+        latencies = [r.latency_s for r in records if r.latency_s is not None]
         return {
             "today": counts[today],
             "this_week": sum(counts.values()),
@@ -180,35 +193,36 @@ class EventStore:
                 path.unlink()
 
     def prune(self) -> None:
-        survivors = self._records
-        dropped: list[EventRecord] = []
+        with self._lock:
+            survivors = self._records
+            dropped: list[EventRecord] = []
 
-        if self._max_age_days > 0:
-            now = self._clock()
-            cutoff = self._max_age_days * 86400
-            kept: list[EventRecord] = []
-            for record in survivors:
-                if record.wall_time is not None and now - record.wall_time > cutoff:
-                    dropped.append(record)
-                else:
-                    kept.append(record)
-            survivors = kept
+            if self._max_age_days > 0:
+                now = self._clock()
+                cutoff = self._max_age_days * 86400
+                kept: list[EventRecord] = []
+                for record in survivors:
+                    if record.wall_time is not None and now - record.wall_time > cutoff:
+                        dropped.append(record)
+                    else:
+                        kept.append(record)
+                survivors = kept
 
-        if self._max_events > 0 and len(survivors) > self._max_events:
-            excess = len(survivors) - self._max_events
-            dropped.extend(survivors[:excess])
-            survivors = survivors[excess:]
+            if self._max_events > 0 and len(survivors) > self._max_events:
+                excess = len(survivors) - self._max_events
+                dropped.extend(survivors[:excess])
+                survivors = survivors[excess:]
 
-        for record in dropped:
-            self._delete_files(record)
-        self._records = survivors
+            for record in dropped:
+                self._delete_files(record)
+            self._records = survivors
 
-        # Clips are far heavier than thumbnails: keep only the newest N of them,
-        # deleting older clip files (but keeping the event + its thumbnail).
-        clips_changed = self._enforce_clip_retention()
+            # Clips are far heavier than thumbnails: keep only the newest N of them,
+            # deleting older clip files (but keeping the event + its thumbnail).
+            clips_changed = self._enforce_clip_retention()
 
-        if dropped or clips_changed:
-            self._rewrite()
+            if dropped or clips_changed:
+                self._rewrite()
 
     def _enforce_clip_retention(self) -> bool:
         if self._clip_retention <= 0:  # 0 = unlimited

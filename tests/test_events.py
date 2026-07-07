@@ -1,4 +1,8 @@
+import itertools
 import json
+import random
+import threading
+import time
 
 import numpy as np
 
@@ -121,3 +125,48 @@ def test_stats_busiest_hour_none_without_wall_time(tmp_path):
     s = EventStore(tmp_path, 100, 0)
     s.add(_img(), 0.5, 1.0, None, 1.0)
     assert s.stats()["busiest_hour"] is None
+
+
+def test_concurrent_add_and_delete_is_safe(tmp_path):
+    # The pipeline thread (add/prune) and the web thread (list/delete/stats)
+    # share one EventStore. Without locking, a delete during prune raises
+    # "list changed size during iteration" and the jsonl tears. Hammer it from
+    # several threads and assert nothing blew up and the store stayed consistent.
+    s = EventStore(tmp_path, max_events=50, max_age_days=30)
+    base = time.time()
+    counter = itertools.count()  # next() is atomic in CPython -> unique ids
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            for _ in range(400):
+                roll = random.random()
+                if roll < 0.5:
+                    n = next(counter)
+                    # wall_time near "now" so age-pruning doesn't nuke everything;
+                    # unique n keeps event ids (and thumb files) distinct.
+                    s.add(_img(), 0.5, 1.0, base + n, float(n))
+                elif roll < 0.7:
+                    ids = [e.id for e in s.list()]
+                    if ids:
+                        s.delete(random.choice(ids))
+                elif roll < 0.85:
+                    s.list()
+                else:
+                    s.stats()
+        except BaseException as exc:  # noqa: BLE001 - report, don't crash the thread
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"threads raised: {errors!r}"
+    # Internal consistency: memory, jsonl, and thumbnail files all agree.
+    listed = s.list()
+    lines = [ln for ln in (tmp_path / "events.jsonl").read_text().splitlines() if ln.strip()]
+    assert len(listed) == len(lines)
+    for e in listed:
+        assert (tmp_path / e.thumb).is_file()
