@@ -222,8 +222,25 @@ def test_lab_stats_per_sound_effectiveness(tmp_path):
     assert st["thefts_this_week"] == 0                    # nothing taken
 
 
-def test_lab_stats_counts_thefts_this_week_and_sorts_by_plays(tmp_path):
+def test_lab_stats_wearing_off_scores_missing_clears_as_full_watch(tmp_path):
     now = 1783360800.0
+    s = EventStore(tmp_path, 100, 0, clock=lambda: now)
+    # Early plays clear fast; the last three never clear (clear_seconds=None).
+    # Only because a no-clear outcome scores STAYED_CLEAR_S (60s) does the
+    # newer half (60/60/60) dwarf the older half (10/10/10); dropping the
+    # Nones instead would leave nothing slow to compare and never flag.
+    for i, clear in enumerate([10.0, 10.0, 10.0, None, None, None]):
+        _catch(s, "hawk.wav", now - 3600 + i, float(i), clear=clear)
+    row = s.lab_stats()["sounds"][0]
+    assert row["completed"] == 6
+    assert row["wearing_off"] is True
+
+
+def test_lab_stats_counts_thefts_this_week_and_sorts_by_plays(tmp_path):
+    # Fixture epoch 2030-01-01 UTC, far from the machine's real clock: the
+    # theft-week window only matches these events if lab_stats derives "now"
+    # from the injected clock (per real time they sit years outside it).
+    now = 1893456000.0
     s = EventStore(tmp_path, 100, 0, clock=lambda: now)
     _catch(s, "growl.mp3", now - 600, 1.0, clear=3.0, taken=["sandwich", "knife"])
     _catch(s, "growl.mp3", now - 300, 2.0, clear=2.0)
