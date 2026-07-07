@@ -392,24 +392,43 @@ def build_router() -> APIRouter:
             await ws.accept()
             await ws.close(code=1013)   # try again later: someone is talking
             return
-        proc = _spawn_player()
+        proc = None
         try:
+            proc = _spawn_player()      # inside try: a spawn failure must not leak the lock
             await ws.accept()
             while True:
                 data = await ws.receive_bytes()
                 if proc and proc.stdin:
-                    proc.stdin.write(data)
-                    proc.stdin.flush()
+                    try:
+                        proc.stdin.write(data)
+                        proc.stdin.flush()
+                    except OSError:
+                        # Player died mid-stream (e.g. the Bluetooth speaker
+                        # dropped): end the session gracefully.
+                        break
         except WebSocketDisconnect:
             pass
         finally:
-            if proc:
-                proc.stdin.close()
-                proc.terminate()
+            # Every step guarded: stdin.close() re-flushes and ALSO raises
+            # BrokenPipeError on a dead pipe, and nothing here may prevent
+            # the lock release (a held lock bricks push-to-talk until restart).
+            if proc is not None:
+                try:
+                    proc.stdin.close()
+                except OSError:
+                    pass
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
             _busy.release()
 
     return router
 ```
+
+(Post-review correction: the original snippet here leaked `_busy` when the
+player died mid-stream or spawn failed — found Critical in review; this is
+the fixed shape.)
 
 - [ ] **Step 4: Dashboard.** Monitor card `btnrow` gains a hold-button: `<button id="ptt">Hold to talk</button>`. JS: on pointerdown — `getUserMedia({audio: {channelCount: 1, echoCancellation: true}})`, `new AudioContext()`, a `ScriptProcessorNode(4096, 1, 1)` (deprecated but dependency-free and fine for an appliance) whose `onaudioprocess` downsamples `inputBuffer.getChannelData(0)` from `ctx.sampleRate` to 16000 by index-stepping, converts to Int16Array, and `ws.send(int16.buffer)` over `new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/talk")`. On pointerup/pointercancel/pointerleave: stop tracks, close context and socket. While held: button text "Talking...", lamp-colored border. If `getUserMedia` throws (plain http on the Pi): `alert("The microphone needs the https address. Run scripts/setup-https.sh and use https://... instead.")`. Keep all of it inside one `setupTalk()` function.
 - [ ] **Step 5: Gates, commit** — `feat: push-to-talk from the dashboard to the speaker`.
