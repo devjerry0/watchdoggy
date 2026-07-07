@@ -26,10 +26,9 @@ from doggy.vision.annotate import annotate
 
 log = logging.getLogger("doggy")
 
-# Idle poll interval while the detect loop waits for the capture thread's
-# first frame.
+# Idle poll while the detect loop waits for the capture thread's first frame.
 _IDLE_POLL_SECONDS = 0.01
-# Decimal places for the FPS readout (confidence precision is shared: CONFIDENCE_DECIMALS).
+# Decimal places for the FPS readout (confidence uses CONFIDENCE_DECIMALS).
 _FPS_DECIMALS = 1
 
 
@@ -52,8 +51,7 @@ class Pipeline:
         self.recorder = recorder
         self.hub = hub
         self.event_store = event_store
-        # Owns the rolling in-memory JPEG buffer + deferred clip encoding. It is
-        # a per-frame stage here and a hub Reaction (registers pending on fire).
+        # Per-frame stage here and a hub Reaction (registers its pending clip on fire).
         self.clip_service = clip_service
         self.clock = clock
         self.trigger = TriggerLogic(runtime, rng=rng or random.Random())
@@ -77,11 +75,9 @@ class Pipeline:
         fired = self.trigger.update(analysis.candidates, now)
         muted = not self.gate.allow(now)
         if fired and not muted:
-            # Log the confidence that actually triggered the fire (peak over the
-            # confirm window), not this frame's `top` -- the fire edge can land on
-            # a flicker frame with no current detection, which logged "conf 0".
-            # `now` is the injected monotonic clock (event ts / rate limiting);
-            # time.time() supplies wall-clock time for the persisted record.
+            # Log the peak confidence over the confirm window (fire_confidence), not
+            # this frame's `top`: the fire edge can land on a flicker frame that logs 0.
+            # `now` = injected monotonic clock; time.time() = wall-clock for the record.
             record = self.recorder.record(
                 frame, self.trigger.fire_confidence, self.trigger.fire_latency,
                 time.time(), now,
