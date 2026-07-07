@@ -51,7 +51,8 @@ def main() -> None:
         event_store, event_store.dir, ClipBuffer(settings.clip_window_seconds), runtime)
     # Reactions fan out on a catch; each is wrapped so one failure can't stop the
     # others or kill the detect loop. ClipService registers its pending clip here.
-    hub = ReactionHub([SafeReaction(SoundReaction(alerter)), SafeReaction(clip_service)])
+    hub = ReactionHub(
+        [SafeReaction(SoundReaction(alerter, event_store)), SafeReaction(clip_service)])
 
     pipeline = Pipeline(
         settings=settings, analyzer=analyzer, camera=camera,
