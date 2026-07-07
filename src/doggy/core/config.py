@@ -58,6 +58,11 @@ class TunableSettings(BaseModel):
     clip_postroll_seconds: float = 3
     clip_fps: int = Field(6, ge=1)
     clip_retention: int = Field(10, ge=0)   # 0 = unlimited
+    # Escalation: fire again, louder, while the animal stands its ground.
+    escalation_enabled: bool = False
+    escalation_seconds: float = Field(8.0, ge=1)
+    escalation_max_strikes: int = Field(3, ge=1)
+    escalation_volume_step: float = Field(0.2, ge=0, le=1)
 
     # Mirrors doggy.vision.detection.ANIMAL_TARGETS (importing it would create
     # a core -> vision cycle).

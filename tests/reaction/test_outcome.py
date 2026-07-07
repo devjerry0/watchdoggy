@@ -107,6 +107,27 @@ def test_taken_is_inventory_diff(tmp_path):
     assert rec.outcome_at == 2000.0
 
 
+def test_escalates_while_occupied_then_stops_at_max(tmp_path):
+    store = EventStore(tmp_path, 100, 0)
+    r = store.add(_img(), 0.9, 1.0, 1000.0, 10.0)
+    fake = FakeAlerter()
+    cfg = TunableSettings(escalation_enabled=True, escalation_seconds=8,
+                          escalation_max_strikes=3, escalation_volume_step=0.2,
+                          max_volume=0.5)
+    runtime = RuntimeSettings(cfg)
+    w = OutcomeWatcher(store, FireGate(runtime), fake, runtime)
+    dog = Detection("dog", 0.9, (0, 0, 10, 10))
+    w.on_dog_caught(DogCaught(r, _img(), 10.0))
+    w.on_frame(_analysis([dog]), 17.9, cfg)
+    assert fake.calls == 0                      # not yet 8s since strike 1
+    w.on_frame(_analysis([dog]), 18.1, cfg)     # strike 2
+    w.on_frame(_analysis([dog]), 26.2, cfg)     # strike 3
+    w.on_frame(_analysis([dog]), 40.0, cfg)     # max reached: no strike 4
+    assert fake.calls == 2
+    assert fake.volumes == [pytest.approx(0.7), pytest.approx(0.9)]
+    assert store.list()[0].strikes == 3
+
+
 def test_new_fire_finalizes_previous_incident_as_not_cleared(tmp_path):
     store = EventStore(tmp_path, 100, 0)
     first = store.add(_img(), 0.9, 1.0, 1000.0, 10.0)

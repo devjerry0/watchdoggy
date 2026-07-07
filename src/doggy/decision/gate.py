@@ -11,8 +11,8 @@ class FireGate:
     """Decides whether a fire is allowed: master off switch, snooze, per-hour cap.
 
     Persistence is no longer its concern (that moved to ``Recorder``): the gate
-    only answers ``allow`` and remembers fire timestamps for the rolling rate
-    limit via ``note_fire``.
+    only answers ``allow``/``allow_escalation`` and remembers fire timestamps
+    for the rolling rate limit via ``note_fire``.
     """
 
     def __init__(self, runtime: RuntimeSettings) -> None:
@@ -38,6 +38,11 @@ class FireGate:
         return max(0.0, self._snooze_until - now)
 
     def allow(self, now: float) -> bool:
+        return self.allow_escalation(now)
+
+    def allow_escalation(self, now: float) -> bool:
+        """Follow-up strikes in one incident: no cooldown between them, but the
+        master switch, snooze, and the hourly cap still apply."""
         cfg = self._runtime.get()
         if not cfg.safety_enabled:
             return False

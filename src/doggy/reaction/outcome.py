@@ -63,6 +63,17 @@ class OutcomeWatcher:
         inc = self._incident
         if analysis.candidates:
             inc["clear_since"] = None
+            if (cfg.escalation_enabled
+                    and inc["strikes"] < cfg.escalation_max_strikes
+                    and now - inc["last_strike_ts"] >= cfg.escalation_seconds
+                    and self._gate.allow_escalation(now)):
+                level = min(1.0, cfg.max_volume
+                            + inc["strikes"] * cfg.escalation_volume_step)
+                if self._alerter.alert(volume=level):
+                    self._gate.note_fire(now)
+                    self._store.bump_strikes(inc["id"])
+                    inc["strikes"] += 1
+                    inc["last_strike_ts"] = now
             if now - inc["fire_ts"] >= MAX_WATCH_SECONDS:
                 self._finalize(clear_seconds=None)
             return

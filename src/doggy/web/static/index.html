@@ -388,6 +388,10 @@
             <div class="row"><label>How closely a dog must match a person to be ignored</label><span class="val" id="person_iou_threshold_v"></span></div>
             <input id="person_iou_threshold" type="range" min="0" max="1" step="0.01" />
           </div>
+          <div class="toggle">
+            <div><div class="t-label">Escalate while it stays</div><div class="t-desc">Play again, louder, if the animal doesn't leave after the first sound.</div></div>
+            <label class="switch"><input id="escalation_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
         </details>
       </div>
     </div>
@@ -459,6 +463,8 @@ KNOBS.forEach(k => {
 document.getElementById("safety_enabled").addEventListener("change", e => patch({safety_enabled:e.target.checked}));
 document.getElementById("person_suppression_enabled").addEventListener("change", e =>
   patch({person_suppression_enabled:e.target.checked}));
+document.getElementById("escalation_enabled").addEventListener("change", e =>
+  patch({escalation_enabled:e.target.checked}));
 document.getElementById("clips_enabled").addEventListener("change", e => patch({clips_enabled:e.target.checked}));
 document.getElementById("show_inventory_boxes").addEventListener("change", e =>
   patch({show_inventory_boxes:e.target.checked}));
@@ -707,6 +713,7 @@ async function poll(){
   }
   document.getElementById("safety_enabled").checked = s.settings.safety_enabled;
   document.getElementById("person_suppression_enabled").checked = s.settings.person_suppression_enabled;
+  document.getElementById("escalation_enabled").checked = s.settings.escalation_enabled;
   if (!watchGrid.contains(document.activeElement)){
     for (const box of watchGrid.querySelectorAll("input")){
       const list = box.dataset.kind === "detect" ? detected : s.settings.alert_labels;
