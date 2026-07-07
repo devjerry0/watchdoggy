@@ -76,6 +76,13 @@ def test_index_has_schedule_controls(tmp_path):
     assert 'id="schedule_enabled"' in html
 
 
+def test_index_has_notify_toggle(tmp_path):
+    c, _, _ = client(tmp_path)
+    html = c.get("/").text
+    assert "Notify this device" in html
+    assert 'id="notify_enabled"' in html
+
+
 def test_test_sound_triggers_alerter(tmp_path):
     c, _, alerter = client(tmp_path)
     assert c.post("/api/test-sound").status_code == 200

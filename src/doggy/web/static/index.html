@@ -399,6 +399,10 @@
           <label class="switch"><input id="clips_enabled" type="checkbox" /><span class="track"></span></label>
         </div>
         <div class="toggle">
+          <div><div class="t-label">Notify this device</div><div class="t-desc" id="notify_desc">Pops a notification on this device when something is caught. Works while the dashboard is open.</div></div>
+          <label class="switch"><input id="notify_enabled" type="checkbox" /><span class="track"></span></label>
+        </div>
+        <div class="toggle">
           <div><div class="t-label">Show counter items</div><div class="t-desc">Outline food and dishes it sees on the live view</div></div>
           <label class="switch"><input id="show_inventory_boxes" type="checkbox" /><span class="track"></span></label>
         </div>
@@ -651,12 +655,68 @@ function tickClock(){
     new Date().toLocaleTimeString([], {hour12:false});
 }
 tickClock(); setInterval(tickClock, 1000);
+
+// ---- Browser notifications ----
+// Per-device consent, so it lives in localStorage (not a server setting): each
+// phone/laptop opts itself in. Only fires while the dashboard tab is open.
+const notifyToggle = document.getElementById("notify_enabled");
+const notifyDesc = document.getElementById("notify_desc");
+const NOTIFY_DESC = notifyDesc.textContent;   // original copy, restored after an error/grant
+let _lastSettings = null;                     // last /api/status settings, for the catch noun
+const notifySupported = () => "Notification" in window;
+const notifyArmed = () => localStorage.doggy_notify === "1"
+  && notifySupported() && Notification.permission === "granted";
+notifyToggle.checked = notifyArmed();
+notifyToggle.addEventListener("change", async () => {
+  if (!notifyToggle.checked){
+    localStorage.removeItem("doggy_notify");
+    notifyDesc.textContent = NOTIFY_DESC;
+    return;
+  }
+  // Notification needs a secure context (the Pi's https address); http can't ask.
+  if (!window.isSecureContext){
+    notifyToggle.checked = false;
+    notifyDesc.textContent = "Needs the https address. Open the secure dashboard for this device first.";
+    return;
+  }
+  let perm = "denied";
+  try { perm = await Notification.requestPermission(); } catch(e){}
+  if (perm === "granted"){
+    localStorage.doggy_notify = "1";
+    notifyDesc.textContent = NOTIFY_DESC;
+  } else {
+    notifyToggle.checked = false;
+    localStorage.removeItem("doggy_notify");
+  }
+});
+function notifyCatch(e){
+  let title = "Something on the counter";
+  if (_lastSettings){
+    const noun = targetNoun(_lastSettings.alert_labels || [], false);
+    title = noun.charAt(0).toUpperCase() + noun.slice(1) + " on the counter";
+  }
+  const body = pct(e.confidence) + " sure"
+    + (e.taken && e.taken.length ? " · took the " + e.taken.join(", ") : "");
+  // Some browsers throw from the constructor in odd states; a failed nudge
+  // must never break the poll loop.
+  try {
+    new Notification(title, {body, icon: "/events/" + e.thumb, tag: "watchdoggy-catch"});
+  } catch(err){}
+}
+
 // ---- Catch log ----
 let _evKey = "";
+let _newestId;   // newest event id seen; undefined = not loaded, null = loaded-but-empty
 async function loadEvents(){
   let data;
   try { data = await (await fetch("/api/events")).json(); } catch(e){ return; }
   const evs = data.events || [];
+  const newest = evs.length ? evs[0].id : null;   // event_store.list() is recent-first
+  if (newest !== _newestId){
+    // Skip the backlog on the first load; nudge only for genuinely new catches.
+    if (_newestId !== undefined && newest && notifyArmed()){ notifyCatch(evs[0]); }
+    _newestId = newest;
+  }
   const key = evs.map(e => e.id).join(",");   // skip re-render (and scroll reset) when unchanged
   if (key === _evKey) return;
   _evKey = key;
@@ -843,6 +903,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbo
 
 async function poll(){
   const s = await (await fetch("/api/status")).json();
+  _lastSettings = s.settings;   // remembered so a catch notification can name the target
   // Labels follow the watch config: "in view" counts everything detected, the
   // certainty/CONFIRMING wording describes what fires (alert set, or the
   // detected set in monitor mode, where nothing can fire anyway).
