@@ -30,6 +30,10 @@ def _event_dict(record: EventRecord) -> dict:
         "latency_s": record.latency_s,
         "thumb": record.thumb,
         "clip": record.clip,
+        "sound": record.sound,
+        "clear_seconds": record.clear_seconds,
+        "strikes": record.strikes,
+        "taken": record.taken,
         "age_seconds": age,
     }
 
@@ -56,6 +60,10 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
     @router.get("/api/stats")
     def api_stats() -> dict:
         return event_store.stats()
+
+    @router.get("/api/lab")
+    def api_lab() -> dict:
+        return event_store.lab_stats()
 
     @router.get("/clips/{name}")
     def clip(name: str) -> FileResponse:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -29,9 +29,11 @@ class FrameBuffer:
 class Status:
     state: str = "IDLE"
     fps: float = 0.0
-    confidence: float = 0.0  # highest-confidence dog in the frame
-    dogs: int = 0  # number of dogs detected in the frame
+    confidence: float = 0.0  # highest-confidence candidate in the frame
+    targets: int = 0  # watched animals in frame
     people: int = 0  # number of people detected (shown, never alerted on)
+    # Debounced inventory items in the zone: [{"label": str, "count": int}].
+    on_counter: list = field(default_factory=list)
     fires_this_hour: int = 0
     last_fire_ts: float | None = None
     last_fire_thumb: str | None = None

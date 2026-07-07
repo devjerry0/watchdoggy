@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The COCO class this system acts on. Shared by the detector (filter) and the
-# trigger (match) so the target label lives in exactly one place.
-TARGET_LABEL = "dog"
-# Also detected (never alerted on) to suppress people misclassified as dogs.
+# The classes the watcher may act on, offered as the dashboard menu. person is
+# also always detected (never alerted on) to suppress misclassified humans.
+# Mirrored by TunableSettings._ALLOWED_TARGETS (importing it here would create
+# a core -> vision cycle).
+ANIMAL_TARGETS = ("dog", "cat", "bird")
 PERSON_LABEL = "person"
+
+# Things a counter raider steals or knocks over. Observed, never targeted:
+# these classes can appear in the inventory readout and theft forensics but
+# cannot fire the deterrent. Fixtures (oven, sink...) are excluded: they
+# never move, so they would only be noise.
+INVENTORY_LABELS = frozenset({
+    "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
+    "hot dog", "pizza", "donut", "cake",
+    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl",
+})
 
 
 @dataclass(frozen=True)

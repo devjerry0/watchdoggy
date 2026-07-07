@@ -1,3 +1,5 @@
+from doggy.core.config import TunableSettings
+from doggy.vision.analysis import FrameAnalysis
 from doggy.vision.detection import Detection
 from doggy.vision.filters.zone import ZoneInclusionFilter
 
@@ -28,6 +30,15 @@ def test_fewer_than_three_points_passes_through():
     z = ZoneInclusionFilter()
     d = Detection("dog", 0.9, (80, 80, 95, 95))
     assert z.filter([d], [(0.1, 0.1)], SHAPE) == [d]
+
+def test_apply_narrows_inventory_to_zone():
+    # The zone defines "the counter": out-of-zone inventory must not be reported.
+    z = ZoneInclusionFilter()
+    inside = Detection("cup", 0.5, (5, 5, 15, 15))
+    outside = Detection("cup", 0.5, (80, 80, 95, 95))
+    analysis = FrameAnalysis(SHAPE, [], [], [], inventory=[inside, outside])
+    z.apply(analysis, TunableSettings(zone_enabled=True, zone_points=TRI))
+    assert analysis.inventory == [inside]
 
 def test_mask_rebuilds_on_shape_change():
     z = ZoneInclusionFilter()

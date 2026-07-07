@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -19,6 +19,60 @@ log = logging.getLogger("doggy")
 
 EVENTS_FILE = "events.jsonl"
 
+# A sound "deterred" the target when it left within this many seconds and took nothing.
+DETERRED_WITHIN_S = 15.0
+# Effective clear time scored when the target never left: the outcome watcher gives
+# up at MAX_WATCH_SECONDS (60s), so a no-clear outcome counts as the full watch.
+STAYED_CLEAR_S = 60.0
+
+
+def _deterred(record: "EventRecord") -> bool:
+    """A completed event where the target left quickly and took nothing."""
+    return (
+        record.outcome_at is not None
+        and record.clear_seconds is not None
+        and record.clear_seconds <= DETERRED_WITHIN_S
+        and not record.taken
+    )
+
+
+# Report-card bands, best first: letter, band floor, band ceiling.
+GRADE_BANDS = (("A", 90.0, 100.0), ("B", 80.0, 90.0), ("C", 65.0, 80.0), ("D", 50.0, 65.0))
+
+
+def _grade(score: float) -> str:
+    """Letter for a 0-100 score; top third of a band earns '+', bottom third '-'."""
+    for letter, lo, hi in GRADE_BANDS:
+        if score < lo:
+            continue
+        third = (hi - lo) / 3
+        if score >= hi - third:
+            return letter + "+"
+        if score < lo + third:
+            return letter + "-"
+        return letter
+    return "F"
+
+
+def _wearing_off(completed: list["EventRecord"]) -> bool:
+    """True when a sound's recent clears run much slower than its early ones.
+
+    Compares the average effective clear of the newer half of completed events
+    against the older half (events arrive oldest -> newest). An odd count puts
+    the extra event in the first half: the older, larger sample makes the
+    steadier baseline for judging the newer events.
+    """
+    if len(completed) < 6:
+        return False
+    effective = [
+        r.clear_seconds if r.clear_seconds is not None else STAYED_CLEAR_S
+        for r in completed
+    ]
+    mid = (len(effective) + 1) // 2
+    first = sum(effective[:mid]) / mid
+    second = sum(effective[mid:]) / (len(effective) - mid)
+    return second >= 1.5 * first
+
 
 @dataclass
 class EventRecord:
@@ -31,6 +85,11 @@ class EventRecord:
     latency_s: float | None
     thumb: str
     clip: str | None = None
+    sound: str | None = None
+    clear_seconds: float | None = None
+    strikes: int = 1
+    taken: list[str] = field(default_factory=list)
+    outcome_at: float | None = None
 
 
 class EventStore:
@@ -107,6 +166,11 @@ class EventStore:
                         latency_s=obj.get("latency_s"),
                         thumb=thumb,
                         clip=obj.get("clip"),
+                        sound=obj.get("sound"),
+                        clear_seconds=obj.get("clear_seconds"),
+                        strikes=int(obj.get("strikes") or 1),
+                        taken=list(obj.get("taken") or []),
+                        outcome_at=obj.get("outcome_at"),
                     )
                 )
             except (json.JSONDecodeError, KeyError, ValueError):
@@ -172,6 +236,38 @@ class EventStore:
                     self._rewrite()
                     return
 
+    def attach_sound(self, id: str, sound: str) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.sound = sound
+                    self._rewrite()
+                    return
+
+    def bump_strikes(self, id: str) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.strikes += 1
+                    self._rewrite()
+                    return
+
+    def attach_outcome(
+        self,
+        id: str,
+        clear_seconds: float | None,
+        taken: list[str],
+        wall_time: float,
+    ) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.clear_seconds = clear_seconds
+                    record.taken = list(taken)
+                    record.outcome_at = wall_time
+                    self._rewrite()
+                    return
+
     def stats(self) -> dict:
         """Activity summary for the dashboard, bucketed by local wall-clock time."""
         today = datetime.fromtimestamp(self._clock()).date()
@@ -196,7 +292,97 @@ class EventStore:
             "per_day": [{"day": day.isoformat(), "count": counts[day]} for day in days],
             "busiest_hour": Counter(hours).most_common(1)[0][0] if hours else None,
             "avg_latency_s": sum(latencies) / len(latencies) if latencies else None,
+            "report_card": self._report_card(records, today),
         }
+
+    def _report_card(self, records: list[EventRecord], today) -> dict:
+        """Weekly letter grade: fewer attempts and quick, empty-handed exits score high."""
+        this_week = {today - timedelta(days=n) for n in range(7)}
+        prev_week = {today - timedelta(days=n) for n in range(7, 14)}
+        week: list[EventRecord] = []
+        attempts_prev = 0
+        for r in records:
+            if r.wall_time is None:
+                continue
+            day = datetime.fromtimestamp(r.wall_time).date()
+            if day in this_week:
+                week.append(r)
+            elif day in prev_week:
+                attempts_prev += 1
+        attempts = len(week)
+
+        if attempts == 0 and attempts_prev == 0:
+            return {"grade": "A", "attempts": 0, "attempts_prev": 0,
+                    "deterred_rate": None, "summary": "A quiet week."}
+
+        completed = [r for r in week if r.outcome_at is not None]
+        deterred = [r for r in completed if _deterred(r)]
+        deterred_rate = len(deterred) / len(completed) if completed else None
+
+        score = 100.0 - min(40.0, 5.0 * attempts)
+        if attempts > attempts_prev:
+            score -= 30.0
+        elif attempts < attempts_prev:
+            score += 10.0
+        if deterred_rate is not None:
+            score *= deterred_rate
+        score = max(0.0, min(100.0, score))
+
+        parts = [f"{attempts} attempts"]
+        if completed:
+            parts.append("all deterred" if len(deterred) == attempts
+                         else f"{len(deterred)} of {attempts} deterred")
+        if attempts > attempts_prev:
+            parts.append(f"up from {attempts_prev} last week")
+        elif attempts < attempts_prev:
+            parts.append(f"down from {attempts_prev} last week")
+
+        return {
+            "grade": _grade(score),
+            "attempts": attempts,
+            "attempts_prev": attempts_prev,
+            "deterred_rate": deterred_rate,
+            "summary": ", ".join(parts) + ".",
+        }
+
+    def lab_stats(self) -> dict:
+        """Per-sound deterrence effectiveness for the dashboard's lab card.
+
+        A play is any event with that sound; it completes once the outcome
+        watcher stamps ``outcome_at``. Deterred means the target left within
+        DETERRED_WITHIN_S seconds without taking anything.
+        """
+        now = self._clock()
+        with self._lock:
+            records = list(self._records)
+
+        # Same Pi-local calendar semantics as stats(): the last 7 local days.
+        week = {datetime.fromtimestamp(now).date() - timedelta(days=n) for n in range(7)}
+        thefts = sum(
+            len(r.taken) for r in records
+            if r.wall_time is not None and datetime.fromtimestamp(r.wall_time).date() in week
+        )
+
+        by_sound: dict[str, list[EventRecord]] = {}
+        for r in records:  # _records is oldest -> newest, so groups stay in time order
+            if r.sound:
+                by_sound.setdefault(r.sound, []).append(r)
+
+        sounds = []
+        for sound, plays in by_sound.items():
+            completed = [r for r in plays if r.outcome_at is not None]
+            deterred = [r for r in completed if _deterred(r)]
+            clears = [r.clear_seconds for r in plays if r.clear_seconds is not None]
+            sounds.append({
+                "sound": sound,
+                "plays": len(plays),
+                "completed": len(completed),
+                "deterred_rate": len(deterred) / len(completed) if completed else None,
+                "avg_clear_s": sum(clears) / len(clears) if clears else None,
+                "wearing_off": _wearing_off(completed),
+            })
+        sounds.sort(key=lambda s: s["plays"], reverse=True)
+        return {"sounds": sounds, "thefts_this_week": thefts}
 
     def _delete_files(self, record: EventRecord) -> None:
         for name in (record.thumb, record.clip):

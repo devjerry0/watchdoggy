@@ -202,6 +202,29 @@ def test_events_limit(tmp_path):
     assert len(c.get("/api/events", params={"limit": 1}).json()["events"]) == 1
 
 
+def test_lab_endpoint_shape(tmp_path):
+    import time
+    store, ids = _seeded_store(tmp_path, 1)
+    store.attach_sound(ids[0], "chirp.wav")
+    store.attach_outcome(ids[0], clear_seconds=4.0, taken=[], wall_time=time.time())
+    c = _app_with_store(tmp_path, store)
+    body = c.get("/api/lab").json()
+    assert "thefts_this_week" in body
+    assert len(body["sounds"]) == 1
+    row = body["sounds"][0]
+    assert set(row) == {"sound", "plays", "completed", "deterred_rate",
+                        "avg_clear_s", "wearing_off"}
+    assert row["sound"] == "chirp.wav" and row["plays"] == 1
+
+
+def test_index_has_deterrence_card(tmp_path):
+    store, _ = _seeded_store(tmp_path, 0)
+    c = _app_with_store(tmp_path, store)
+    html = c.get("/").text
+    assert "Deterrence" in html
+    assert "/api/lab" in html
+
+
 def test_clips_route_serves_and_404(tmp_path):
     (tmp_path / "clip.mp4").write_bytes(b"data")
     store, _ = _seeded_store(tmp_path, 0)

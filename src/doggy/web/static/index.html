@@ -94,6 +94,8 @@
   .stat .k{color:var(--stone);font-size:.72rem}
   .stat .v{font-family:var(--mono);font-size:1.45rem;font-weight:500;line-height:1.2;
            margin-top:.15rem;font-variant-numeric:tabular-nums}
+  .oncounter{grid-column:1/-1;font-size:.8rem;color:var(--stone);margin-top:.2rem}
+  .oncounter .v{font-family:var(--mono);color:var(--linen);font-size:.8rem}
 
   /* ---- Buttons ---- */
   .btnrow{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.9rem;align-items:center}
@@ -134,6 +136,15 @@
   .switch input:checked + .track::before{transform:translateX(19px);background:#1a130a}
   .switch input:focus-visible + .track{outline:2px solid var(--lamp);outline-offset:2px}
 
+  .watchgrid{display:grid;grid-template-columns:1fr auto auto;gap:.55rem 1.4rem;
+             align-items:center;margin-top:.6rem}
+  .watchgrid .wg-h{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--stone);justify-self:center}
+  .watchgrid .wg-name{font-size:.92rem;font-weight:550}
+  .watchgrid input{accent-color:var(--lamp);width:17px;height:17px;margin:0;
+             justify-self:center;cursor:pointer}
+  .watchgrid input:disabled{opacity:.3;cursor:default}
+
   details{border-top:1px solid var(--seam);margin-top:.4rem}
   details summary{cursor:pointer;list-style:none;padding:.9rem 0 .3rem;color:var(--stone);
                   font-family:var(--mono);font-size:.66rem;font-weight:600;
@@ -162,7 +173,7 @@
   .events img{height:48px;width:64px;object-fit:cover;border-radius:5px;
               border:1px solid var(--seam);cursor:pointer;transition:border-color .15s}
   .events img:hover{border-color:var(--lamp)}
-  .events .empty{font-family:var(--serif);font-style:italic;color:var(--stone);font-size:.95rem}
+  .empty{font-family:var(--serif);font-style:italic;color:var(--stone);font-size:.95rem}
   .thumb{position:relative;flex:none;line-height:0;cursor:pointer}
   .playbadge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
              width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);
@@ -189,6 +200,19 @@
   .act-notes{display:flex;flex-direction:column;gap:.2rem}
   .act-note{color:var(--stone);font-size:.82rem}
 
+  /* ---- Deterrence lab ---- */
+  .lab-row{display:flex;align-items:baseline;gap:.7rem;padding:.4rem 0}
+  .lab-row+.lab-row{border-top:1px solid var(--seam)}
+  .lab-sound{flex:1 1 auto;min-width:0;font-size:.9rem;font-weight:550;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lab-num{font-family:var(--mono);font-size:.78rem;color:var(--stone);
+           font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lab-num b{color:var(--linen);font-weight:500}
+  .tag{color:var(--ember);border:1px solid var(--ember);border-radius:4px;
+       padding:0 .35rem;font-size:.65rem}
+  .lab-thefts{color:var(--stone);font-size:.82rem;margin-top:.7rem;padding-top:.6rem;
+              border-top:1px solid var(--seam)}
+
   /* ---- System ---- */
   .sys{display:flex;flex-wrap:wrap;gap:.5rem 1.6rem}
   .sys .k{color:var(--stone);font-size:.78rem}
@@ -209,7 +233,7 @@
             border:1px solid var(--lamp)}
   .lb-bar a:hover{background:var(--lamp-soft);border-color:var(--lamp-soft)}
 
-  /* ---- Mobile: interleave cards (monitor, log, activity, settings, system) ---- */
+  /* ---- Mobile: interleave cards (monitor, log, activity, lab, settings, system) ---- */
   @media(max-width:720px){
     .wrap{padding:.9rem}
     header{margin-bottom:1.1rem}
@@ -218,7 +242,7 @@
     .col-live,.col-side{display:contents}
     .grid .card{min-width:0;width:100%;margin-bottom:0}
     .grid{gap:1rem}
-    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-set{order:4}.c-sys{order:5}
+    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-lab{order:4}.c-set{order:5}.c-sys{order:6}
     #vidwrap{display:block}
     #live{width:100%;height:auto}
     .readout{grid-template-columns:1fr 1fr;gap:.75rem}
@@ -262,10 +286,11 @@
             <button onclick="clearZone()">Clear area</button>
           </div>
           <div class="readout">
-            <div class="stat"><div class="k">Dogs in view</div><div class="v" id="dogs">–</div></div>
+            <div class="stat"><div class="k" id="lbl_inview">Dogs in view</div><div class="v" id="dogs">–</div></div>
             <div class="stat"><div class="k">People in view</div><div class="v" id="people">–</div></div>
-            <div class="stat"><div class="k">Certainty it's a dog</div><div class="v" id="conf">–</div></div>
+            <div class="stat"><div class="k" id="lbl_certainty">Certainty it's a dog</div><div class="v" id="conf">–</div></div>
             <div class="stat"><div class="k">Reactions this hour</div><div class="v" id="fires">–</div></div>
+            <div class="oncounter"><span class="k">On the counter</span> <span class="v" id="on_counter">–</span></div>
           </div>
           <div class="snooze">
             <div class="snooze-label" id="snooze_label">Snooze the deterrent</div>
@@ -291,7 +316,24 @@
         </div>
 
         <div class="field">
-          <div class="row"><label>How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
+          <div class="row"><label>Watch for</label></div>
+          <div class="desc">Detect means it shows on the live view. Alert means the deterrent fires. People never set it off.</div>
+          <div class="watchgrid" id="watch_grid">
+            <span></span><span class="wg-h">Detect</span><span class="wg-h">Alert</span>
+            <span class="wg-name">Dogs</span>
+            <input type="checkbox" data-kind="detect" value="dog" />
+            <input type="checkbox" data-kind="alert" value="dog" />
+            <span class="wg-name">Cats</span>
+            <input type="checkbox" data-kind="detect" value="cat" />
+            <input type="checkbox" data-kind="alert" value="cat" />
+            <span class="wg-name">Birds</span>
+            <input type="checkbox" data-kind="detect" value="bird" />
+            <input type="checkbox" data-kind="alert" value="bird" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
           <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
           <input id="confidence" type="range" min="0" max="1" step="0.01" />
         </div>
@@ -325,6 +367,10 @@
           <div><div class="t-label">Save video clips</div><div class="t-desc">Keep a short video of each catch to review here</div></div>
           <label class="switch"><input id="clips_enabled" type="checkbox" /><span class="track"></span></label>
         </div>
+        <div class="toggle">
+          <div><div class="t-label">Show counter items</div><div class="t-desc">Outline food and dishes it sees on the live view</div></div>
+          <label class="switch"><input id="show_inventory_boxes" type="checkbox" /><span class="track"></span></label>
+        </div>
         <div class="field">
           <div class="row"><label for="sound_upload">Add a sound</label></div>
           <div class="desc">Upload a .wav, .mp3, or .ogg file.</div>
@@ -355,6 +401,10 @@
             <div class="row"><label>How closely a dog must match a person to be ignored</label><span class="val" id="person_iou_threshold_v"></span></div>
             <input id="person_iou_threshold" type="range" min="0" max="1" step="0.01" />
           </div>
+          <div class="toggle">
+            <div><div class="t-label">Escalate while it stays</div><div class="t-desc">Play again, louder, if the animal doesn't leave after the first sound.</div></div>
+            <label class="switch"><input id="escalation_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
         </details>
       </div>
     </div>
@@ -373,9 +423,15 @@
         <div class="act-top"><span class="num" id="act_today">–</span> today, <span class="num" id="act_week">–</span> this week</div>
         <div class="bars" id="act_bars"></div>
         <div class="act-notes">
+          <div class="act-note" id="report_card" style="display:none"></div>
           <span class="act-note" id="act_busy" style="display:none"></span>
           <span class="act-note" id="act_lat" style="display:none"></span>
         </div>
+      </div>
+
+      <div class="card c-lab">
+        <h2>Deterrence</h2>
+        <div id="lab_body"><div class="empty">No data yet. Once it reacts a few times, you'll see which sounds actually work.</div></div>
       </div>
 
       <div class="card c-sys">
@@ -408,6 +464,10 @@ const KNOBS = ["confidence","confirm_seconds","window_m","window_n","cooldown_mi
                "person_iou_threshold","max_volume"];
 const pct = v => Math.round(v * 100) + "%";
 const secs = v => (Math.round(v * 10) / 10) + "s";
+// Inventory labels with irregular plurals; anything else just takes an "s".
+const PLURALS = {"sandwich":"sandwiches", "wine glass":"wine glasses",
+                 "knife":"knives", "broccoli":"broccoli"};
+const plural = label => PLURALS[label] || label + "s";
 const FMT = {confidence:pct, person_iou_threshold:pct, max_volume:pct, confirm_seconds:secs,
              cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs};
 const fmt = (k, v) => (FMT[k] || String)(v);
@@ -426,8 +486,42 @@ KNOBS.forEach(k => {
 document.getElementById("safety_enabled").addEventListener("change", e => patch({safety_enabled:e.target.checked}));
 document.getElementById("person_suppression_enabled").addEventListener("change", e =>
   patch({person_suppression_enabled:e.target.checked}));
+document.getElementById("escalation_enabled").addEventListener("change", e =>
+  patch({escalation_enabled:e.target.checked}));
 document.getElementById("clips_enabled").addEventListener("change", e => patch({clips_enabled:e.target.checked}));
+document.getElementById("show_inventory_boxes").addEventListener("change", e =>
+  patch({show_inventory_boxes:e.target.checked}));
 document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
+
+// ---- Watch-for grid ----
+function targetNoun(labels, plural){
+  if (labels.length === 1){
+    const names = {dog:["dog","Dogs"], cat:["cat","Cats"], bird:["bird","Birds"]};
+    return names[labels[0]] ? names[labels[0]][plural ? 1 : 0] : labels[0];
+  }
+  return plural ? "Animals" : "intruder";
+}
+const watchGrid = document.getElementById("watch_grid");
+function syncWatchDisabled(){
+  for (const box of watchGrid.querySelectorAll('input[data-kind="alert"]')){
+    const det = watchGrid.querySelector('input[data-kind="detect"][value="' + box.value + '"]');
+    box.disabled = !det.checked;   // can't alert on an animal it doesn't detect
+  }
+}
+watchGrid.addEventListener("change", e => {
+  const detBoxes = [...watchGrid.querySelectorAll('input[data-kind="detect"]')];
+  if (e.target.dataset.kind === "detect" && !detBoxes.some(b => b.checked)){
+    e.target.checked = true;   // it must watch for at least one animal
+    return;
+  }
+  if (e.target.dataset.kind === "detect" && !e.target.checked){
+    watchGrid.querySelector('input[data-kind="alert"][value="' + e.target.value + '"]').checked = false;
+  }
+  syncWatchDisabled();
+  const checked = kind => [...watchGrid.querySelectorAll('input[data-kind="' + kind + '"]')]
+    .filter(b => b.checked).map(b => b.value);
+  patch({target_labels: checked("detect"), alert_labels: checked("alert")});
+});
 async function testSound(){ await fetch("/api/test-sound",{method:"POST"}); }
 async function save(){
   const b = document.getElementById("save_btn"); const t = b.textContent;
@@ -456,11 +550,13 @@ function evRow(e){
   const play = e.clip ? '<span class="playbadge"></span>' : "";
   const clipArg = e.clip ? "'/clips/" + e.clip + "'" : "null";
   const lat = e.latency_s != null ? " · reacted in " + secs(e.latency_s) : "";
+  const strikes = e.strikes > 1 ? " · " + e.strikes + " strikes" : "";
+  const took = (e.taken && e.taken.length) ? " · took the " + escapeHtml(e.taken.join(", ")) : "";
   return '<div class="ev">'
     + '<div class="thumb" title="Click to enlarge" onclick="openEvent(\'/events/' + e.thumb + '\', ' + clipArg + ')">'
     + '<img src="/events/' + e.thumb + '" alt="reaction snapshot">' + play + '</div>'
     + '<div class="ev-meta"><div class="ev-time">' + timeLabel(e) + '</div>'
-    + '<div class="ev-sub">' + pct(e.confidence) + ' sure' + lat + '</div></div>'
+    + '<div class="ev-sub">' + pct(e.confidence) + ' sure' + lat + strikes + took + '</div></div>'
     + '<button class="del" title="Delete this reaction" onclick="deleteEvent(\'' + e.id + '\')">×</button>'
     + '</div>';
 }
@@ -525,11 +621,37 @@ async function refreshStats(){
   const lat = document.getElementById("act_lat");
   if (st.avg_latency_s == null){ lat.style.display = "none"; }
   else { lat.style.display = ""; lat.textContent = "Avg reaction " + secs(st.avg_latency_s); }
+  const rc = st.report_card, rcEl = document.getElementById("report_card");
+  if (!rc){ rcEl.style.display = "none"; }
+  else { rcEl.style.display = ""; rcEl.textContent = "This week: " + rc.grade + ". " + rc.summary; }
 }
 function hourLabel(h){
   const ampm = h < 12 ? "am" : "pm";
   let hr = h % 12; if (hr === 0) hr = 12;
   return hr + ampm;
+}
+
+// ---- Deterrence lab ----
+async function refreshLab(){
+  let lab;
+  try { lab = await (await fetch("/api/lab")).json(); } catch(e){ return; }
+  const rows = (lab.sounds || []).map(s => {
+    const name = escapeHtml(s.sound.replace(/\.[^.]+$/, ""));
+    const tag = s.wearing_off ? ' <span class="tag">wearing off</span>' : "";
+    const clear = s.avg_clear_s == null ? "stayed" : secs(s.avg_clear_s);
+    const rate = s.deterred_rate == null ? "–" : pct(s.deterred_rate);
+    return '<div class="lab-row"><span class="lab-sound">' + name + tag + '</span>'
+      + '<span class="lab-num">' + s.plays + (s.plays === 1 ? ' play' : ' plays') + '</span>'
+      + '<span class="lab-num">' + clear + '</span>'
+      + '<span class="lab-num"><b>' + rate + '</b> deterred</span></div>';
+  });
+  let html = rows.join("");
+  if (lab.thefts_this_week > 0){
+    html += '<div class="lab-thefts">' + lab.thefts_this_week
+      + (lab.thefts_this_week === 1 ? " item" : " items") + ' lost this week</div>';
+  }
+  document.getElementById("lab_body").innerHTML = html ||
+    '<div class="empty">No data yet. Once it reacts a few times, you\'ll see which sounds actually work.</div>';
 }
 
 // ---- Sounds ----
@@ -594,14 +716,32 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbo
 
 async function poll(){
   const s = await (await fetch("/api/status")).json();
-  const [word, cls] = STATE[s.state] || [s.state, ""];
+  // Labels follow the watch config: "in view" counts everything detected, the
+  // certainty/CONFIRMING wording describes what fires (alert set, or the
+  // detected set in monitor mode, where nothing can fire anyway).
+  const detected = s.settings.target_labels;
+  const fireLabels = s.settings.alert_labels.length ? s.settings.alert_labels : detected;
+  const fireNoun = targetNoun(fireLabels, false);
+  const article = /^[aeiou]/.test(fireNoun) ? "an " : "a ";
+  let [word, cls] = STATE[s.state] || [s.state, ""];
+  if (s.state === "CONFIRMING"){
+    word = fireNoun.charAt(0).toUpperCase() + fireNoun.slice(1) + " spotted";
+  }
   document.getElementById("statetext").textContent = word;
   document.getElementById("statepill").className = "pill " + cls;
   document.body.dataset.state = cls;
-  document.getElementById("dogs").textContent = s.dogs;
+  document.getElementById("lbl_inview").textContent = targetNoun(detected, true) + " in view";
+  document.getElementById("lbl_certainty").textContent = "Certainty it's " + article + fireNoun;
+  document.getElementById("lbl_confidence").textContent = "How sure it must be it's " + article + fireNoun;
+  document.getElementById("dogs").textContent = s.targets;
   document.getElementById("people").textContent = s.people;
   document.getElementById("conf").textContent = s.confidence ? pct(s.confidence) : "–";
   document.getElementById("fires").textContent = s.fires_this_hour;
+  document.querySelector(".oncounter").style.display = s.settings.inventory_enabled ? "" : "none";
+  const counterItems = (s.on_counter || [])
+    .map(i => i.count > 1 ? i.count + " " + plural(i.label) : i.label);
+  document.getElementById("on_counter").textContent =
+    counterItems.length ? counterItems.join(", ") : "nothing it recognizes";
 
   // System (card + monitor OSD)
   const cooling = s.detect_interval_effective > s.settings.detect_interval_seconds;
@@ -624,8 +764,17 @@ async function poll(){
   }
   document.getElementById("safety_enabled").checked = s.settings.safety_enabled;
   document.getElementById("person_suppression_enabled").checked = s.settings.person_suppression_enabled;
+  document.getElementById("escalation_enabled").checked = s.settings.escalation_enabled;
+  if (!watchGrid.contains(document.activeElement)){
+    for (const box of watchGrid.querySelectorAll("input")){
+      const list = box.dataset.kind === "detect" ? detected : s.settings.alert_labels;
+      box.checked = list.includes(box.value);
+    }
+    syncWatchDisabled();
+  }
 
   document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
+  document.getElementById("show_inventory_boxes").checked = s.settings.show_inventory_boxes;
   const selEl = document.getElementById("selected_sound");
   if (document.activeElement !== selEl){
     const want = s.settings.selected_sound || "random";
@@ -687,9 +836,9 @@ async function clearZone(){
   await patch({zone_enabled:false, zone_points:[]});
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
-loadSounds(); loadEvents(); refreshStats();
+loadSounds(); loadEvents(); refreshStats(); refreshLab();
 setInterval(poll, 500); poll();
-setInterval(() => { loadEvents(); refreshStats(); }, 4000);
+setInterval(() => { loadEvents(); refreshStats(); refreshLab(); }, 4000);
 </script>
 </body>
 </html>

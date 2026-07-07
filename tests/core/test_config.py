@@ -23,6 +23,40 @@ def test_env_override(monkeypatch, tmp_path):
     assert s.camera_index == 1
 
 
+def test_target_labels_default_and_parsing():
+    assert TunableSettings().target_labels == ("dog",)
+    assert TunableSettings().alert_labels == ("dog",)
+    got = TunableSettings(target_labels="dog,cat", alert_labels="dog,cat")
+    assert got.target_labels == ("dog", "cat") and got.alert_labels == ("dog", "cat")
+    assert TunableSettings(target_labels='["cat"]', alert_labels='["cat"]').target_labels == ("cat",)
+    assert TunableSettings(target_labels=["bird", "dog"], alert_labels=["dog"]).alert_labels == ("dog",)
+
+
+def test_target_labels_rejects_unknown_and_empty():
+    with pytest.raises(ValidationError):
+        TunableSettings(target_labels="dragon")
+    with pytest.raises(ValidationError):
+        TunableSettings(target_labels=[])
+
+
+def test_target_labels_rejects_non_list_garbage():
+    # Bad PATCH payloads must surface as ValidationError (-> HTTP 422), never a
+    # bare TypeError from inside the validator (-> HTTP 500).
+    with pytest.raises(ValidationError):
+        TunableSettings(target_labels=5)
+    with pytest.raises(ValidationError):
+        TunableSettings(target_labels=None)
+
+
+def test_alert_labels_subset_rule():
+    # detect-only birds: valid; alerting on an undetected class: not.
+    ok = TunableSettings(target_labels="dog,bird", alert_labels="dog")
+    assert ok.alert_labels == ("dog",)
+    assert TunableSettings(target_labels="dog", alert_labels=[]).alert_labels == ()
+    with pytest.raises(ValidationError):
+        TunableSettings(target_labels="dog", alert_labels="cat")
+
+
 def test_window_validation():
     with pytest.raises(ValidationError):
         TunableSettings(window_m=7, window_n=6)

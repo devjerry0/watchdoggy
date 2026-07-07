@@ -123,6 +123,25 @@ def test_fire_latency_is_time_since_first_sighting():
     assert t.fire_latency == 1.0
 
 
+def test_detect_only_label_never_fires():
+    # A persistent "bird" with alert_labels=("dog",) is detect-only: it must sail
+    # through the M-of-N + confirm window (which fires a dog by now=1.0) without
+    # ever firing or even entering CONFIRMING.
+    t = make(target_labels=("dog", "bird"), alert_labels=("dog",))
+    bird = [Detection(label="bird", confidence=0.9, box=(0, 0, 10, 10))]
+    for ts in [0.0, 0.5, 1.0, 1.5, 2.0]:
+        assert t.update(bird, now=ts) is False
+    assert t.state is TriggerState.IDLE
+
+
+def test_monitor_mode_never_fires():
+    # Empty alert set = monitor mode: even a sustained alert-grade dog never fires.
+    t = make(alert_labels=())
+    for ts in [0.0, 0.5, 1.0, 1.5, 2.0]:
+        assert t.update(DOG, now=ts) is False
+    assert t.state is TriggerState.IDLE
+
+
 def test_state_objects_round_trip():
     t = make()  # window_m=2, n=3, confirm=1.0, cooldown 10
     assert t.state is TriggerState.IDLE

@@ -4,7 +4,7 @@ import random
 from collections import deque
 from enum import Enum
 
-from doggy.vision.detection import Detection, TARGET_LABEL
+from doggy.vision.detection import Detection
 from doggy.core.runtime import RuntimeSettings
 
 
@@ -115,7 +115,7 @@ class TriggerLogic:
         self._cfg = cfg
         frame_confs = [
             d.confidence for d in detections
-            if d.label == TARGET_LABEL and d.confidence >= cfg.confidence
+            if d.label in cfg.alert_labels and d.confidence >= cfg.confidence
         ]
         has_dog = bool(frame_confs)
         frame_max = max(frame_confs, default=0.0)

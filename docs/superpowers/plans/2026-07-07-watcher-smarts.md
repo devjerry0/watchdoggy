@@ -183,7 +183,7 @@ In `src/doggy/vision/filters/person.py`: rename `suppress_dogs_overlapping_peopl
 
 In `src/doggy/core/status.py`: `dogs: int = 0` -> `targets: int = 0` (comment: "watched animals in frame").
 
-In `src/doggy/pipeline.py` `run_once`: `analysis.dogs` -> `analysis.targets` in the annotate call, and `dogs=len(analysis.candidates)` -> `targets=len(analysis.candidates)` in the status update. Comment on the annotate line: `targets` are drawn.
+In `src/doggy/pipeline.py` `run_once`: `analysis.dogs` -> `analysis.targets` in the annotate call, and the status update becomes `targets=len(analysis.targets)` — it counts DETECTED animals (matching the "in view" label and monitor mode, where candidates is always empty while animals are still drawn). The certainty readout stays fed from `candidates` (it describes what may fire). Comment on the annotate line: `targets` are drawn.
 
 - [ ] **Step 5: Dashboard.** In `src/doggy/web/static/index.html`:
   - Settings card, directly under the "Ignore people" toggle, add a two-column detect/alert grid:

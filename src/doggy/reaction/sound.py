@@ -11,6 +11,7 @@ from typing import Protocol
 
 from doggy.core.config import Settings, TunableSettings
 from doggy.core.runtime import RuntimeSettings
+from doggy.events.store import EventStore
 
 log = logging.getLogger("doggy")
 
@@ -25,25 +26,31 @@ def pick_clip(clips_dir: Path, rng: random.Random) -> Path | None:
 
 
 class Alerter(Protocol):
-    def alert(self) -> None: ...
+    def alert(self, volume: float | None = None) -> str | None: ...
 
 
 class SoundReaction:
-    """Reaction (Observer): plays the deterrent clip when a dog is caught."""
+    """Reaction (Observer): plays the deterrent and records which clip it was."""
 
-    def __init__(self, alerter: Alerter) -> None:
+    def __init__(self, alerter: Alerter, store: EventStore) -> None:
         self._alerter = alerter
+        self._store = store
 
     def on_dog_caught(self, event) -> None:
-        self._alerter.alert()
+        name = self._alerter.alert()
+        if name:
+            self._store.attach_sound(event.record.id, name)
 
 
 class FakeAlerter:
     def __init__(self) -> None:
         self.calls = 0
+        self.volumes: list[float | None] = []
 
-    def alert(self) -> None:
+    def alert(self, volume: float | None = None) -> str | None:
         self.calls += 1
+        self.volumes.append(volume)
+        return "fake.wav"
 
 
 class BaseAlerter:
@@ -58,13 +65,14 @@ class BaseAlerter:
         self._runtime = runtime
         self._rng = rng or random.Random()
 
-    def alert(self) -> None:
+    def alert(self, volume: float | None = None) -> str | None:
         cfg = self._runtime.get()
         clip = self._resolve_clip(cfg)
         if clip is None:
-            return
-        volume = max(0.0, min(1.0, cfg.max_volume))
-        threading.Thread(target=self._play, args=(clip, volume), daemon=True).start()
+            return None
+        level = max(0.0, min(1.0, cfg.max_volume if volume is None else volume))
+        threading.Thread(target=self._play, args=(clip, level), daemon=True).start()
+        return clip.name
 
     def _resolve_clip(self, cfg: TunableSettings) -> Path | None:
         """Play the user-selected clip when set (and present), else a random one."""
