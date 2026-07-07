@@ -62,10 +62,10 @@ class Pipeline:
         now = self.clock()
         cfg = self.runtime.get()
         analysis = self.analyzer.analyze(frame, cfg)
-        # `dogs` are drawn; `candidates` are the in-zone subset that may trigger.
+        # `targets` are drawn; `candidates` are the in-zone subset that may trigger.
         show_people = analysis.people if cfg.person_suppression_enabled else None
         points = cfg.zone_points if cfg.zone_enabled else []
-        annotated = annotate(frame, analysis.dogs, analysis.candidates, points,
+        annotated = annotate(frame, analysis.targets, analysis.candidates, points,
                              people=show_people)
         self.annotated_buffer.set(annotated)
         self.clip_service.on_frame(annotated, now, cfg)
@@ -85,7 +85,7 @@ class Pipeline:
             self.status.update(last_fire_ts=record.ts, last_fire_thumb=record.thumb)
         self.clip_service.finalize_due(now, cfg)
         self.status.update(state=self.trigger.state.value, confidence=round(top, CONFIDENCE_DECIMALS),
-                           dogs=len(analysis.candidates),
+                           targets=len(analysis.candidates),
                            people=len(analysis.people) if cfg.person_suppression_enabled else 0,
                            fires_this_hour=self.gate.fires_last_hour(now), muted=muted,
                            snoozed_until_seconds=self.gate.snooze_remaining(now))

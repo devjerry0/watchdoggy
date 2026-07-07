@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class TunableSettings(BaseModel):
@@ -12,6 +14,13 @@ class TunableSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     confidence: float = Field(0.55, ge=0.0, le=1.0)
+    # Which animals are detected (drawn + counted), comma-separated in .env
+    # ("dog,cat"), and which of those may fire the deterrent. alert_labels
+    # must be a subset of target_labels; empty alert_labels = monitor mode.
+    # NoDecode: hand the raw .env string to _parse_labels (else pydantic-settings
+    # insists on JSON and rejects the comma form).
+    target_labels: Annotated[tuple[str, ...], NoDecode] = ("dog",)
+    alert_labels: Annotated[tuple[str, ...], NoDecode] = ("dog",)
     confirm_seconds: float = Field(1.2, ge=0.0)
     window_m: int = Field(4, ge=1)
     window_n: int = Field(6, ge=1)
@@ -45,6 +54,25 @@ class TunableSettings(BaseModel):
     clip_fps: int = Field(6, ge=1)
     clip_retention: int = Field(10, ge=0)   # 0 = unlimited
 
+    # Mirrors doggy.vision.detection.ANIMAL_TARGETS (importing it would create
+    # a core -> vision cycle).
+    _ALLOWED_TARGETS: ClassVar[tuple[str, ...]] = ("dog", "cat", "bird")
+
+    @field_validator("target_labels", "alert_labels", mode="before")
+    @classmethod
+    def _parse_labels(cls, v):
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("["):
+                v = json.loads(s)
+            else:
+                v = [part.strip() for part in s.split(",") if part.strip()]
+        labels = tuple(dict.fromkeys(v))  # de-dupe, keep order
+        unknown = [x for x in labels if x not in cls._ALLOWED_TARGETS]
+        if unknown:
+            raise ValueError(f"unknown watch classes: {unknown}")
+        return labels
+
     @model_validator(mode="after")
     def _check_ranges(self) -> "TunableSettings":
         if self.window_m > self.window_n:
@@ -53,6 +81,11 @@ class TunableSettings(BaseModel):
             raise ValueError("cooldown_min_seconds must be <= cooldown_max_seconds")
         if self.thermal_target_c > self.thermal_max_c:
             raise ValueError("thermal_target_c must be <= thermal_max_c")
+        if not self.target_labels:
+            raise ValueError("select at least one animal to watch for")
+        extra = [x for x in self.alert_labels if x not in self.target_labels]
+        if extra:
+            raise ValueError(f"alert classes must also be detected: {extra}")
         return self
 
 

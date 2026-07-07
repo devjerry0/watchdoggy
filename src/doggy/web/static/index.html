@@ -134,6 +134,15 @@
   .switch input:checked + .track::before{transform:translateX(19px);background:#1a130a}
   .switch input:focus-visible + .track{outline:2px solid var(--lamp);outline-offset:2px}
 
+  .watchgrid{display:grid;grid-template-columns:1fr auto auto;gap:.55rem 1.4rem;
+             align-items:center;margin-top:.6rem}
+  .watchgrid .wg-h{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--stone);justify-self:center}
+  .watchgrid .wg-name{font-size:.92rem;font-weight:550}
+  .watchgrid input{accent-color:var(--lamp);width:17px;height:17px;margin:0;
+             justify-self:center;cursor:pointer}
+  .watchgrid input:disabled{opacity:.3;cursor:default}
+
   details{border-top:1px solid var(--seam);margin-top:.4rem}
   details summary{cursor:pointer;list-style:none;padding:.9rem 0 .3rem;color:var(--stone);
                   font-family:var(--mono);font-size:.66rem;font-weight:600;
@@ -262,9 +271,9 @@
             <button onclick="clearZone()">Clear area</button>
           </div>
           <div class="readout">
-            <div class="stat"><div class="k">Dogs in view</div><div class="v" id="dogs">–</div></div>
+            <div class="stat"><div class="k" id="lbl_inview">Dogs in view</div><div class="v" id="dogs">–</div></div>
             <div class="stat"><div class="k">People in view</div><div class="v" id="people">–</div></div>
-            <div class="stat"><div class="k">Certainty it's a dog</div><div class="v" id="conf">–</div></div>
+            <div class="stat"><div class="k" id="lbl_certainty">Certainty it's a dog</div><div class="v" id="conf">–</div></div>
             <div class="stat"><div class="k">Reactions this hour</div><div class="v" id="fires">–</div></div>
           </div>
           <div class="snooze">
@@ -291,7 +300,24 @@
         </div>
 
         <div class="field">
-          <div class="row"><label>How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
+          <div class="row"><label>Watch for</label></div>
+          <div class="desc">Detect means it shows on the live view. Alert means the deterrent fires. People never set it off.</div>
+          <div class="watchgrid" id="watch_grid">
+            <span></span><span class="wg-h">Detect</span><span class="wg-h">Alert</span>
+            <span class="wg-name">Dogs</span>
+            <input type="checkbox" data-kind="detect" value="dog" />
+            <input type="checkbox" data-kind="alert" value="dog" />
+            <span class="wg-name">Cats</span>
+            <input type="checkbox" data-kind="detect" value="cat" />
+            <input type="checkbox" data-kind="alert" value="cat" />
+            <span class="wg-name">Birds</span>
+            <input type="checkbox" data-kind="detect" value="bird" />
+            <input type="checkbox" data-kind="alert" value="bird" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
           <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
           <input id="confidence" type="range" min="0" max="1" step="0.01" />
         </div>
@@ -428,6 +454,36 @@ document.getElementById("person_suppression_enabled").addEventListener("change",
   patch({person_suppression_enabled:e.target.checked}));
 document.getElementById("clips_enabled").addEventListener("change", e => patch({clips_enabled:e.target.checked}));
 document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
+
+// ---- Watch-for grid ----
+function targetNoun(labels, plural){
+  if (labels.length === 1){
+    const names = {dog:["dog","Dogs"], cat:["cat","Cats"], bird:["bird","Birds"]};
+    return names[labels[0]] ? names[labels[0]][plural ? 1 : 0] : labels[0];
+  }
+  return plural ? "Animals" : "intruder";
+}
+const watchGrid = document.getElementById("watch_grid");
+function syncWatchDisabled(){
+  for (const box of watchGrid.querySelectorAll('input[data-kind="alert"]')){
+    const det = watchGrid.querySelector('input[data-kind="detect"][value="' + box.value + '"]');
+    box.disabled = !det.checked;   // can't alert on an animal it doesn't detect
+  }
+}
+watchGrid.addEventListener("change", e => {
+  const detBoxes = [...watchGrid.querySelectorAll('input[data-kind="detect"]')];
+  if (e.target.dataset.kind === "detect" && !detBoxes.some(b => b.checked)){
+    e.target.checked = true;   // it must watch for at least one animal
+    return;
+  }
+  if (e.target.dataset.kind === "detect" && !e.target.checked){
+    watchGrid.querySelector('input[data-kind="alert"][value="' + e.target.value + '"]').checked = false;
+  }
+  syncWatchDisabled();
+  const checked = kind => [...watchGrid.querySelectorAll('input[data-kind="' + kind + '"]')]
+    .filter(b => b.checked).map(b => b.value);
+  patch({target_labels: checked("detect"), alert_labels: checked("alert")});
+});
 async function testSound(){ await fetch("/api/test-sound",{method:"POST"}); }
 async function save(){
   const b = document.getElementById("save_btn"); const t = b.textContent;
@@ -594,11 +650,24 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbo
 
 async function poll(){
   const s = await (await fetch("/api/status")).json();
-  const [word, cls] = STATE[s.state] || [s.state, ""];
+  // Labels follow the watch config: "in view" counts everything detected, the
+  // certainty/CONFIRMING wording describes what fires (alert set, or the
+  // detected set in monitor mode, where nothing can fire anyway).
+  const detected = s.settings.target_labels;
+  const fireLabels = s.settings.alert_labels.length ? s.settings.alert_labels : detected;
+  const fireNoun = targetNoun(fireLabels, false);
+  const article = /^[aeiou]/.test(fireNoun) ? "an " : "a ";
+  let [word, cls] = STATE[s.state] || [s.state, ""];
+  if (s.state === "CONFIRMING"){
+    word = fireNoun.charAt(0).toUpperCase() + fireNoun.slice(1) + " spotted";
+  }
   document.getElementById("statetext").textContent = word;
   document.getElementById("statepill").className = "pill " + cls;
   document.body.dataset.state = cls;
-  document.getElementById("dogs").textContent = s.dogs;
+  document.getElementById("lbl_inview").textContent = targetNoun(detected, true) + " in view";
+  document.getElementById("lbl_certainty").textContent = "Certainty it's " + article + fireNoun;
+  document.getElementById("lbl_confidence").textContent = "How sure it must be it's " + article + fireNoun;
+  document.getElementById("dogs").textContent = s.targets;
   document.getElementById("people").textContent = s.people;
   document.getElementById("conf").textContent = s.confidence ? pct(s.confidence) : "–";
   document.getElementById("fires").textContent = s.fires_this_hour;
@@ -624,6 +693,13 @@ async function poll(){
   }
   document.getElementById("safety_enabled").checked = s.settings.safety_enabled;
   document.getElementById("person_suppression_enabled").checked = s.settings.person_suppression_enabled;
+  if (!watchGrid.contains(document.activeElement)){
+    for (const box of watchGrid.querySelectorAll("input")){
+      const list = box.dataset.kind === "detect" ? detected : s.settings.alert_labels;
+      box.checked = list.includes(box.value);
+    }
+    syncWatchDisabled();
+  }
 
   document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
   const selEl = document.getElementById("selected_sound");

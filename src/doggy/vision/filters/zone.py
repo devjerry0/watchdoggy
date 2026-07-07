@@ -20,7 +20,7 @@ class ZoneInclusionFilter:
     The polygon (points in [0,1]) is rasterized to a frame-sized 0/1 mask and
     cached; the mask is rebuilt only when the points or the frame shape change.
     Fewer than 3 points means "no zone" -> every detection passes through.
-    Narrows `analysis.candidates` only (drawn dogs are unaffected).
+    Narrows `analysis.candidates` only (drawn targets are unaffected).
     """
 
     def __init__(self) -> None:

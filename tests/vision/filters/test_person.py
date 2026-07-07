@@ -1,5 +1,5 @@
 from doggy.vision.detection import Detection
-from doggy.vision.filters.person import iou, suppress_dogs_overlapping_people
+from doggy.vision.filters.person import iou, suppress_targets_overlapping_people
 
 
 def dog(box, c=0.9):
@@ -27,23 +27,23 @@ def test_coincident_dog_and_person_is_suppressed():
     # "dog" box ~= person box (one human, double-labeled) -> removed
     dogs = [dog((0, 0, 100, 200))]
     people = [person((2, 2, 98, 198))]
-    assert suppress_dogs_overlapping_people(dogs, people, 0.85) == []
+    assert suppress_targets_overlapping_people(dogs, people, 0.85) == []
 
 
 def test_real_dog_behind_person_is_kept():
     # dog has its own small distinct box that only clips the person -> low IoU -> kept
     dogs = [dog((150, 150, 190, 190))]
     people = [person((0, 0, 100, 200))]
-    assert suppress_dogs_overlapping_people(dogs, people, 0.85) == dogs
+    assert suppress_targets_overlapping_people(dogs, people, 0.85) == dogs
 
 
 def test_no_people_keeps_all_dogs():
     dogs = [dog((0, 0, 10, 10))]
-    assert suppress_dogs_overlapping_people(dogs, [], 0.85) == dogs
+    assert suppress_targets_overlapping_people(dogs, [], 0.85) == dogs
 
 
 def test_only_the_coincident_dog_is_removed():
     coincident = dog((0, 0, 100, 200))
     real = dog((300, 300, 340, 340))
     people = [person((0, 0, 100, 200))]
-    assert suppress_dogs_overlapping_people([coincident, real], people, 0.85) == [real]
+    assert suppress_targets_overlapping_people([coincident, real], people, 0.85) == [real]

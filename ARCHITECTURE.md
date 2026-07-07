@@ -19,14 +19,14 @@ src/doggy/
     status.py          Status/StatusStore snapshot + FrameBuffer (latest-frame slot)
     pacer.py           Pacer: sleeps only the time still needed to hit a target interval
   vision/              see: a frame -> detections -> a narrowed candidate set
-    detection.py       Detection dataclass + TARGET_LABEL ("dog") / PERSON_LABEL
+    detection.py       Detection dataclass + ANIMAL_TARGETS ("dog","cat","bird") / PERSON_LABEL
     camera.py          Camera protocol + OpenCV/file backends + registry factory
     detector.py        Detector protocol + YOLO/stub backends + plain factory
     analysis.py        FrameAnalysis + DetectionAnalyzer (runs the detector, then the chain)
     annotate.py        draws boxes and the watch-area onto a frame for the dashboard
     filters/           Chain of Responsibility links over FrameAnalysis
       base.py          DetectionFilter protocol + FilterChain
-      person.py        suppress dogs that are really people (IoU coincidence)
+      person.py        suppress targets that are really people (IoU coincidence)
       zone.py          keep only candidates inside the drawn watch area
   decision/            decide: is this a fire, and is a fire allowed right now
     trigger.py         TriggerLogic FSM: M-of-N window + confirm timer + jittered cooldown

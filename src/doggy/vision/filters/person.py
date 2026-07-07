@@ -26,35 +26,38 @@ def iou(a: Box, b: Box) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def suppress_dogs_overlapping_people(
-    dogs: list[Detection], people: list[Detection], iou_threshold: float
+def suppress_targets_overlapping_people(
+    targets: list[Detection], people: list[Detection], iou_threshold: float
 ) -> list[Detection]:
-    """Drop "dog" detections whose box is near-coincident with a person's box.
+    """Drop target detections whose box is near-coincident with a person's box.
 
-    A person misclassified as a dog produces a "dog" box almost identical to the
+    A person misclassified as a target produces a box almost identical to the
     "person" box (high IoU) -- that pair is one human double-labeled, so suppress
-    the dog. A REAL dog merely near or behind a person has its own distinct box
-    that only clips the person's at the edges (low IoU); it is kept and still
+    the target. A REAL animal merely near or behind a person has its own distinct
+    box that only clips the person's at the edges (low IoU); it is kept and still
     fires. The threshold is deliberately high so overlap alone never eats a real
-    dog -- only same-pixels double-labels are removed.
+    animal -- only same-pixels double-labels are removed.
     """
     return [
-        d for d in dogs
+        d for d in targets
         if not any(iou(d.box, p.box) >= iou_threshold for p in people)
     ]
 
 
 class PersonSuppressionFilter:
-    """Filter link: drop dogs that are actually people misclassified as dogs.
+    """Filter link: drop targets that are actually misclassified people.
 
     Applies only when suppression is enabled and people are present: narrows
-    `analysis.dogs` to the survivors, then reseeds `analysis.candidates` from
+    `analysis.targets` to the survivors, then reseeds `analysis.candidates` from
     them so downstream links (zone) act on the suppressed set.
     """
 
     def apply(self, analysis: "FrameAnalysis", cfg: "TunableSettings") -> None:
         if not (cfg.person_suppression_enabled and analysis.people):
             return
-        analysis.dogs = suppress_dogs_overlapping_people(
-            analysis.dogs, analysis.people, cfg.person_iou_threshold)
-        analysis.candidates = list(analysis.dogs)
+        analysis.targets = suppress_targets_overlapping_people(
+            analysis.targets, analysis.people, cfg.person_iou_threshold)
+        # Reseed from the alert set, not from `targets`, so detect-only animals
+        # never re-enter the candidate list.
+        alertable = set(cfg.alert_labels)
+        analysis.candidates = [d for d in analysis.targets if d.label in alertable]

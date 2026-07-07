@@ -1,5 +1,6 @@
 import numpy as np
 
+from doggy.core.config import TunableSettings
 from doggy.vision.analysis import DetectionAnalyzer, FrameAnalysis
 from doggy.vision.detection import Detection
 from doggy.vision.detector import StubDetector
@@ -9,7 +10,6 @@ from doggy.vision.filters.zone import ZoneInclusionFilter
 
 
 def _cfg(**over):
-    from doggy.core.config import TunableSettings
     base = dict(person_suppression_enabled=True, person_iou_threshold=0.85,
                 zone_enabled=True, zone_points=[(0.0, 0.0), (0.6, 0.0), (0.0, 0.6)])
     base.update(over)
@@ -25,9 +25,9 @@ def test_analyzer_splits_suppresses_and_zones():
     chain = FilterChain([PersonSuppressionFilter(), ZoneInclusionFilter()])
     a = DetectionAnalyzer(det, chain).analyze(np.zeros((100, 100, 3), np.uint8), _cfg())
     assert a.people == [fake_person]
-    assert fake_dog not in a.dogs                 # suppressed
+    assert fake_dog not in a.targets              # suppressed
     assert a.candidates == [dog_in]               # zone kept only the in-zone dog
-    assert dog_out in a.dogs                      # still drawn, just not a candidate
+    assert dog_out in a.targets                   # still drawn, just not a candidate
 
 
 def test_chain_respects_enable_flags():
@@ -37,7 +37,26 @@ def test_chain_respects_enable_flags():
     chain = FilterChain([PersonSuppressionFilter(), ZoneInclusionFilter()])
     cfg = _cfg(person_suppression_enabled=False, zone_enabled=False)
     a = DetectionAnalyzer(det, chain).analyze(np.zeros((100, 100, 3), np.uint8), cfg)
-    assert a.dogs == [fake_dog] and a.candidates == [fake_dog]
+    assert a.targets == [fake_dog] and a.candidates == [fake_dog]
+
+
+def test_analyzer_honors_target_labels():
+    cat = Detection("cat", 0.9, (0, 0, 10, 10))
+    dog = Detection("dog", 0.9, (20, 20, 30, 30))
+    analyzer = DetectionAnalyzer(StubDetector([[cat, dog]]), FilterChain([]))
+    cfg = TunableSettings(target_labels=["cat"], alert_labels=["cat"])
+    analysis = analyzer.analyze(np.zeros((100, 100, 3), np.uint8), cfg)
+    assert analysis.targets == [cat]
+
+
+def test_detect_only_class_never_becomes_candidate():
+    bird = Detection("bird", 0.9, (0, 0, 10, 10))
+    dog = Detection("dog", 0.9, (20, 20, 30, 30))
+    analyzer = DetectionAnalyzer(StubDetector([[bird, dog]]), FilterChain([]))
+    cfg = TunableSettings(target_labels=["dog", "bird"], alert_labels=["dog"])
+    analysis = analyzer.analyze(np.zeros((100, 100, 3), np.uint8), cfg)
+    assert analysis.targets == [bird, dog]   # both drawn
+    assert analysis.candidates == [dog]      # only the dog can fire
 
 
 def test_chain_runs_filters_in_order():

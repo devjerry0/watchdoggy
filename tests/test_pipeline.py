@@ -88,7 +88,7 @@ def test_pipeline_counts_multiple_dogs(tmp_path):
         rng=random.Random(0),
     )
     pipe.run_once(np.zeros((40, 40, 3), np.uint8))
-    assert status.snapshot().dogs == 2
+    assert status.snapshot().targets == 2
 
     # annotate draws one box per detection (both dogs), not just one
     frame = np.zeros((40, 40, 3), np.uint8)
@@ -117,7 +117,7 @@ def test_pipeline_ignores_dogs_outside_zone(tmp_path):
     )
     fired = pipe.run_once(np.zeros((100, 100, 3), np.uint8))
     assert fired is False
-    assert status.snapshot().dogs == 0
+    assert status.snapshot().targets == 0
 
 def test_pipeline_fires_for_dog_inside_zone(tmp_path):
     settings = Settings(zone_enabled=True,
@@ -198,7 +198,7 @@ def test_pipeline_suppresses_person_misclassified_as_dog(tmp_path):
     frame = np.zeros((200, 200, 3), np.uint8)
     fired = [pipe.run_once(frame) for _ in range(2)]
     assert not any(fired)
-    assert status.snapshot().dogs == 0
+    assert status.snapshot().targets == 0
     assert status.snapshot().people == 1
 
 
@@ -227,7 +227,7 @@ def test_pipeline_real_dog_near_person_still_fires(tmp_path):
     frame = np.zeros((200, 200, 3), np.uint8)
     fired = [pipe.run_once(frame) for _ in range(2)]  # first sighting never fires
     assert fired[1] is True
-    assert status.snapshot().dogs == 1
+    assert status.snapshot().targets == 1
     assert alerter.calls == 1
 
 
