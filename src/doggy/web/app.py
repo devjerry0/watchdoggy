@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from doggy.reaction.sound import Alerter
@@ -28,6 +28,15 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     def index() -> FileResponse:
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
+    @app.get("/ca.pem")
+    def ca_cert() -> FileResponse:
+        # Public material: lets each device trust the home CA once, after
+        # which the dashboard shows a normal padlock (no warnings).
+        if settings.ca_cert and Path(settings.ca_cert).is_file():
+            return FileResponse(settings.ca_cert, media_type="application/x-pem-file",
+                                filename="watchdoggy-ca.pem")
+        raise HTTPException(status_code=404, detail="not set up")
+
     app.include_router(
         status_router.build_router(runtime, annotated_buffer, status, event_store))
     app.include_router(settings_router.build_router(runtime, save_env))
@@ -44,4 +53,10 @@ def serve(settings: Settings, runtime: RuntimeSettings,
     import uvicorn
 
     app = create_app(settings, runtime, annotated_buffer, status, alerter, event_store, gate)
-    uvicorn.run(app, host=settings.web_host, port=settings.web_port, log_level="warning")
+    # TLS is all-or-nothing: with only one of cert/key set we serve plain http.
+    kwargs: dict = {}
+    if settings.ssl_cert and settings.ssl_key:
+        kwargs = {"ssl_certfile": str(settings.ssl_cert),
+                  "ssl_keyfile": str(settings.ssl_key)}
+    uvicorn.run(app, host=settings.web_host, port=settings.web_port,
+                log_level="warning", **kwargs)

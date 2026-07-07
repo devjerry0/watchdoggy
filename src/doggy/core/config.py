@@ -124,6 +124,10 @@ class Settings(TunableSettings, BaseSettings):
     web_enabled: bool = True
     web_host: str = "127.0.0.1"
     web_port: int = 8000
+    # Optional TLS: set both to serve https; needed for mic + notifications.
+    ssl_cert: Path | None = None
+    ssl_key: Path | None = None
+    ca_cert: Path | None = None  # served at /ca.pem so devices can trust the home CA
 
     def tunable(self) -> TunableSettings:
         fields = TunableSettings.model_fields

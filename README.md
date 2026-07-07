@@ -82,6 +82,24 @@ Open `http://<pi-host>:8000` from any device on your network.
 - Advanced holds the detection-window and person-matching knobs. System shows temperature, power, and speed.
 - Test sound plays the deterrent. Save settings writes to the Pi's `.env`.
 
+### HTTPS (for push-to-talk and notifications)
+
+Browsers only allow the microphone and notifications on secure pages, so those features need the dashboard served over https. One script sets it up:
+
+```sh
+./scripts/setup-https.sh doggy@doggypi.local
+```
+
+It creates a "watchdoggy home CA" on the Pi, issues the dashboard a certificate signed by it, and restarts the service. The CA never leaves your Pi and nothing talks to the internet.
+
+Then, once per device, download `https://<pi-host>:8000/ca.pem` (your browser warns about the connection this first time, which is expected) and trust it:
+
+- iPhone/iPad: open the file, install the profile, then Settings > General > About > Certificate Trust Settings > enable it
+- Mac: double-click the file in Keychain Access, set Trust to Always
+- Android: Settings > Security > Install a certificate > CA certificate
+
+After that the padlock is normal on every visit. The certificate lasts about two years; re-run the script to renew it, and your devices keep working without any new steps.
+
 ## Configuration
 
 Config is set with `DOGGY_*` environment variables (see `.env.example`). Live-tunable params are also editable from the dashboard. Structural params (camera, model, audio backend) need a restart.

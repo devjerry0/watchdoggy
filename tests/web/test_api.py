@@ -7,7 +7,7 @@ from doggy.events.store import EventStore
 from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
-from doggy.web import create_app
+from doggy.web import create_app, serve
 
 
 def client(tmp_path, saved=None):
@@ -281,6 +281,67 @@ def test_upload_rejects_non_audio(tmp_path):
     c, _, _ = _sounds_client(tmp_path)
     r = c.post("/api/sounds", files={"file": ("x.txt", b"x", "text/plain")})
     assert r.status_code == 422
+
+
+def _serve_deps(s):
+    runtime = RuntimeSettings(s.tunable())
+    return (runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
+            EventStore(s.event_log_dir, 100, 0), FireGate(runtime))
+
+
+def test_serve_passes_ssl_when_configured(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr("uvicorn.run", lambda app, **kw: calls.update(kw))
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
+    cert.write_text("x")
+    key.write_text("x")
+    s = Settings(event_log_dir=tmp_path, ssl_cert=cert, ssl_key=key)
+    serve(s, *_serve_deps(s))
+    assert calls["ssl_certfile"] == str(cert) and calls["ssl_keyfile"] == str(key)
+
+
+def test_serve_plain_http_without_ssl(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr("uvicorn.run", lambda app, **kw: calls.update(kw))
+    s = Settings(event_log_dir=tmp_path)
+    serve(s, *_serve_deps(s))
+    # Exactly today's call: no ssl kwargs sneak in when TLS is not configured.
+    assert calls == {"host": s.web_host, "port": s.web_port, "log_level": "warning"}
+
+
+def test_serve_ignores_partial_ssl_config(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr("uvicorn.run", lambda app, **kw: calls.update(kw))
+    cert = tmp_path / "c.pem"
+    cert.write_text("x")
+    s = Settings(event_log_dir=tmp_path, ssl_cert=cert)
+    serve(s, *_serve_deps(s))
+    assert "ssl_certfile" not in calls and "ssl_keyfile" not in calls
+
+
+def test_ca_pem_served_when_configured(tmp_path):
+    pem = b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    ca = tmp_path / "ca.pem"
+    ca.write_bytes(pem)
+    s = Settings(event_log_dir=tmp_path, ca_cert=ca)
+    c = TestClient(create_app(s, *_serve_deps(s)))
+    r = c.get("/ca.pem")
+    assert r.status_code == 200
+    assert r.content == pem
+    assert r.headers["content-type"].startswith("application/x-pem-file")
+    assert "watchdoggy-ca.pem" in r.headers["content-disposition"]
+
+
+def test_ca_pem_404_when_not_configured(tmp_path):
+    s = Settings(event_log_dir=tmp_path)
+    c = TestClient(create_app(s, *_serve_deps(s)))
+    assert c.get("/ca.pem").status_code == 404
+
+
+def test_ca_pem_404_when_file_missing(tmp_path):
+    s = Settings(event_log_dir=tmp_path, ca_cert=tmp_path / "gone.pem")
+    c = TestClient(create_app(s, *_serve_deps(s)))
+    assert c.get("/ca.pem").status_code == 404
 
 
 def test_snooze_endpoint_blocks_then_cancel_re_allows(tmp_path):
