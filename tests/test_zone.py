@@ -1,5 +1,5 @@
 import numpy as np
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 from doggy.zone import ZoneFilter
 
 # A triangle covering the top-left area of a 100x100 frame.

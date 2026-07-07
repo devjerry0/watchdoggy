@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Callable, Iterator, Protocol
 
 import cv2
 import numpy as np
@@ -77,9 +77,25 @@ class OpenCVCamera:
         self._cap.release()
 
 
-def build_camera(settings: Settings) -> Camera:
-    if settings.camera_backend == "file":
-        if settings.camera_path:
-            return FakeCamera.from_video(settings.camera_path, loop=True)
-        return FakeCamera([], loop=False)
+def _build_opencv_camera(settings: Settings) -> Camera:
     return OpenCVCamera(settings.camera_index)
+
+
+def _build_file_camera(settings: Settings) -> Camera:
+    if settings.camera_path:
+        return FakeCamera.from_video(settings.camera_path, loop=True)
+    return FakeCamera([], loop=False)
+
+
+_BACKENDS: dict[str, Callable[[Settings], Camera]] = {
+    "opencv": _build_opencv_camera,
+    "file": _build_file_camera,
+}
+
+
+def build_camera(settings: Settings) -> Camera:
+    try:
+        builder = _BACKENDS[settings.camera_backend]
+    except KeyError:
+        raise ValueError(f"unknown camera backend: {settings.camera_backend!r}") from None
+    return builder(settings)

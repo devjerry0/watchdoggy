@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from doggy.detection import Detection
-from doggy.detector import StubDetector, select_device
+from doggy.vision.detection import Detection
+from doggy.vision.detector import StubDetector, select_device
 
 
 def test_stub_detector_scripts_returns():
@@ -19,7 +19,7 @@ def test_select_device_returns_known_value():
 @pytest.mark.slow
 def test_yolo_detects_dog_and_ignores_empty_room():
     from pathlib import Path
-    from doggy.detector import YoloDetector
+    from doggy.vision.detector import YoloDetector
     from doggy.core.config import Settings, TunableSettings
     from doggy.core.runtime import RuntimeSettings
     import cv2

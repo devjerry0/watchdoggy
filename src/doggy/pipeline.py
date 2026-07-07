@@ -10,11 +10,11 @@ import cv2
 import numpy as np
 
 from doggy.alerter import Alerter
-from doggy.camera import Camera
+from doggy.vision.camera import Camera
 from doggy.clips import ClipBuffer, encode_clip
 from doggy.core.config import Settings
-from doggy.detection import PERSON_LABEL, TARGET_LABEL
-from doggy.detector import Detector
+from doggy.vision.detection import PERSON_LABEL, TARGET_LABEL
+from doggy.vision.detector import Detector
 from doggy.events.store import EventStore
 from doggy.core.pacer import Pacer
 from doggy.people import suppress_dogs_overlapping_people
@@ -24,6 +24,7 @@ from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import CONFIDENCE_DECIMALS, FrameBuffer, StatusStore
 from doggy.hardware.thermal import ThermalGovernor
 from doggy.trigger import TriggerLogic
+from doggy.vision.annotate import annotate
 from doggy.zone import ZoneFilter
 
 log = logging.getLogger("doggy")
@@ -31,43 +32,8 @@ log = logging.getLogger("doggy")
 # Idle poll interval while the detect loop waits for the capture thread's
 # first frame.
 _IDLE_POLL_SECONDS = 0.01
-# Detection-overlay styling (OpenCV uses BGR).
-_BOX_THICKNESS = 2
-_LABEL_FONT_SCALE = 0.5
-_LABEL_THICKNESS = 1
-_LABEL_Y_OFFSET = 6  # pixels above the box to place the label
 # Decimal places for the FPS readout (confidence precision is shared: CONFIDENCE_DECIMALS).
 _FPS_DECIMALS = 1
-_DOG_ACTIVE_COLOR = (0, 0, 255)     # red BGR — in-zone / will trigger
-_DOG_IGNORED_COLOR = (150, 150, 150)  # grey — outside zone, ignored
-_PERSON_COLOR = (255, 0, 0)         # blue BGR — shown, never alerted on
-_ZONE_COLOR = (0, 165, 255)         # orange BGR
-_ZONE_ALPHA = 0.25
-
-
-def _draw_box(out, box, label, confidence, color):
-    x1, y1, x2, y2 = box
-    cv2.rectangle(out, (x1, y1), (x2, y2), color, _BOX_THICKNESS)
-    cv2.putText(out, f"{label} {confidence:.2f}", (x1, max(0, y1 - _LABEL_Y_OFFSET)),
-                cv2.FONT_HERSHEY_SIMPLEX, _LABEL_FONT_SCALE, color, _LABEL_THICKNESS)
-
-
-def annotate(frame, detections, in_zone=None, zone_points=None, people=None):
-    out = frame.copy()
-    h, w = frame.shape[0], frame.shape[1]
-    if zone_points and len(zone_points) >= 3:
-        pts = np.array([[int(x * w), int(y * h)] for x, y in zone_points], np.int32)
-        overlay = out.copy()
-        cv2.fillPoly(overlay, [pts], _ZONE_COLOR)
-        cv2.addWeighted(overlay, _ZONE_ALPHA, out, 1 - _ZONE_ALPHA, 0, out)
-        cv2.polylines(out, [pts], True, _ZONE_COLOR, _BOX_THICKNESS)
-    active = detections if in_zone is None else in_zone
-    for p in people or []:
-        _draw_box(out, p.box, p.label, p.confidence, _PERSON_COLOR)
-    for d in detections:
-        color = _DOG_ACTIVE_COLOR if d in active else _DOG_IGNORED_COLOR
-        _draw_box(out, d.box, d.label, d.confidence, color)
-    return out
 
 
 class Pipeline:

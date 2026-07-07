@@ -3,10 +3,10 @@ import random
 import numpy as np
 
 from doggy.alerter import FakeAlerter
-from doggy.camera import FakeCamera
+from doggy.vision.camera import FakeCamera
 from doggy.core.config import Settings
-from doggy.detection import Detection
-from doggy.detector import StubDetector
+from doggy.vision.detection import Detection
+from doggy.vision.detector import StubDetector
 from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
@@ -43,7 +43,7 @@ def test_pipeline_fires_after_confirmation(tmp_path):
 
 
 def test_pipeline_counts_multiple_dogs(tmp_path):
-    from doggy.pipeline import annotate
+    from doggy.vision.annotate import annotate
     settings = Settings()
     runtime = RuntimeSettings(settings.tunable())
     two_dogs = [
@@ -230,7 +230,7 @@ def test_pipeline_finalizes_clip_after_postroll(tmp_path):
 
 
 def test_annotate_draws_zone_polygon():
-    from doggy.pipeline import annotate
+    from doggy.vision.annotate import annotate
     frame = np.zeros((100, 100, 3), np.uint8)
     out = annotate(frame, [], in_zone=[], zone_points=[(0.0, 0.0), (0.6, 0.0), (0.0, 0.6)])
     assert (out != 0).any()   # the polygon outline/fill was drawn

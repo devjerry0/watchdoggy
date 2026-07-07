@@ -1,6 +1,6 @@
 import numpy as np
 
-from doggy.camera import FakeCamera, build_camera
+from doggy.vision.camera import FakeCamera, build_camera
 from doggy.core.config import Settings
 
 

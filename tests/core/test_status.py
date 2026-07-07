@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from doggy.core.config import TunableSettings
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 
 _MIN_POLYGON_POINTS = 3
 

@@ -7,7 +7,7 @@ from typing import Protocol
 import numpy as np
 
 from doggy.core.config import Settings
-from doggy.detection import Detection, PERSON_LABEL, TARGET_LABEL
+from doggy.vision.detection import Detection, PERSON_LABEL, TARGET_LABEL
 from doggy.core.runtime import RuntimeSettings
 
 # Classes the detector surfaces: the target (dog) plus people, which the pipeline

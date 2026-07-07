@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 
 Box = tuple[int, int, int, int]  # (x1, y1, x2, y2)
 

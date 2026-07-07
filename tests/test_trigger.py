@@ -1,7 +1,7 @@
 import random
 
 from doggy.core.config import TunableSettings
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 from doggy.core.runtime import RuntimeSettings
 from doggy.trigger import TriggerLogic, TriggerState
 

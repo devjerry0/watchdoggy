@@ -4,7 +4,7 @@ import random
 from collections import deque
 from enum import Enum
 
-from doggy.detection import Detection, TARGET_LABEL
+from doggy.vision.detection import Detection, TARGET_LABEL
 from doggy.core.runtime import RuntimeSettings
 
 

@@ -1,4 +1,4 @@
-from doggy.detection import Detection
+from doggy.vision.detection import Detection
 from doggy.people import iou, suppress_dogs_overlapping_people
 
 

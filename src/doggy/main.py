@@ -5,9 +5,9 @@ import signal
 import threading
 
 from doggy.alerter import build_alerter
-from doggy.camera import build_camera
+from doggy.vision.camera import build_camera
 from doggy.core.config import load_settings
-from doggy.detector import build_detector
+from doggy.vision.detector import build_detector
 from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
