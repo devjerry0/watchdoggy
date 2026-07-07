@@ -43,15 +43,18 @@ fi
 echo "==> uv sync (CPU-only torch; slowest step on a Pi, be patient)"
 uv sync
 
+# ncnn + pnnx are installed out-of-band (not in uv.lock), so `uv sync` above
+# REMOVES them on every run. Reinstall unconditionally right after sync, or a
+# re-deploy (model already present) leaves the NCNN backend unable to load
+# ("ModuleNotFoundError: No module named 'ncnn'") and the service crash-loops.
+echo "==> installing NCNN toolchain (ncnn runtime + pnnx converter)"
+uv pip install ncnn pnnx || echo "WARN: ncnn/pnnx install failed; will fall back to .pt"
+
 echo "==> disabling Ultralytics telemetry (appliance runs offline)"
 uv run yolo settings sync=False >/dev/null 2>&1 || true
 
 mkdir -p models sounds
 if [ ! -d models/yolo26n_ncnn_model ]; then
-  # NCNN needs the ncnn runtime + pnnx converter; uv's venv has no pip, so
-  # Ultralytics can't auto-install them — install explicitly with uv pip.
-  echo "==> installing NCNN toolchain (ncnn runtime + pnnx converter)"
-  uv pip install ncnn pnnx || echo "WARN: ncnn/pnnx install failed; will fall back to .pt"
   echo "==> downloading yolo26n + exporting to NCNN (one-time, slow)"
   uv run python - <<'PY'
 import pathlib, shutil
@@ -118,7 +121,10 @@ WorkingDirectory=$HOME/$REMOTE_DIR
 EnvironmentFile=$HOME/$REMOTE_DIR/.env
 # pw-play (command alerter) needs the user's runtime dir to reach PipeWire/BT
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u)
-ExecStart=$(command -v uv) run doggy
+# The appliance is egress-firewalled, so uv must stay offline on start and must
+# NOT re-sync (a sync reaches PyPI, and would also wipe the out-of-band ncnn/pnnx).
+Environment=UV_OFFLINE=1
+ExecStart=$(command -v uv) run --no-sync doggy
 # always (not on-failure): the app exits 0 when the camera is missing, so it
 # must relaunch until the webcam is present / reconnected. Appliance resilience.
 Restart=always
