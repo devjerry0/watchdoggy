@@ -395,6 +395,7 @@
     <img id="lb-img" src="" alt="reaction snapshot" />
     <video id="lb-video" controls playsinline style="display:none"></video>
     <div class="lb-bar">
+      <a id="lb-dl-video" download style="display:none">Download video</a>
       <a id="lb-dl" download>Download</a>
       <button onclick="closeLightbox()">Close</button>
     </div>
@@ -573,6 +574,15 @@ function openEvent(photo, clip){
   const dl = document.getElementById("lb-dl");
   dl.href = photo;
   dl.setAttribute("download", "watchdoggy-" + (photo.split("/").pop() || "snapshot.jpg"));
+  dl.textContent = clip ? "Download photo" : "Download";
+  const dlv = document.getElementById("lb-dl-video");
+  if (clip){
+    dlv.style.display = "";
+    dlv.href = clip;
+    dlv.setAttribute("download", "watchdoggy-" + clip.split("/").pop());
+  } else {
+    dlv.style.display = "none";
+  }
   document.getElementById("lightbox").classList.add("open");
 }
 function closeLightbox(){

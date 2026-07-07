@@ -34,39 +34,28 @@ def test_slice_returns_inclusive_range_in_order():
     assert b.slice(10.0, 20.0) == []
 
 
-def test_encode_writes_mp4(tmp_path):
+def test_encode_writes_animated_webp(tmp_path):
+    # Animated WebP is the only format every browser can play in the
+    # dashboard; OpenCV's mp4v output looks like video but no browser
+    # decodes it.
     frames = [_jpeg(c) for c in (10, 100, 200, 50)]
-    out = tmp_path / "clip.mp4"
+    out = tmp_path / "clip.webp"
     path = encode_clip(frames, fps=6, out_path=out)
     assert path == out
-    assert path.suffix == ".mp4"
     assert path.exists() and path.stat().st_size > 0
+    with Image.open(path) as im:
+        assert im.format == "WEBP"
+        assert getattr(im, "n_frames", 1) == len(frames)
 
 
-def test_encode_falls_back_to_webp(monkeypatch, tmp_path):
+def test_encode_normalizes_suffix_to_webp(tmp_path):
+    # A caller passing a legacy .mp4 path still gets a playable webp,
+    # and no mp4 is ever produced.
     frames = [_jpeg(c) for c in (10, 100, 200)]
-
-    class _DeadWriter:
-        def __init__(self, *a, **k):
-            pass
-
-        def isOpened(self):
-            return False
-
-        def write(self, frame):
-            pass
-
-        def release(self):
-            pass
-
-    monkeypatch.setattr(cv2, "VideoWriter", _DeadWriter)
-    out = tmp_path / "clip.mp4"
-    path = encode_clip(frames, fps=6, out_path=out)
+    path = encode_clip(frames, fps=6, out_path=tmp_path / "clip.mp4")
     assert path.suffix == ".webp"
     assert path.exists() and path.stat().st_size > 0
-    assert not out.exists()  # no stray 0-byte mp4 left behind
-    with Image.open(path) as im:
-        assert getattr(im, "n_frames", 1) == len(frames)
+    assert not (tmp_path / "clip.mp4").exists()
 
 
 def test_prune_caps_clips_to_retention(tmp_path):

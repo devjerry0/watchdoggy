@@ -42,40 +42,23 @@ class ClipBuffer:
 
 
 def encode_clip(frames: list[bytes], fps: int, out_path: Path) -> Path:
-    """Encode JPEG ``frames`` into a short clip, returning the path written.
+    """Encode JPEG ``frames`` into an animated WebP, returning the path written.
 
-    Writes an MP4 via OpenCV's ``mp4v`` writer. If OpenCV cannot open the writer
-    (no codec on the host) or it yields a missing/0-byte file, fall back to an
-    animated WebP via Pillow and return that path instead.
+    Animated WebP is the one format every browser plays that this appliance can
+    always produce: OpenCV's only universal writer is mp4v (MPEG-4 Part 2),
+    which no browser decodes, and shipping a real H.264 encoder would need
+    ffmpeg on the device. Any suffix on ``out_path`` is normalized to .webp.
     """
-    out_path = Path(out_path)
-    images = [
-        cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR) for jpeg in frames
-    ]
-    images = [img for img in images if img is not None]
-    if not images:
+    pil_frames = []
+    for jpeg in frames:
+        try:
+            pil_frames.append(Image.open(BytesIO(jpeg)).convert("RGB"))
+        except OSError:
+            continue
+    if not pil_frames:
         raise ValueError("encode_clip: no decodable frames")
 
-    h, w = images[0].shape[:2]
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
-    wrote = False
-    if writer.isOpened():
-        for img in images:
-            writer.write(img)
-        wrote = True
-    writer.release()
-
-    if wrote and out_path.is_file() and out_path.stat().st_size > 0:
-        return out_path
-
-    # Fallback: OpenCV lacks a usable MP4 encoder on this host. Emit an animated
-    # WebP, which Pillow can always write, and drop any stray 0-byte MP4.
-    log.warning("mp4 encode unavailable; writing animated webp fallback for %s", out_path.name)
-    if out_path.exists():
-        out_path.unlink()
-    webp_path = out_path.with_suffix(".webp")
-    pil_frames = [Image.open(BytesIO(jpeg)).convert("RGB") for jpeg in frames]
+    webp_path = Path(out_path).with_suffix(".webp")
     pil_frames[0].save(
         webp_path,
         save_all=True,
@@ -133,7 +116,7 @@ class ClipService:
             frames = self._buffer.slice(p["fire_ts"] - cfg.clip_preroll_seconds, p["end"])
             if frames:
                 try:
-                    path = encode_clip(frames, cfg.clip_fps, self._event_dir / f"{p['id']}.mp4")
+                    path = encode_clip(frames, cfg.clip_fps, self._event_dir / f"{p['id']}.webp")
                     self._store.attach_clip(p["id"], path.name)
                 except Exception:
                     log.exception("failed to encode clip for %s", p["id"])
