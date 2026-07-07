@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from doggy.reaction.sound import FakeAlerter
 from doggy.core.config import Settings
 from doggy.events.store import EventStore
-from doggy.safety import SafetyGovernor
+from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 from doggy.web import create_app
@@ -15,8 +15,8 @@ def client(tmp_path, saved=None):
     runtime = RuntimeSettings(settings.tunable())
     alerter = FakeAlerter()
     store = EventStore(tmp_path, 100, 0)
-    safety = SafetyGovernor(runtime, store)
-    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), alerter, store, safety,
+    gate = FireGate(runtime)
+    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), alerter, store, gate,
                      save_env=lambda t: saved.update(t.model_dump()) if saved is not None else None)
     return TestClient(app), runtime, alerter
 
@@ -75,7 +75,7 @@ def _app_with_events(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store,
-                     SafetyGovernor(runtime, store))
+                     FireGate(runtime))
     return TestClient(app)
 
 
@@ -113,7 +113,7 @@ def test_index_has_zone_controls(tmp_path):
     store = EventStore(tmp_path, 100, 0)
     runtime = RuntimeSettings(s.tunable())
     app = create_app(s, runtime, FrameBuffer(), StatusStore(),
-                     FakeAlerter(), store, SafetyGovernor(runtime, store))
+                     FakeAlerter(), store, FireGate(runtime))
     html = TestClient(app).get("/").text
     assert "Save area" in html and "Clear area" in html
     assert "detect_interval_seconds" in html
@@ -124,7 +124,7 @@ def test_index_has_temp_readout(tmp_path):
     store = EventStore(tmp_path, 100, 0)
     runtime = RuntimeSettings(s.tunable())
     app = create_app(s, runtime, FrameBuffer(), StatusStore(),
-                     FakeAlerter(), store, SafetyGovernor(runtime, store))
+                     FakeAlerter(), store, FireGate(runtime))
     html = TestClient(app).get("/").text
     assert 'id="temp"' in html
     assert "Temperature" in html
@@ -135,7 +135,7 @@ def test_index_has_value_feature_sections(tmp_path):
     store = EventStore(tmp_path, 100, 0)
     runtime = RuntimeSettings(s.tunable())
     app = create_app(s, runtime, FrameBuffer(), StatusStore(),
-                     FakeAlerter(), store, SafetyGovernor(runtime, store))
+                     FakeAlerter(), store, FireGate(runtime))
     html = TestClient(app).get("/").text
     # New value features
     assert "Snooze" in html
@@ -161,7 +161,7 @@ def _app_with_store(tmp_path, store):
     settings = Settings(event_log_dir=tmp_path)
     runtime = RuntimeSettings(settings.tunable())
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store,
-                     SafetyGovernor(runtime, store))
+                     FireGate(runtime))
     return TestClient(app)
 
 
@@ -217,7 +217,7 @@ def _sounds_client(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, SafetyGovernor(runtime, store))
+                     store, FireGate(runtime))
     return TestClient(app), sounds, runtime
 
 
@@ -265,12 +265,12 @@ def test_snooze_endpoint_blocks_then_cancel_re_allows(tmp_path):
     settings = Settings(event_log_dir=tmp_path)
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
-    safety = SafetyGovernor(runtime, store)
+    gate = FireGate(runtime)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, safety)
+                     store, gate)
     c = TestClient(app)
-    assert safety.allow_fire(now=time.monotonic()) is True
+    assert gate.allow(now=time.monotonic()) is True
     assert c.post("/api/snooze", json={"minutes": 5}).json() == {"ok": True}
-    assert safety.allow_fire(now=time.monotonic()) is False  # snoozed
+    assert gate.allow(now=time.monotonic()) is False  # snoozed
     assert c.post("/api/snooze/cancel").json() == {"ok": True}
-    assert safety.allow_fire(now=time.monotonic()) is True   # re-armed
+    assert gate.allow(now=time.monotonic()) is True   # re-armed

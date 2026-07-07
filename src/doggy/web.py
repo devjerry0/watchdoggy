@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from doggy.reaction.sound import Alerter
 from doggy.core.config import Settings, TunableSettings
 from doggy.events.store import EventRecord, EventStore
-from doggy.safety import SafetyGovernor
+from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 
@@ -84,7 +84,7 @@ def _write_env(tunable: TunableSettings, path: Path = Path(".env")) -> None:
 
 def create_app(settings: Settings, runtime: RuntimeSettings,
                annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
-               event_store: EventStore, safety: SafetyGovernor,
+               event_store: EventStore, gate: FireGate,
                save_env: Callable[[TunableSettings], None] = _write_env) -> FastAPI:
     app = FastAPI(title="doggy")
 
@@ -165,13 +165,13 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
 
     @app.post("/api/snooze")
     def api_snooze(body: dict) -> dict:
-        # Monotonic clock so the snooze timeline matches the pipeline's allow_fire.
-        safety.snooze(float(body["minutes"]) * 60, time.monotonic())
+        # Monotonic clock so the snooze timeline matches the pipeline's gate.allow.
+        gate.snooze(float(body["minutes"]) * 60, time.monotonic())
         return {"ok": True}
 
     @app.post("/api/snooze/cancel")
     def api_snooze_cancel() -> dict:
-        safety.cancel_snooze()
+        gate.cancel_snooze()
         return {"ok": True}
 
     @app.post("/api/settings/save")
@@ -207,8 +207,8 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
 
 def serve(settings: Settings, runtime: RuntimeSettings,
           annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
-          event_store: EventStore, safety: SafetyGovernor) -> None:
+          event_store: EventStore, gate: FireGate) -> None:
     import uvicorn
 
-    app = create_app(settings, runtime, annotated_buffer, status, alerter, event_store, safety)
+    app = create_app(settings, runtime, annotated_buffer, status, alerter, event_store, gate)
     uvicorn.run(app, host=settings.web_host, port=settings.web_port, log_level="warning")

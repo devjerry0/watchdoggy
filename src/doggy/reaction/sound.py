@@ -25,6 +25,16 @@ class Alerter(Protocol):
     def alert(self) -> None: ...
 
 
+class SoundReaction:
+    """Reaction (Observer): plays the deterrent clip when a dog is caught."""
+
+    def __init__(self, alerter: Alerter) -> None:
+        self._alerter = alerter
+
+    def on_dog_caught(self, event) -> None:
+        self._alerter.alert()
+
+
 class FakeAlerter:
     def __init__(self) -> None:
         self.calls = 0

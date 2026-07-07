@@ -4,7 +4,9 @@ import logging
 import signal
 import threading
 
-from doggy.reaction.sound import build_alerter
+from doggy.reaction.sound import SoundReaction, build_alerter
+from doggy.reaction.hub import ReactionHub, SafeReaction
+from doggy.reaction.recorder import Recorder
 from doggy.vision.camera import build_camera
 from doggy.core.config import load_settings
 from doggy.vision.analysis import DetectionAnalyzer
@@ -14,7 +16,7 @@ from doggy.vision.filters.person import PersonSuppressionFilter
 from doggy.vision.filters.zone import ZoneInclusionFilter
 from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
-from doggy.safety import SafetyGovernor
+from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 
@@ -36,18 +38,23 @@ def main() -> None:
         settings.event_retention_days,
         settings.clip_retention,
     )
-    safety = SafetyGovernor(runtime, event_store)
+    gate = FireGate(runtime)
+    recorder = Recorder(event_store)
 
     detector = build_detector(settings, runtime)   # loads model now (fail fast)
     analyzer = DetectionAnalyzer(
         detector, FilterChain([PersonSuppressionFilter(), ZoneInclusionFilter()]))
     camera = build_camera(settings)
     alerter = build_alerter(settings, runtime)
+    # Reactions fan out on a catch; each is wrapped so one failure can't stop the
+    # others or kill the detect loop. The clip service joins the hub in a later task.
+    hub = ReactionHub([SafeReaction(SoundReaction(alerter))])
 
     pipeline = Pipeline(
-        settings=settings, analyzer=analyzer, camera=camera, alerter=alerter,
+        settings=settings, analyzer=analyzer, camera=camera,
         runtime=runtime, status=status, raw_buffer=raw_buffer,
-        annotated_buffer=annotated_buffer, safety=safety, event_store=event_store,
+        annotated_buffer=annotated_buffer, gate=gate, recorder=recorder, hub=hub,
+        event_store=event_store,
     )
 
     stop = threading.Event()
@@ -58,7 +65,7 @@ def main() -> None:
         from doggy.web import serve
         threading.Thread(
             target=serve,
-            args=(settings, runtime, annotated_buffer, status, alerter, event_store, safety),
+            args=(settings, runtime, annotated_buffer, status, alerter, event_store, gate),
             daemon=True,
         ).start()
         log.info("dashboard at http://%s:%s", settings.web_host, settings.web_port)
