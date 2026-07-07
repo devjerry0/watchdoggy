@@ -115,8 +115,15 @@ class Reaction(Protocol):
 class ReactionHub:
     def __init__(self, reactions: Sequence[Reaction]) -> None: ...
     def publish(self, event: DogCaught) -> None:
-        # calls each reaction inside try/except; one failing reaction is logged
-        # (log.exception) and MUST NOT prevent the others or kill the detect loop
+        # dumb fan-out: calls each reaction in registration order.
+        # Crash isolation is NOT the hub's job -- see SafeReaction (Decorator).
+
+class SafeReaction:
+    """Decorator: wraps a Reaction so an exception is logged (log.exception)
+    and swallowed -- one failing reaction must not stop the others or kill the
+    detect loop. The composition root wraps every registered reaction."""
+    def __init__(self, inner: Reaction) -> None: ...
+    def on_dog_caught(self, event: DogCaught) -> None: ...
 ```
 
 **Why recording is NOT an observer:** `ClipService` needs the `EventRecord.id` to name and attach the clip, so persistence is the primary effect that *produces* the event, not a peer subscriber. Sequence on a fire (pins today's semantics):
@@ -127,7 +134,7 @@ class ReactionHub:
 4. `hub.publish(DogCaught(record, frame, now))` → `SoundReaction` (plays the deterrent via the alerter), `ClipService` (registers the pending clip).
 5. Pipeline updates `last_fire_ts`/`last_fire_thumb` status from `record`.
 
-**Registered reactions at boot:** `[SoundReaction(alerter), clip_service]`. A future turret/notification = one new `Reaction` registered in `app.py`.
+**Registered reactions at boot:** `[SafeReaction(SoundReaction(alerter)), SafeReaction(clip_service)]`. A future turret/notification = one new `Reaction` wrapped and registered in `app.py`.
 
 **ClipService** (`reaction/clips.py`) is both a per-frame stage and a reaction: the pipeline calls `clip_service.on_frame(annotated_frame, now, cfg)` every loop (JPEG-push into the rolling buffer when `clips_enabled`) and `clip_service.finalize_due(now, cfg)` (encode pendings whose post-roll elapsed → `event_store.attach_clip`); `on_dog_caught` registers the pending. Buffer window, encode fallback (mp4 → webp), retention semantics unchanged.
 
@@ -138,6 +145,44 @@ Replace `if/elif` factories with module-level registries; behavior identical, un
 - `vision/camera.py`: `_BACKENDS = {"opencv": ..., "file": ...}`; `build_camera(settings)`.
 - `vision/detector.py`: `build_detector(settings, runtime)` (yolo; `StubDetector` stays for tests).
 - `reaction/sound.py`: `_BACKENDS = {"sounddevice": ..., "command": ..., "log": ...}`; `build_alerter(settings, runtime)`. `selected_sound`/`max_volume` handling unchanged.
+
+## Pattern 3b — State for the trigger FSM (`decision/trigger.py`)
+
+`TriggerLogic` is a hand-rolled finite state machine (`IDLE → CONFIRMING → COOLDOWN`, `if/elif` on a state enum). Apply the State pattern: each state becomes a small class owning its own frame-handling rules and returning the next state.
+
+```python
+class TriggerState(Protocol):
+    def on_frame(self, ctx: "TriggerLogic", has_dog: bool, frame_max: float,
+                 m_of_n: bool, window_full: bool, now: float) -> "TriggerState":
+        """Handle one frame; return the state to be in next (may be self).
+        Sets ctx.fired for the frame via ctx (fire edge only in Confirming)."""
+
+class Idle: ...        # dog seen -> Confirming (records confirm_start / confirm_max)
+class Confirming: ...  # window fails -> Idle; confirmed -> sets fire_confidence/
+                       #   fire_latency, computes cooldown_until -> Cooldown
+class Cooldown: ...    # expired -> Idle (then normal Idle handling for this frame)
+```
+
+`TriggerLogic.update(detections, now) -> bool` keeps its exact public signature, the `state` property keeps exposing the current state name string (the dashboard's `IDLE / CONFIRMING / COOLDOWN`), and every existing trigger test passes unmodified — window bookkeeping, M-of-N, confirm timing, jittered cooldown, `fire_confidence`, `fire_latency` all byte-identical in behavior. Payoff: an escalation stage later ("chirp, then louder if she stays") or the squirrel-turret FSM (`TRACKING → AIMING → FIRING`) is a new state class, not a rewrite of a conditional block.
+
+## Pattern 3c — Template Method for sound backends (`reaction/sound.py`)
+
+Every alerter shares the same skeleton — resolve the clip (`selected_sound` or random from `clips_dir`), clamp volume, spawn the play thread — and differs only in how it plays. Today that skeleton is duplicated across backends. Fix with Template Method:
+
+```python
+class BaseAlerter:
+    def alert(self) -> None:
+        # template: cfg = runtime.get(); clip = self._resolve_clip(cfg);
+        # if clip: spawn daemon thread -> self._play(clip, clamped_volume)
+    def _resolve_clip(self, cfg) -> Path | None: ...   # shared, one implementation
+    def _play(self, clip: Path, volume: float) -> None: raise NotImplementedError
+
+class SounddeviceAlerter(BaseAlerter): ...  # scales samples by volume
+class CommandAlerter(BaseAlerter): ...      # pw-play/afplay with volume args
+class LogAlerter(BaseAlerter): ...          # Null Object: logs, plays nothing
+```
+
+Existing alerter tests keep passing; clip-selection behavior (missing file → random fallback) unchanged.
 
 ## Pattern 4 — FireGate (`decision/gate.py`)
 
@@ -180,10 +225,14 @@ return fired and not muted
 
 `create_app` keeps its public signature style (explicit dependencies in, `FastAPI` out) but internally builds routers: each `web/routers/*.py` exposes `build_router(<deps>) -> APIRouter`, included by `web/app.py`. Route paths, methods, status codes, and JSON shapes are byte-identical (existing `tests/test_web.py` assertions are the proof). `GET /` serves `web/static/index.html` (path constant updated). `envfile.py` holds `_write_env` (same format, same tests).
 
+## Documentation deliverable — `ARCHITECTURE.md`
+
+A repo-root `ARCHITECTURE.md` mapping every package to its pattern and the reason it earns its keep: the five applied patterns above, plus naming the patterns that were **already present** (PowerMonitor = caching Proxy over `vcgencmd`; `camera.frames()` = Iterator; `LogAlerter` = Null Object; `FrameBuffer` = single-slot drop-oldest buffer) and a short "rejected patterns and why" section (Mediator, Builder, Command, hexagonal ports — Speculative Generality at this scale). One page, links into the packages.
+
 ## Tests
 
 - Mirror the packages: `tests/core/`, `tests/vision/` (incl. `tests/vision/filters/`), `tests/decision/`, `tests/reaction/`, `tests/events/`, `tests/hardware/`, `tests/web/`; `tests/test_pipeline.py` and `tests/test_smoke.py` stay at root. Moves via `git mv`, imports updated, zero assertions weakened.
-- New seam tests: FilterChain runs links in order and respects enable flags; ReactionHub fans out to all reactions and isolates a raising reaction (others still run, no exception escapes); FireGate `allow`/`note_fire` reproduce today's `allow_fire`/`record_fire` deque semantics (incl. snooze); DetectionAnalyzer end-to-end (stub detector → analysis fields).
+- New seam tests: FilterChain runs links in order and respects enable flags; ReactionHub fans out in registration order; SafeReaction swallows+logs a raising inner reaction (others still run, nothing escapes); FireGate `allow`/`note_fire` reproduce today's `allow_fire`/`record_fire` deque semantics (incl. snooze); DetectionAnalyzer end-to-end (stub detector → analysis fields); trigger State classes covered by the existing trigger suite unchanged (behavioral lock) plus one test asserting the state-object transition wiring (Idle→Confirming→Cooldown→Idle round trip).
 - The full existing suite (132 tests) passes unmodified in behavior at every task boundary.
 
 ## Migration strategy
