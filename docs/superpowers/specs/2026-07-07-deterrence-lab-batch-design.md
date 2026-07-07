@@ -167,10 +167,15 @@ with zero renewals and zero internet.
   After that one-time step the dashboard shows a normal padlock — no
   warnings. README documents the per-platform steps in plain words.
 - `web.serve()` passes `ssl_certfile`/`ssl_keyfile` to uvicorn when both
-  are set. Port stays 8000; the dashboard URL becomes
-  `https://doggypi.local:8000`. No cert vars = plain HTTP exactly as
-  today (Mac dev stays http://127.0.0.1:8000, already a secure context
-  for mic/notifications).
+  are set. With TLS configured the dashboard serves https on port 8443,
+  and port 8000 stays plain HTTP as an "onboarding door": it probes
+  whether the visiting device trusts the home CA (an http page can fetch
+  an https /ping on the same host; the fetch fails iff untrusted) and
+  either redirects straight to the https dashboard or walks the user
+  through the one-time CA install (Apple devices get a .mobileconfig,
+  others the raw .pem). Existing bookmarks keep working forever. No cert
+  vars = plain HTTP exactly as today (Mac dev stays
+  http://127.0.0.1:8000, already a secure context for mic/notifications).
 - The CA private key lives on the Pi (0600, LAN-only box) — right-sized
   for a household threat model; noted in the README.
 

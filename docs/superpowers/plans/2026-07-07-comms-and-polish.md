@@ -146,6 +146,61 @@ REMOTE
 
 ---
 
+### Task 1b: Onboarding door (auto-detect missing CA)
+
+Decision record: a page cannot install a CA (OS security model), but a
+plain-HTTP page CAN probe whether this device trusts the home CA — an
+http page may fetch an https URL on the same host, and the fetch fails
+with a TLS error iff the CA is untrusted. Port 8000 therefore stays
+plain HTTP forever as a "door" (bookmarks keep working); the real
+dashboard serves HTTPS on 8443.
+
+**Files:**
+- Create: `src/doggy/web/door.py` (tiny FastAPI app: door page, `/ca.pem`, `/ca.mobileconfig`, `/ping`)
+- Modify: `src/doggy/core/config.py` (`Settings.ssl_port: int = 8443`), `src/doggy/web/app.py` (`serve` orchestrates both), `scripts/setup-https.sh` (URL wording), `README.md`
+- Test: `tests/web/test_door.py` (new)
+
+**Interfaces:**
+- Produces: with TLS configured, `serve()` runs the dashboard app via
+  uvicorn on `ssl_port` (https) and the door app on `web_port` (http) in
+  a daemon thread; without TLS, exactly today (dashboard http on
+  `web_port`, no door). Door endpoints: `GET /` (door page), `GET
+  /ping` (204, CORS `Access-Control-Allow-Origin: *`), `GET /ca.pem`
+  (moves here from the dashboard app), `GET /ca.mobileconfig` (Apple
+  profile wrapping the same CA DER, generated with `uuid.uuid5` on the
+  cert bytes so re-serving is stable).
+- The dashboard app also keeps `/ping` (that is the probe target on the
+  https side; 204, no auth) and keeps `/ca.pem` for direct access.
+
+- [ ] **Step 1: Failing tests** (`tests/web/test_door.py`): door page 200
+  and contains "Secure this device" + a link to `/ca.pem`; `/ping` 204
+  with the CORS header; `/ca.mobileconfig` 200 with
+  `application/x-apple-aspen-config` content type and the base64 CA
+  payload inside a plist containing `com.apple.security.root`; 404s for
+  everything when `ca_cert` unset. Dashboard app: `/ping` 204.
+- [ ] **Step 2: Implement door.py.** The door page is a small inline-HTML
+  page in the visual language of the dashboard (dark, amber, serif
+  wordmark; plain-language copy, no emoji). Its JS probes
+  `fetch("https://" + location.hostname + ":" + SSL_PORT + "/ping", {mode: "cors"})`:
+  on success, `location.replace` to the https dashboard (same path);
+  on failure, reveal the setup section: platform-detected download
+  button (`navigator.userAgent` Apple -> `/ca.mobileconfig`, else
+  `/ca.pem`), the per-platform trust steps, and a "Check again" button
+  that re-probes (plus an automatic re-probe every 5s so finishing the
+  OS steps auto-advances). SSL_PORT is templated server-side into the
+  page.
+- [ ] **Step 3: serve() orchestration.** With TLS configured: build the
+  door app and run it with its own `uvicorn.run` in a
+  `threading.Thread(daemon=True)` on `web_port`, then run the dashboard
+  https on `ssl_port` in the main web thread. Log both URLs at startup.
+  A one-line comment: the door is intentionally unauthenticated and
+  serves only public material.
+- [ ] **Step 4: script + README wording** — the script's final echo now
+  says: open `http://<host>:8000` on each device and follow the page
+  (it detects setup automatically); direct https URL is
+  `https://<host>:8443`.
+- [ ] **Step 5: Gates, commit** — `feat: onboarding door auto-detects missing CA and guides setup`.
+
 ### Task 2: Arming schedule
 
 **Files:**
