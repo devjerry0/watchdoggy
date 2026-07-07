@@ -105,6 +105,53 @@
   .lb-bar{display:flex;gap:.6rem}
   .lb-bar a{font:inherit;font-weight:600;font-size:.9rem;padding:.6rem 1.1rem;border-radius:9px;
             background:var(--accent);color:#04122e;text-decoration:none;cursor:pointer;border:1px solid var(--accent)}
+  .lb-inner video{max-width:100%;max-height:80vh;border-radius:10px;border:1px solid var(--border);background:#000}
+
+  /* Snooze */
+  .snooze{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin-top:1rem;
+          padding-top:.9rem;border-top:1px solid var(--border)}
+  .snooze .snooze-label{font-size:.9rem;font-weight:550;flex:1 1 auto}
+  .snooze-btns{display:flex;gap:.5rem}
+  .snooze-btns button,#snooze_resume{flex:0 0 auto;padding:.45rem .9rem}
+
+  /* History list */
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.9rem}
+  .card-head h2{margin:0}
+  .linkbtn{flex:0 0 auto;padding:.35rem .6rem;font-size:.8rem;background:transparent;border:1px solid var(--border);color:var(--muted)}
+  .linkbtn:hover{color:var(--alert);border-color:var(--alert)}
+  .events{max-height:340px;overflow-y:auto}
+  .thumb{position:relative;flex:none;line-height:0;cursor:pointer}
+  .playbadge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+             width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);
+             display:flex;align-items:center;justify-content:center;pointer-events:none}
+  .playbadge::before{content:"";border-style:solid;border-width:5px 0 5px 8px;
+             border-color:transparent transparent transparent #fff;margin-left:2px}
+  .ev-meta{flex:1 1 auto;min-width:0}
+  .ev-time{font-weight:600;font-size:.9rem}
+  .ev-sub{color:var(--muted);font-size:.78rem;margin-top:.1rem}
+  .ev .del{flex:none;width:30px;height:30px;padding:0;font-size:1.15rem;line-height:1;
+           color:var(--muted);background:transparent;border:1px solid transparent;border-radius:8px}
+  .ev .del:hover{color:var(--alert);border-color:var(--alert)}
+
+  /* Activity */
+  .act-top{font-size:1.05rem;font-weight:600;margin-bottom:.7rem}
+  .act-top .num{color:var(--accent)}
+  .bars{display:flex;gap:.4rem;align-items:flex-end;margin-bottom:.7rem}
+  .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:.25rem}
+  .bar-track{width:100%;height:42px;display:flex;align-items:flex-end;
+             background:#222a34;border-radius:4px;overflow:hidden}
+  .bar-fill{width:100%;background:var(--accent);border-radius:4px;min-height:2px}
+  .bar-x{font-size:.62rem;color:var(--muted)}
+  .act-notes{display:flex;flex-direction:column;gap:.2rem}
+  .act-note{color:var(--muted);font-size:.82rem}
+
+  /* Sound + upload controls */
+  select{width:100%;font:inherit;font-size:.9rem;padding:.55rem .6rem;border-radius:9px;
+         border:1px solid var(--border);background:var(--card2);color:var(--text);margin-top:.5rem}
+  input[type=file]{width:100%;font-size:.82rem;color:var(--muted);margin-top:.5rem}
+  input[type=file]::file-selector-button{font:inherit;font-weight:600;font-size:.85rem;
+         padding:.5rem .8rem;border-radius:8px;border:1px solid var(--border);
+         background:var(--card2);color:var(--text);cursor:pointer;margin-right:.6rem}
 
   @media(max-width:640px){
     .wrap{padding:.9rem}
@@ -147,6 +194,14 @@
           <div class="stat"><div class="k">Certainty it's a dog</div><div class="v" id="conf">–</div></div>
           <div class="stat"><div class="k">Reactions this hour</div><div class="v" id="fires">–</div></div>
         </div>
+        <div class="snooze">
+          <div class="snooze-label" id="snooze_label">Snooze the deterrent</div>
+          <div class="snooze-btns" id="snooze_btns">
+            <button onclick="snooze(15)">15m</button>
+            <button onclick="snooze(60)">1h</button>
+          </div>
+          <button class="primary" id="snooze_resume" style="display:none" onclick="resumeNow()">Resume now</button>
+        </div>
       </div>
     </div>
 
@@ -185,6 +240,26 @@
           <input id="max_fires_per_hour" type="range" min="0" max="60" step="1" />
         </div>
 
+        <div class="field">
+          <div class="row"><label for="selected_sound">Deterrent sound</label></div>
+          <div class="desc">Pick a sound to play, or let it choose at random.</div>
+          <select id="selected_sound"><option value="random">Random</option></select>
+        </div>
+        <div class="field">
+          <div class="row"><label>Loudness</label><span class="val" id="max_volume_v"></span></div>
+          <input id="max_volume" type="range" min="0" max="1" step="0.01" />
+        </div>
+        <div class="toggle">
+          <div><div class="t-label">Save video clips</div><div class="t-desc">Keep a short video of each catch to review here</div></div>
+          <label class="switch"><input id="clips_enabled" type="checkbox" /><span class="track"></span></label>
+        </div>
+        <div class="field">
+          <div class="row"><label for="sound_upload">Add a sound</label></div>
+          <div class="desc">Upload a .wav, .mp3, or .ogg file.</div>
+          <input id="sound_upload" type="file" accept=".wav,.mp3,.ogg,audio/*" onchange="uploadSound(this)" />
+          <div class="desc" id="upload_msg"></div>
+        </div>
+
         <div class="btnrow">
           <button class="primary" onclick="save()">Save settings</button>
           <button onclick="testSound()">Test sound</button>
@@ -212,8 +287,21 @@
       </div>
 
       <div class="card">
-        <h2>Recent reactions</h2>
+        <div class="card-head">
+          <h2>History</h2>
+          <button class="linkbtn" onclick="clearEvents()">Clear all</button>
+        </div>
         <div class="events" id="events"></div>
+      </div>
+
+      <div class="card">
+        <h2>Activity</h2>
+        <div class="act-top"><span class="num" id="act_today">–</span> today, <span class="num" id="act_week">–</span> this week</div>
+        <div class="bars" id="act_bars"></div>
+        <div class="act-notes">
+          <span class="act-note" id="act_busy" style="display:none"></span>
+          <span class="act-note" id="act_lat" style="display:none"></span>
+        </div>
       </div>
 
       <div class="card">
@@ -231,6 +319,7 @@
 <div id="lightbox" class="lightbox" onclick="closeLightbox()">
   <div class="lb-inner" onclick="event.stopPropagation()">
     <img id="lb-img" src="" alt="reaction snapshot" />
+    <video id="lb-video" controls playsinline style="display:none"></video>
     <div class="lb-bar">
       <a id="lb-dl" download>Download</a>
       <button onclick="closeLightbox()">Close</button>
@@ -241,10 +330,10 @@
 <script>
 const KNOBS = ["confidence","confirm_seconds","window_m","window_n","cooldown_min_seconds",
                "cooldown_max_seconds","max_fires_per_hour","detect_interval_seconds",
-               "person_iou_threshold"];
+               "person_iou_threshold","max_volume"];
 const pct = v => Math.round(v * 100) + "%";
 const secs = v => (Math.round(v * 10) / 10) + "s";
-const FMT = {confidence:pct, person_iou_threshold:pct, confirm_seconds:secs,
+const FMT = {confidence:pct, person_iou_threshold:pct, max_volume:pct, confirm_seconds:secs,
              cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs};
 const fmt = (k, v) => (FMT[k] || String)(v);
 const STATE = {IDLE:["Watching","state-watching"], CONFIRMING:["Dog spotted","state-spotted"],
@@ -262,19 +351,155 @@ KNOBS.forEach(k => {
 document.getElementById("safety_enabled").addEventListener("change", e => patch({safety_enabled:e.target.checked}));
 document.getElementById("person_suppression_enabled").addEventListener("change", e =>
   patch({person_suppression_enabled:e.target.checked}));
+document.getElementById("clips_enabled").addEventListener("change", e => patch({clips_enabled:e.target.checked}));
+document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
 async function testSound(){ await fetch("/api/test-sound",{method:"POST"}); }
 async function save(){
   const b = document.querySelector("button.primary"); const t = b.textContent;
   await fetch("/api/settings/save",{method:"POST"}); b.textContent = "Saved"; setTimeout(()=>b.textContent=t, 1200);
 }
-function openLightbox(src){
-  document.getElementById("lb-img").src = src;
+// ---- History ----
+let _evKey = "";
+async function loadEvents(){
+  let data;
+  try { data = await (await fetch("/api/events")).json(); } catch(e){ return; }
+  const evs = data.events || [];
+  const key = evs.map(e => e.id).join(",");   // skip re-render (and scroll reset) when unchanged
+  if (key === _evKey) return;
+  _evKey = key;
+  const box = document.getElementById("events");
+  box.innerHTML = evs.length ? evs.map(evRow).join("")
+    : '<div class="empty">No reactions yet.</div>';
+}
+function evRow(e){
+  const play = e.clip ? '<span class="playbadge"></span>' : "";
+  const clipArg = e.clip ? "'/clips/" + e.clip + "'" : "null";
+  const lat = e.latency_s != null ? " · reacted in " + secs(e.latency_s) : "";
+  return '<div class="ev">'
+    + '<div class="thumb" title="Click to enlarge" onclick="openEvent(\'/events/' + e.thumb + '\', ' + clipArg + ')">'
+    + '<img src="/events/' + e.thumb + '" alt="reaction snapshot">' + play + '</div>'
+    + '<div class="ev-meta"><div class="ev-time">' + timeLabel(e) + '</div>'
+    + '<div class="ev-sub">' + pct(e.confidence) + ' sure' + lat + '</div></div>'
+    + '<button class="del" title="Delete this reaction" onclick="deleteEvent(\'' + e.id + '\')">×</button>'
+    + '</div>';
+}
+function timeLabel(e){
+  if (e.wall_time){
+    const d = new Date(e.wall_time * 1000);
+    if (d.getFullYear() >= 2024){
+      return d.toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
+    }
+  }
+  return relTime(e.age_seconds);
+}
+function relTime(sec){
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec < 45) return "just now";
+  const m = Math.round(sec / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.round(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.round(h / 24) + "d ago";
+}
+async function deleteEvent(id){
+  await fetch("/api/events/" + encodeURIComponent(id), {method:"DELETE"});
+  _evKey = ""; loadEvents();
+}
+async function clearEvents(){
+  if (!confirm("Delete all saved reactions? This can't be undone.")) return;
+  await fetch("/api/events/clear", {method:"POST"});
+  _evKey = ""; loadEvents();
+}
+
+// ---- Snooze ----
+async function snooze(minutes){
+  await fetch("/api/snooze", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({minutes})});
+  poll();
+}
+async function resumeNow(){
+  await fetch("/api/snooze/cancel", {method:"POST"});
+  poll();
+}
+
+// ---- Activity ----
+async function refreshStats(){
+  let st;
+  try { st = await (await fetch("/api/stats")).json(); } catch(e){ return; }
+  document.getElementById("act_today").textContent = st.today;
+  document.getElementById("act_week").textContent = st.this_week;
+  const days = st.per_day || [];
+  const max = Math.max(1, ...days.map(d => d.count));
+  document.getElementById("act_bars").innerHTML = days.map(d => {
+    const h = d.count ? Math.max(8, Math.round(d.count / max * 100)) : 0;
+    const wd = new Date(d.day + "T00:00:00");
+    const letter = isNaN(wd) ? "" : wd.toLocaleDateString([], {weekday:"short"})[0];
+    return '<div class="bar"><div class="bar-track">'
+      + '<div class="bar-fill" style="height:' + h + '%"></div></div>'
+      + '<span class="bar-x">' + letter + '</span></div>';
+  }).join("");
+  const busy = document.getElementById("act_busy");
+  if (st.busiest_hour == null){ busy.style.display = "none"; }
+  else { busy.style.display = ""; busy.textContent = "Busiest around " + hourLabel(st.busiest_hour); }
+  const lat = document.getElementById("act_lat");
+  if (st.avg_latency_s == null){ lat.style.display = "none"; }
+  else { lat.style.display = ""; lat.textContent = "Avg reaction " + secs(st.avg_latency_s); }
+}
+function hourLabel(h){
+  const ampm = h < 12 ? "am" : "pm";
+  let hr = h % 12; if (hr === 0) hr = 12;
+  return hr + ampm;
+}
+
+// ---- Sounds ----
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+async function loadSounds(){
+  let data;
+  try { data = await (await fetch("/api/sounds")).json(); } catch(e){ return; }
+  const sel = document.getElementById("selected_sound");
+  sel.innerHTML = '<option value="random">Random</option>'
+    + (data.sounds || []).map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join("");
+  sel.value = data.selected || "random";
+}
+async function uploadSound(input){
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const msg = document.getElementById("upload_msg");
+  msg.textContent = "Uploading…";
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await fetch("/api/sounds", {method:"POST", body:fd});
+    if (r.ok){ const j = await r.json(); await loadSounds(); msg.textContent = "Added " + j.name; }
+    else { msg.textContent = "Upload failed — use a .wav, .mp3, or .ogg file."; }
+  } catch(e){ msg.textContent = "Upload failed."; }
+  input.value = "";
+}
+
+// ---- Lightbox (photo or clip) ----
+function openEvent(photo, clip){
+  const imgEl = document.getElementById("lb-img");
+  const vidEl = document.getElementById("lb-video");
+  vidEl.pause(); vidEl.removeAttribute("src"); vidEl.load();
+  if (clip && clip.endsWith(".mp4")){
+    imgEl.style.display = "none";
+    vidEl.style.display = "";
+    vidEl.src = clip;
+  } else {
+    imgEl.style.display = "";
+    vidEl.style.display = "none";
+    imgEl.src = (clip && clip.endsWith(".webp")) ? clip : photo;
+  }
   const dl = document.getElementById("lb-dl");
-  dl.href = src;
-  dl.setAttribute("download", "watchdoggy-" + (src.split("/").pop() || "snapshot.jpg"));
+  dl.href = photo;
+  dl.setAttribute("download", "watchdoggy-" + (photo.split("/").pop() || "snapshot.jpg"));
   document.getElementById("lightbox").classList.add("open");
 }
-function closeLightbox(){ document.getElementById("lightbox").classList.remove("open"); }
+function closeLightbox(){
+  const vidEl = document.getElementById("lb-video");
+  if (vidEl){ vidEl.pause(); }
+  document.getElementById("lightbox").classList.remove("open");
+}
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
 
 async function poll(){
@@ -307,12 +532,25 @@ async function poll(){
   document.getElementById("safety_enabled").checked = s.settings.safety_enabled;
   document.getElementById("person_suppression_enabled").checked = s.settings.person_suppression_enabled;
 
-  const evs = s.events.slice(-10).reverse();
-  document.getElementById("events").innerHTML = evs.length
-    ? evs.map(e => `<div class="ev"><img src="/events/${e.thumb}" alt="" title="Click to enlarge" `+
-        `onclick="openLightbox('/events/${e.thumb}')">`+
-        `<span class="c">${pct(e.confidence)} sure it was a dog</span></div>`).join("")
-    : '<div class="empty">No reactions yet.</div>';
+  document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
+  const selEl = document.getElementById("selected_sound");
+  if (document.activeElement !== selEl){
+    const want = s.settings.selected_sound || "random";
+    if ([...selEl.options].some(o => o.value === want)){ selEl.value = want; }
+  }
+
+  // Snooze (snoozed_until_seconds is refreshed by the pipeline each loop)
+  const snz = s.snoozed_until_seconds || 0;
+  if (snz > 0){
+    document.getElementById("snooze_label").textContent =
+      "Snoozed — " + Math.max(1, Math.ceil(snz / 60)) + "m left";
+    document.getElementById("snooze_btns").style.display = "none";
+    document.getElementById("snooze_resume").style.display = "";
+  } else {
+    document.getElementById("snooze_label").textContent = "Snooze the deterrent";
+    document.getElementById("snooze_btns").style.display = "";
+    document.getElementById("snooze_resume").style.display = "none";
+  }
 
   if (drawing.length === 0 && s.settings.zone_enabled){ drawZone(s.settings.zone_points, false); }
 }
@@ -356,7 +594,9 @@ async function clearZone(){
   await patch({zone_enabled:false, zone_points:[]});
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
+loadSounds(); loadEvents(); refreshStats();
 setInterval(poll, 500); poll();
+setInterval(() => { loadEvents(); refreshStats(); }, 4000);
 </script>
 </body>
 </html>

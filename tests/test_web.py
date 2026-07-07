@@ -129,6 +129,24 @@ def test_index_has_temp_readout(tmp_path):
     assert "Temperature" in html
 
 
+def test_index_has_value_feature_sections(tmp_path):
+    s = Settings(event_log_dir=tmp_path)
+    store = EventStore(tmp_path, 100, 0)
+    runtime = RuntimeSettings(s.tunable())
+    app = create_app(s, runtime, FrameBuffer(), StatusStore(),
+                     FakeAlerter(), store, SafetyGovernor(runtime, store))
+    html = TestClient(app).get("/").text
+    # New value features
+    assert "Snooze" in html
+    assert "Activity" in html or "today" in html
+    assert "Save video clips" in html
+    assert 'id="selected_sound"' in html and "<select" in html
+    assert "/api/events" in html and "/api/snooze" in html and "/api/sounds" in html
+    # Existing controls must still be present
+    assert "Save area" in html and "Clear area" in html
+    assert "Temperature" in html and "detect_interval_seconds" in html
+
+
 def _seeded_store(tmp_path, n=2):
     store = EventStore(tmp_path, 100, 0)
     ids = []
