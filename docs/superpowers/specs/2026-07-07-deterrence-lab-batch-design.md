@@ -1,0 +1,171 @@
+# Deterrence Lab Batch: Design
+
+Nine features that turn watchdoggy from a noise-maker into a system that
+measures whether the noise works. Fully local as always: no cloud, no new
+internet dependencies, egress firewall untouched.
+
+Decisions already made with the user:
+- No smart-home hub: notifications are browser notifications from the open
+  dashboard tab. No MQTT, no webhooks.
+- HTTPS with a self-signed certificate is accepted (one-time browser warning
+  per device) to unlock microphone access for push-to-talk and the
+  Notification API.
+
+## 1. Watch-for classes (dog / cat / bird)
+
+The deployed YOLO26n model detects 80 COCO classes. The watcher becomes
+class-configurable over a curated animal menu: **dog, cat, bird**.
+
+- Config: `DOGGY_TARGET_LABELS` (comma-separated, default `dog`), tunable
+  from the dashboard as checkboxes. At least one required.
+- `vision`: the detector keeps detections whose label is `person` or any
+  selected target. `FrameAnalysis.dogs` renames to `FrameAnalysis.targets`;
+  person suppression applies to any target box coinciding with a person box
+  (same IoU rule, unchanged threshold).
+- Status JSON: `dogs` key renames to `targets` (dashboard is the only
+  consumer; updated in the same change).
+- Dashboard copy goes dynamic: "Dogs in view" becomes a label derived from
+  the selection ("Dogs in view", "Cats in view", "Dogs and cats in view");
+  same for "Certainty it's a dog". Existing plain-language style is kept.
+- Trigger, zone, cooldowns, hourly cap: unchanged (they operate on
+  confirmed targets regardless of class).
+- Existing `.env` files without the new var behave exactly as today.
+
+## 2. Outcome watcher (the Lab's core measurement)
+
+After each fire, measure how long until the target actually left.
+
+- New `reaction/outcome.py`: `OutcomeWatcher`, a per-frame observer in the
+  pipeline (same pattern as `ClipService`): on fire it starts a pending
+  measurement; each subsequent frame checks whether any confirmed target
+  remains in the zone.
+- `clear_seconds` = time from fire until the zone has been target-free for
+  a debounce period (default 2.0s of consecutive clear frames), minus the
+  debounce. Capped: if still occupied after 60s, record `null` (= not
+  deterred) and stop watching.
+- Persists via `EventStore.attach_outcome(id, clear_seconds)` (same shape
+  as `attach_clip`). `EventRecord` gains `clear_seconds: float | None` and
+  `sound: str | None`, both defaulting to None when absent so existing
+  events.jsonl files load unchanged.
+- Sound attribution: `BaseAlerter.alert()` returns the chosen clip's name
+  (None when nothing played); `SoundReaction` calls
+  `EventStore.attach_sound(event.record.id, name)`.
+
+## 3. Escalation ladder
+
+If the target is still in the zone after the first sound, get louder.
+
+- Config: `escalation_enabled` (default off), `escalation_seconds`
+  (default 8), `escalation_max_strikes` (default 3),
+  `escalation_volume_step` (default 0.2).
+- The `OutcomeWatcher` drives it: when a pending measurement is still
+  occupied `escalation_seconds` after the last strike and strikes <
+  max, it requests another alert at volume
+  `min(1.0, max_volume + strike_index * escalation_volume_step)`.
+- Escalation strikes bypass the cooldown (they are the same incident) but
+  still honor `safety_enabled`, snooze, the armed schedule, and the hourly
+  cap via a dedicated `FireGate.allow_escalation(now)`.
+- `EventRecord` gains `strikes: int` (default 1). The catch log shows
+  "3 strikes" when > 1. Strikes do not create new events.
+
+## 4. Deterrence Lab stats
+
+- `/api/lab`: per-sound aggregate over events that have both `sound` and an
+  outcome: plays, deterred rate (cleared within 15s), average
+  `clear_seconds`, and a habituation signal (average clear time of that
+  sound's first half of plays vs. second half; "wearing off" when the
+  second half is at least 50% slower with 6+ plays).
+- Dashboard: new "Deterrence" card next to Activity: a small table of
+  sounds with plays / avg escape time / deterred %, a "wearing off" tag
+  when flagged, and plain-language empty state until there is data.
+- Buckets and week boundaries use Pi-local time, like `/api/stats`.
+
+## 5. Arming schedule
+
+- Config: `schedule_enabled` (default off) and `armed_windows` (JSON list
+  of `{"days": [0-6 Mondays-first], "start": "HH:MM", "end": "HH:MM"}`,
+  stored in `.env` as a JSON string like `zone_points`). Windows crossing
+  midnight (end <= start) wrap to the next day.
+- `FireGate.allow` gains the schedule check (order: safety, schedule,
+  snooze, hourly cap). Detection and the live view keep running while
+  disarmed; only reactions stop.
+- Status gains `armed: bool` and `next_change_seconds`; the pill shows a
+  new "Off duty" state (dim lamp) with "back on at 21:00" wording.
+- Dashboard: schedule editor in Settings: toggle plus rows of day-chips
+  and start/end time inputs; times use the Pi's local day.
+
+## 6. HTTPS
+
+- `scripts/setup-https.sh <user@host>`: generates a 10-year self-signed
+  EC certificate on the Pi (`~/doggy/certs/`, SAN: `doggypi.local` plus
+  the Pi's LAN IP), then sets `DOGGY_SSL_CERT`/`DOGGY_SSL_KEY` in the Pi's
+  `.env`.
+- `web.serve()` passes `ssl_certfile`/`ssl_keyfile` to uvicorn when both
+  are set. Port stays 8000; the dashboard URL becomes
+  `https://doggypi.local:8000`. No cert vars = plain HTTP exactly as today
+  (Mac dev stays http://127.0.0.1:8000, which browsers already treat as a
+  secure context for mic/notifications).
+- README documents the one-time certificate warning.
+
+## 7. Push-to-talk
+
+- Dashboard: a hold-to-talk button on the monitor card. While held:
+  `getUserMedia` mono audio, an `AudioWorklet` downsamples to 16 kHz
+  s16 PCM frames, sent as binary WebSocket messages to `/ws/talk`.
+- Server: accepts one talk connection at a time (second connection gets
+  a "busy" close). Frames pipe to a `pw-cat --playback --rate 16000
+  --channels 1 --format s16 -` subprocess (PipeWire routes to the JBL,
+  same as the deterrent). Subprocess ends on socket close. On hosts
+  without pw-cat (Mac dev), fall back to the `afplay`-style null: log
+  and discard.
+- Half-duplex by design; deterrent sounds may overlap (PipeWire mixes).
+
+## 8. Browser notifications
+
+- Dashboard toggle "Notify this device" requests Notification permission
+  (needs the HTTPS from #6; on plain http the toggle explains why it is
+  unavailable).
+- The existing 500ms poll fires a notification when a new event id appears:
+  title "Dog on the counter" (class-aware wording), body with confidence,
+  the snapshot as the notification image. Tab must be open (documented
+  honestly in the UI copy).
+
+## 9. Kiosk mode, report card, export
+
+- Kiosk: a "Fullscreen" button on the monitor card calls
+  `requestFullscreen()` on the monitor; `:fullscreen` CSS shows only the
+  video, OSD, and status. Esc exits (native).
+- Report card: `/api/stats` gains `report_card`: this week vs last week
+  attempt counts, deterred rate, average escape time, and a letter grade.
+  Rubric: start at 100 points; -5 per attempt this week (capped at -40);
+  -30 if attempts rose vs last week, +10 if they fell; scale by deterred
+  rate when outcomes exist (multiply by rate, so 50% deterred halves it).
+  90+ A, 80+ B, 65+ C, 50+ D, else F; +/- from the top/bottom third of
+  each band. No events at all = A ("quiet week"). Dashboard renders it as
+  one line in the Activity card ("This week: B+. 11 attempts, all
+  deterred, escapes trending faster.").
+- Export: `GET /api/export` streams a zip of `events.jsonl` plus all
+  snapshots/clips (built with `zipfile` into a spooled temp file, not
+  memory). "Export all" button in the Catch log header.
+
+## Build order
+
+Two plans, each independently shippable:
+
+- **Plan 1 — watcher smarts:** watch-for classes; outcome watcher +
+  sound attribution; escalation; lab stats + deterrence card; report card.
+- **Plan 2 — comms and polish:** HTTPS script + serving; push-to-talk;
+  browser notifications; arming schedule; kiosk; export.
+
+## Constraints (unchanged project invariants)
+
+- Fully local; egress firewall stays armed; no new runtime dependencies
+  that require opening egress (everything above uses stdlib, existing
+  deps, or on-Pi tools; `pw-cat` ships with PipeWire).
+- `main.py` entry shim untouched; deploys remain rsync + restart.
+- EventStore stays the single writer through its lock; new attach methods
+  follow `attach_clip`'s locking.
+- Existing events.jsonl files must load unchanged (new fields default).
+- All dashboard copy stays plain-language; no emoji.
+- Tests green (`uv run pytest -m "not slow"`) and ruff clean per task;
+  no personal info in the repo.
