@@ -18,8 +18,8 @@ class-configurable over a curated animal menu: **dog, cat, bird**.
 
 - Config: `DOGGY_TARGET_LABELS` (comma-separated, default `dog`), tunable
   from the dashboard as checkboxes. At least one required.
-- `vision`: the detector keeps detections whose label is `person` or any
-  selected target. `FrameAnalysis.dogs` renames to `FrameAnalysis.targets`;
+- `vision`: the detector keeps detections whose label is `person`, any
+  selected target, or an inventory class (section 2b). `FrameAnalysis.dogs` renames to `FrameAnalysis.targets`;
   person suppression applies to any target box coinciding with a person box
   (same IoU rule, unchanged threshold).
 - Status JSON: `dogs` key renames to `targets` (dashboard is the only
@@ -50,6 +50,41 @@ After each fire, measure how long until the target actually left.
 - Sound attribution: `BaseAlerter.alert()` returns the chosen clip's name
   (None when nothing played); `SoundReaction` calls
   `EventStore.attach_sound(event.record.id, name)`.
+
+## 2b. Counter inventory (kitchen and food objects)
+
+The same forward pass already detects COCO's food and tableware classes;
+we stop discarding them and put them to work. Inventory classes are
+observed, never targeted: they cannot fire the deterrent.
+
+- Classes: `banana, apple, sandwich, orange, broccoli, carrot, hot dog,
+  pizza, donut, cake` (food) and `bottle, wine glass, cup, fork, knife,
+  spoon, bowl` (tableware). Fixtures (oven, sink, refrigerator...) are
+  excluded: they never move, so they are noise.
+- Config: `inventory_enabled` (default on) and `inventory_confidence`
+  (default 0.4, independent of the target threshold: overhead food shots
+  score lower). Only items inside the watch area count: the zone is what
+  defines "the counter".
+- `FrameAnalysis` gains `inventory` (label + box list, zone-filtered).
+  Presence is debounced: an item label counts as present when seen in at
+  least 2 of the last 5 analyzed frames (flicker-proofing, tracked by the
+  consumer, not the detector).
+- Dashboard: an "On the counter" line in the monitor card's readout area
+  listing current item labels ("sandwich, bowl, 2 cups"; "nothing it
+  recognizes" when empty). A "Show counter items" toggle (default off)
+  additionally draws thin outline boxes on the live view; target and
+  person boxes are unaffected.
+- Theft forensics: when a fire happens, the outcome watcher snapshots the
+  debounced inventory labels; when the incident clears (same debounce as
+  `clear_seconds`), it snapshots again. Labels present before but missing
+  after are recorded as `EventRecord.taken: list[str]` (default empty,
+  old event logs load unchanged). The catch log line becomes
+  "87% sure - reacted in 1.2s - took the sandwich", and the browser
+  notification body includes it. Items that merely moved within the zone
+  do not count as taken (label-level diff, not box tracking).
+- The Deterrence card shows a theft tally for the week ("2 items lost").
+  A catch with anything taken counts as not deterred in the deterred
+  rate, whatever its clear time.
 
 ## 3. Escalation ladder
 
@@ -152,8 +187,9 @@ If the target is still in the zone after the first sound, get louder.
 
 Two plans, each independently shippable:
 
-- **Plan 1 — watcher smarts:** watch-for classes; outcome watcher +
-  sound attribution; escalation; lab stats + deterrence card; report card.
+- **Plan 1 — watcher smarts:** watch-for classes; counter inventory +
+  theft forensics; outcome watcher + sound attribution; escalation; lab
+  stats + deterrence card; report card.
 - **Plan 2 — comms and polish:** HTTPS script + serving; push-to-talk;
   browser notifications; arming schedule; kiosk; export.
 
