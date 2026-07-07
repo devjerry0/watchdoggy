@@ -446,6 +446,17 @@ def test_export_omits_deleted_thumb(tmp_path):
     assert thumb not in names  # missing file skipped, no crash
 
 
+def test_export_includes_clip(tmp_path):
+    store, ids = _seeded_store(tmp_path, 1)
+    (tmp_path / "fire_0.webp").write_bytes(b"RIFFWEBPDATA")
+    store.attach_clip(ids[0], "fire_0.webp")
+    c = _app_with_store(tmp_path, store)
+    r = c.get("/api/export")
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "fire_0.webp" in names  # clip file rides along in the export zip
+
+
 def test_index_has_kiosk_and_export(tmp_path):
     store, _ = _seeded_store(tmp_path, 0)
     c = _app_with_store(tmp_path, store)

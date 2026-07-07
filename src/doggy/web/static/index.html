@@ -109,7 +109,9 @@
   button.primary:hover{background:var(--lamp-soft);border-color:var(--lamp-soft);color:#1a130a}
   #ptt{touch-action:none}
   #ptt.talking{border-color:var(--lamp);color:var(--lamp-soft);box-shadow:0 0 0 1px var(--lamp) inset}
-  .linkbtn{flex:0 0 auto;padding:.35rem .6rem;font-size:.78rem;color:var(--stone);text-decoration:none}
+  .linkbtn{display:inline-flex;align-items:center;flex:0 0 auto;font:inherit;font-weight:600;
+           font-size:.78rem;padding:.35rem .6rem;border:1px solid var(--seam);border-radius:8px;
+           background:transparent;color:var(--stone);cursor:pointer;text-decoration:none}
   .linkbtn:hover{color:var(--ember);border-color:var(--ember)}
 
   /* ---- Fields ---- */
