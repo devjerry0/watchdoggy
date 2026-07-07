@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import cv2
 import numpy as np
 
 from doggy.vision.detection import Detection
 
+if TYPE_CHECKING:
+    from doggy.core.config import TunableSettings
+    from doggy.vision.analysis import FrameAnalysis
+
 _MIN_POLYGON_POINTS = 3
 
 
-class ZoneFilter:
-    """Keep only detections whose box overlaps a normalized polygon zone.
+class ZoneInclusionFilter:
+    """Filter link: keep only candidates whose box overlaps a normalized zone.
 
     The polygon (points in [0,1]) is rasterized to a frame-sized 0/1 mask and
     cached; the mask is rebuilt only when the points or the frame shape change.
     Fewer than 3 points means "no zone" -> every detection passes through.
+    Narrows `analysis.candidates` only (drawn dogs are unaffected).
     """
 
     def __init__(self) -> None:
@@ -49,3 +56,9 @@ class ZoneFilter:
         if len(points) < _MIN_POLYGON_POINTS:
             return list(detections)
         return [d for d in detections if self.in_zone(d.box, points, shape)]
+
+    def apply(self, analysis: "FrameAnalysis", cfg: "TunableSettings") -> None:
+        if not (cfg.zone_enabled and len(cfg.zone_points) >= _MIN_POLYGON_POINTS):
+            return
+        analysis.candidates = self.filter(
+            analysis.candidates, cfg.zone_points, analysis.shape)

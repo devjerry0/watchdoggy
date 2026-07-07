@@ -13,11 +13,9 @@ from doggy.alerter import Alerter
 from doggy.vision.camera import Camera
 from doggy.clips import ClipBuffer, encode_clip
 from doggy.core.config import Settings
-from doggy.vision.detection import PERSON_LABEL, TARGET_LABEL
-from doggy.vision.detector import Detector
+from doggy.vision.analysis import DetectionAnalyzer
 from doggy.events.store import EventStore
 from doggy.core.pacer import Pacer
-from doggy.people import suppress_dogs_overlapping_people
 from doggy.hardware.power import PowerMonitor
 from doggy.safety import SafetyGovernor
 from doggy.core.runtime import RuntimeSettings
@@ -25,7 +23,6 @@ from doggy.core.status import CONFIDENCE_DECIMALS, FrameBuffer, StatusStore
 from doggy.hardware.thermal import ThermalGovernor
 from doggy.trigger import TriggerLogic
 from doggy.vision.annotate import annotate
-from doggy.zone import ZoneFilter
 
 log = logging.getLogger("doggy")
 
@@ -37,14 +34,14 @@ _FPS_DECIMALS = 1
 
 
 class Pipeline:
-    def __init__(self, *, settings: Settings, detector: Detector, camera: Camera,
+    def __init__(self, *, settings: Settings, analyzer: DetectionAnalyzer, camera: Camera,
                  alerter: Alerter, runtime: RuntimeSettings, status: StatusStore,
                  raw_buffer: FrameBuffer, annotated_buffer: FrameBuffer,
                  safety: SafetyGovernor, event_store: EventStore,
                  clock: Callable[[], float] = time.monotonic,
                  rng: random.Random | None = None) -> None:
         self.settings = settings
-        self.detector = detector
+        self.analyzer = analyzer
         self.camera = camera
         self.alerter = alerter
         self.runtime = runtime
@@ -55,7 +52,6 @@ class Pipeline:
         self.event_store = event_store
         self.clock = clock
         self.trigger = TriggerLogic(runtime, rng=rng or random.Random())
-        self.zone = ZoneFilter()
         self.pacer = Pacer(clock=clock)
         self.governor = ThermalGovernor()
         self.power = PowerMonitor(clock=clock)
@@ -68,26 +64,20 @@ class Pipeline:
         """Process a single frame: detect, annotate, trigger, maybe fire."""
         now = self.clock()
         cfg = self.runtime.get()
-        detections = self.detector.detect(frame)
-        dogs = [d for d in detections if d.label == TARGET_LABEL]
-        people = [d for d in detections if d.label == PERSON_LABEL]
-        if cfg.person_suppression_enabled and people:
-            # A "dog" whose box is near-coincident with a person is a misclassified
-            # human -> drop it before it can count or fire. A real dog near a person
-            # keeps its own distinct box (low IoU) and survives.
-            dogs = suppress_dogs_overlapping_people(dogs, people, cfg.person_iou_threshold)
-        show_people = people if cfg.person_suppression_enabled else None
+        analysis = self.analyzer.analyze(frame, cfg)
+        # `dogs` are drawn; `candidates` are the in-zone subset that may trigger.
+        show_people = analysis.people if cfg.person_suppression_enabled else None
         points = cfg.zone_points if cfg.zone_enabled else []
-        in_zone = self.zone.filter(dogs, points, frame.shape)
-        annotated = annotate(frame, dogs, in_zone, points, people=show_people)
+        annotated = annotate(frame, analysis.dogs, analysis.candidates, points,
+                             people=show_people)
         self.annotated_buffer.set(annotated)
         if cfg.clips_enabled:
             # Buffer the ANNOTATED frame so any resulting clip shows the boxes.
             ok, buf = cv2.imencode(".jpg", annotated)
             if ok:
                 self._clip_buffer.push(now, buf.tobytes())
-        top = max((d.confidence for d in in_zone), default=0.0)
-        fired = self.trigger.update(in_zone, now)
+        top = max((d.confidence for d in analysis.candidates), default=0.0)
+        fired = self.trigger.update(analysis.candidates, now)
         muted = not self.safety.allow_fire(now)
         if fired and not muted:
             self.alerter.alert()
@@ -108,7 +98,8 @@ class Pipeline:
                     {"id": record.id, "fire_ts": now, "end": now + cfg.clip_postroll_seconds})
         self._finalize_clips(now, cfg)
         self.status.update(state=self.trigger.state.value, confidence=round(top, CONFIDENCE_DECIMALS),
-                           dogs=len(in_zone), people=len(people) if cfg.person_suppression_enabled else 0,
+                           dogs=len(analysis.candidates),
+                           people=len(analysis.people) if cfg.person_suppression_enabled else 0,
                            fires_this_hour=self.safety.fires_last_hour(now), muted=muted,
                            snoozed_until_seconds=self.safety.snooze_remaining(now))
         return fired and not muted

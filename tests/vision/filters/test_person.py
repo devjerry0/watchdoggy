@@ -1,5 +1,5 @@
 from doggy.vision.detection import Detection
-from doggy.people import iou, suppress_dogs_overlapping_people
+from doggy.vision.filters.person import iou, suppress_dogs_overlapping_people
 
 
 def dog(box, c=0.9):

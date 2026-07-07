@@ -7,7 +7,11 @@ import threading
 from doggy.alerter import build_alerter
 from doggy.vision.camera import build_camera
 from doggy.core.config import load_settings
+from doggy.vision.analysis import DetectionAnalyzer
 from doggy.vision.detector import build_detector
+from doggy.vision.filters.base import FilterChain
+from doggy.vision.filters.person import PersonSuppressionFilter
+from doggy.vision.filters.zone import ZoneInclusionFilter
 from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
 from doggy.safety import SafetyGovernor
@@ -35,11 +39,13 @@ def main() -> None:
     safety = SafetyGovernor(runtime, event_store)
 
     detector = build_detector(settings, runtime)   # loads model now (fail fast)
+    analyzer = DetectionAnalyzer(
+        detector, FilterChain([PersonSuppressionFilter(), ZoneInclusionFilter()]))
     camera = build_camera(settings)
     alerter = build_alerter(settings, runtime)
 
     pipeline = Pipeline(
-        settings=settings, detector=detector, camera=camera, alerter=alerter,
+        settings=settings, analyzer=analyzer, camera=camera, alerter=alerter,
         runtime=runtime, status=status, raw_buffer=raw_buffer,
         annotated_buffer=annotated_buffer, safety=safety, event_store=event_store,
     )

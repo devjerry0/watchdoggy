@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from doggy.vision.detection import Detection
+
+if TYPE_CHECKING:
+    from doggy.core.config import TunableSettings
+    from doggy.vision.analysis import FrameAnalysis
 
 Box = tuple[int, int, int, int]  # (x1, y1, x2, y2)
 
@@ -36,3 +42,19 @@ def suppress_dogs_overlapping_people(
         d for d in dogs
         if not any(iou(d.box, p.box) >= iou_threshold for p in people)
     ]
+
+
+class PersonSuppressionFilter:
+    """Filter link: drop dogs that are actually people misclassified as dogs.
+
+    Applies only when suppression is enabled and people are present: narrows
+    `analysis.dogs` to the survivors, then reseeds `analysis.candidates` from
+    them so downstream links (zone) act on the suppressed set.
+    """
+
+    def apply(self, analysis: "FrameAnalysis", cfg: "TunableSettings") -> None:
+        if not (cfg.person_suppression_enabled and analysis.people):
+            return
+        analysis.dogs = suppress_dogs_overlapping_people(
+            analysis.dogs, analysis.people, cfg.person_iou_threshold)
+        analysis.candidates = list(analysis.dogs)
