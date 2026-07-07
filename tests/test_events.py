@@ -170,3 +170,22 @@ def test_concurrent_add_and_delete_is_safe(tmp_path):
     assert len(listed) == len(lines)
     for e in listed:
         assert (tmp_path / e.thumb).is_file()
+
+
+def test_backfills_wall_time_from_thumb_mtime(tmp_path):
+    import os
+    (tmp_path / "fire_5.jpg").write_bytes(b"\xff\xd8\xff")
+    mtime = 1_700_000_000.0
+    os.utime(tmp_path / "fire_5.jpg", (mtime, mtime))
+    (tmp_path / "events.jsonl").write_text(
+        json.dumps({"ts": 5.0, "confidence": 0.7, "thumb": "fire_5.jpg"}) + "\n")
+    e = EventStore(tmp_path, 100, 0).list()[0]
+    assert e.wall_time == mtime                       # backfilled from jpg mtime
+    persisted = json.loads((tmp_path / "events.jsonl").read_text().strip())
+    assert persisted["wall_time"] == mtime            # and persisted to disk
+
+
+def test_no_backfill_when_thumb_missing(tmp_path):
+    (tmp_path / "events.jsonl").write_text(
+        json.dumps({"ts": 5.0, "confidence": 0.7, "thumb": "gone.jpg"}) + "\n")
+    assert EventStore(tmp_path, 100, 0).list()[0].wall_time is None

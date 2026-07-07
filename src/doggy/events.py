@@ -60,7 +60,11 @@ class EventStore:
         # (and any other) nesting is safe.
         self._lock = threading.RLock()
         # Records kept in memory ordered oldest -> newest.
+        self._backfilled = False
         self._records: list[EventRecord] = self._load()
+        # Persist any wall_time backfilled from thumbnail mtimes (see _load).
+        if self._backfilled:
+            self._rewrite()
 
     @property
     def dir(self) -> Path:
@@ -84,11 +88,21 @@ class EventStore:
             try:
                 obj = json.loads(line)
                 thumb = obj["thumb"]
+                wall_time = obj.get("wall_time")
+                # Old events (pre-timestamp) have no wall_time, so they can't be
+                # bucketed in stats or shown with a real date. Backfill from the
+                # thumbnail's mtime -- the wall-clock moment the JPG was written,
+                # i.e. when the catch happened -- so history stays usable.
+                if wall_time is None:
+                    thumb_path = self._dir / thumb
+                    if thumb_path.is_file():
+                        wall_time = thumb_path.stat().st_mtime
+                        self._backfilled = True
                 records.append(
                     EventRecord(
                         id=obj.get("id") or Path(thumb).stem,
                         ts=obj["ts"],
-                        wall_time=obj.get("wall_time"),
+                        wall_time=wall_time,
                         confidence=obj["confidence"],
                         latency_s=obj.get("latency_s"),
                         thumb=thumb,
