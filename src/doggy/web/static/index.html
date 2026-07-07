@@ -509,10 +509,22 @@ async function patch(body){
   await fetch("/api/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
 }
+// Focus is the wrong "user is touching this" signal on iOS (touch never
+// focuses a range input), so poll() would fight a drag in real time and a
+// just-released PATCH could snap back to a stale in-flight status value.
+// Track last interaction per knob instead and hold the poll off briefly.
+const KNOB_HOLD_MS = 1500;
+const _knobHold = {};
 KNOBS.forEach(k => {
   const el = document.getElementById(k);
-  el.addEventListener("input", () => document.getElementById(k+"_v").textContent = fmt(k, parseFloat(el.value)));
-  el.addEventListener("change", () => patch({[k]: parseFloat(el.value)}));
+  el.addEventListener("input", () => {
+    _knobHold[k] = Date.now();
+    document.getElementById(k+"_v").textContent = fmt(k, parseFloat(el.value));
+  });
+  el.addEventListener("change", () => {
+    _knobHold[k] = Date.now();
+    patch({[k]: parseFloat(el.value)});
+  });
 });
 document.getElementById("safety_enabled").addEventListener("change", e => patch({safety_enabled:e.target.checked}));
 document.getElementById("person_suppression_enabled").addEventListener("change", e =>
@@ -876,6 +888,9 @@ async function poll(){
   document.getElementById("osd_fps").textContent = s.fps ? s.fps + " FPS" : "-- FPS";
 
   for (const k of KNOBS){
+    // Hands off any knob the user touched moments ago (drag in progress or
+    // PATCH round-trip still settling); focus alone misses touch drags.
+    if (Date.now() - (_knobHold[k] || 0) < KNOB_HOLD_MS) continue;
     const el = document.getElementById(k);
     if (document.activeElement !== el){ el.value = s.settings[k]; }
     document.getElementById(k+"_v").textContent = fmt(k, s.settings[k]);
