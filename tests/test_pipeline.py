@@ -198,6 +198,36 @@ def test_pipeline_real_dog_near_person_still_fires(tmp_path):
     assert alerter.calls == 1
 
 
+def test_pipeline_finalizes_clip_after_postroll(tmp_path):
+    # End-to-end deferred clip path: fire -> pending -> finalize -> attach_clip.
+    # A fire lands on the 2nd run_once (TriggerLogic never fires on first sighting).
+    # fire_ts = 1.0, post-roll end = 1.1; the 3rd run_once's clock (2.0) is past
+    # that, so the pending clip is sliced, encoded, and attached to the event.
+    settings = Settings(clips_enabled=True, clip_window_seconds=10,
+                        clip_preroll_seconds=0.1, clip_postroll_seconds=0.1, clip_fps=6,
+                        confirm_seconds=0.0, window_m=1, window_n=1,
+                        cooldown_min_seconds=5, cooldown_max_seconds=5, confidence=0.5)
+    runtime = RuntimeSettings(settings.tunable())
+    dog = [Detection("dog", 0.9, (0, 0, 10, 10))]
+    store = EventStore(tmp_path, 10, 0)
+    clock = iter([0.0, 1.0, 2.0])
+    pipe = Pipeline(
+        settings=settings, detector=StubDetector([dog, dog, dog]),
+        camera=FakeCamera([np.zeros((16, 16, 3), np.uint8)], loop=True),
+        alerter=FakeAlerter(), runtime=runtime, status=StatusStore(),
+        raw_buffer=FrameBuffer(), annotated_buffer=FrameBuffer(),
+        safety=SafetyGovernor(runtime, store), event_store=store,
+        clock=lambda: next(clock), rng=random.Random(0),
+    )
+    frame = np.zeros((16, 16, 3), np.uint8)
+    fired = [pipe.run_once(frame) for _ in range(3)]
+    assert fired[1] is True                     # fired on the 2nd sighting
+
+    rec = store.list()[0]
+    assert rec.clip is not None                 # clip was attached to the event
+    assert (tmp_path / rec.clip).is_file()       # and the clip file exists on disk
+
+
 def test_annotate_draws_zone_polygon():
     from doggy.pipeline import annotate
     frame = np.zeros((100, 100, 3), np.uint8)
