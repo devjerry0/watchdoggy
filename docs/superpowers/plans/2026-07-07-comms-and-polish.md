@@ -22,15 +22,20 @@ Same as Plan 1 (fully local, firewall stays armed, `main.py` shim untouched, `Ev
 
 ---
 
-### Task 1: HTTPS serving + certificate script
+### Task 1: HTTPS serving + private-CA certificate script
+
+Decision record: private CA over plain self-signed (no per-browser
+warnings after a one-time CA install per device) and over Let's Encrypt
+(cannot issue for `.local`; renewals would need recurring internet the
+firewalled Pi deliberately lacks).
 
 **Files:**
 - Create: `scripts/setup-https.sh`
-- Modify: `src/doggy/core/config.py` (structural `Settings`), `src/doggy/web/app.py` (`serve`), `README.md`
+- Modify: `src/doggy/core/config.py` (structural `Settings`), `src/doggy/web/app.py` (`serve` + `/ca.pem` route), `README.md`
 - Test: `tests/web/test_api.py`
 
 **Interfaces:**
-- Produces: `Settings.ssl_cert: Path | None = None`, `Settings.ssl_key: Path | None = None`; `serve()` passes `ssl_certfile`/`ssl_keyfile` to `uvicorn.run` when BOTH are set (else exactly today's call).
+- Produces: `Settings.ssl_cert: Path | None = None`, `Settings.ssl_key: Path | None = None`, `Settings.ca_cert: Path | None = None`; `serve()` passes `ssl_certfile`/`ssl_keyfile` to `uvicorn.run` when BOTH are set (else exactly today's call); `GET /ca.pem` returns the CA certificate as `application/x-pem-file` when `ca_cert` is set and the file exists, 404 otherwise.
 
 - [ ] **Step 1: Failing test** (`tests/web/test_api.py`):
 
@@ -65,14 +70,29 @@ def test_serve_plain_http_without_ssl(monkeypatch):
                 log_level="warning", **kwargs)
 ```
 
-- [ ] **Step 4: `scripts/setup-https.sh`** — same shape as `sync-pi-clock.sh` (ssh heredoc, `set -euo pipefail`, usage line):
+- [ ] **Step 4: `/ca.pem` route** in `create_app` (next to the index route), with a failing test first (`GET /ca.pem` -> 200 + PEM body when configured; 404 when not):
+
+```python
+    @app.get("/ca.pem")
+    def ca_cert() -> FileResponse:
+        # Public material: lets each device trust the home CA once, after
+        # which the dashboard shows a normal padlock (no warnings).
+        if settings.ca_cert and Path(settings.ca_cert).is_file():
+            return FileResponse(settings.ca_cert, media_type="application/x-pem-file",
+                                filename="watchdoggy-ca.pem")
+        raise HTTPException(status_code=404, detail="not set up")
+```
+
+- [ ] **Step 5: `scripts/setup-https.sh`** — same shape as `sync-pi-clock.sh` (ssh heredoc, `set -euo pipefail`, usage line). Idempotent: the CA is created ONCE and reused; server certs are re-issued on every run (825 days, Apple's max trusted TLS lifetime) without touching the CA, so devices never need re-onboarding:
 
 ```bash
 #!/usr/bin/env bash
-# Give the Pi's dashboard HTTPS with a self-signed certificate (10 years).
-# Needed once: browsers only allow microphone (push-to-talk) and
-# notifications on secure pages. Each device shows one certificate warning
-# the first time; accept it and you're done.
+# Give the Pi's dashboard HTTPS with a household private CA.
+# Browsers only allow the microphone (push-to-talk) and notifications on
+# secure pages. This creates a "watchdoggy home CA" on the Pi, issues the
+# dashboard a certificate signed by it, and serves the CA at /ca.pem so
+# each of your devices can trust it once. After that: a normal padlock,
+# no warnings, no renewals, no internet needed.
 # Usage: ./scripts/setup-https.sh <user@host> [appdir]
 set -euo pipefail
 TARGET="${1:?usage: setup-https.sh <user@host> [appdir]}"
@@ -80,23 +100,49 @@ APPDIR="${2:-doggy}"
 ssh "$TARGET" "APPDIR='$APPDIR' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$HOME/$APPDIR"
-mkdir -p certs
+mkdir -p certs && chmod 700 certs
 HOST="$(hostname).local"
 IP="$(hostname -I | awk '{print $1}')"
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-  -keyout certs/key.pem -out certs/cert.pem -days 3650 -nodes \
-  -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST,IP:$IP"
+
+if [ ! -f certs/ca.pem ]; then
+  echo "==> creating the home CA (once)"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+    -keyout certs/ca-key.pem -out certs/ca.pem -days 3650 -nodes \
+    -subj "/CN=watchdoggy home CA/O=watchdoggy" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
+  chmod 600 certs/ca-key.pem
+fi
+
+echo "==> issuing the dashboard certificate (825 days, re-run to renew)"
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+  -keyout certs/key.pem -out certs/req.csr -nodes -subj "/CN=$HOST"
+openssl x509 -req -in certs/req.csr -CA certs/ca.pem -CAkey certs/ca-key.pem \
+  -CAcreateserial -out certs/cert.pem -days 825 \
+  -extfile <(printf "subjectAltName=DNS:%s,IP:%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n" "$HOST" "$IP")
+rm -f certs/req.csr
+chmod 600 certs/key.pem
+
 grep -q '^DOGGY_SSL_CERT=' .env || cat >> .env <<EOF
 DOGGY_SSL_CERT=certs/cert.pem
 DOGGY_SSL_KEY=certs/key.pem
+DOGGY_CA_CERT=certs/ca.pem
 EOF
 sudo systemctl restart doggy
-echo "==> dashboard now at https://$HOST:8000 (accept the one-time warning)"
+echo "==> dashboard now at https://$HOST:8000"
+echo "    On each device, download https://$HOST:8000/ca.pem (one warning"
+echo "    this first time) and trust it:"
+echo "      iPhone/iPad: open the file, install the profile, then Settings >"
+echo "        General > About > Certificate Trust Settings > enable it"
+echo "      Mac: double-click it in Keychain Access, set Trust to Always"
+echo "      Android: Settings > Security > Install a certificate > CA"
+echo "    After that the padlock is normal everywhere. No renewals needed"
+echo "    until $(date -d '+825 days' '+%Y-%m' 2>/dev/null || echo '~2028'); re-run this script then."
 REMOTE
 ```
 
-- [ ] **Step 5: README** — under "Using the dashboard", a short "HTTPS (for push-to-talk and notifications)" paragraph: run the script, accept the one-time warning, URL becomes https. Plain words, no em dashes.
-- [ ] **Step 6: Gates, commit** — `feat: optional https serving + pi certificate script`.
+- [ ] **Step 6: README** — under "Using the dashboard", a short "HTTPS (for push-to-talk and notifications)" section: run the script, install the home CA on each device once (the per-platform steps above, plain words, no em dashes), padlock is normal afterwards; note the CA never leaves your Pi and nothing talks to the internet.
+- [ ] **Step 7: Gates, commit** — `feat: https via a household private CA + setup script`.
 
 ---
 

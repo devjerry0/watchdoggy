@@ -146,18 +146,33 @@ If the target is still in the zone after the first sound, get louder.
 - Dashboard: schedule editor in Settings: toggle plus rows of day-chips
   and start/end time inputs; times use the Pi's local day.
 
-## 6. HTTPS
+## 6. HTTPS (private CA, decided over self-signed and Let's Encrypt)
 
-- `scripts/setup-https.sh <user@host>`: generates a 10-year self-signed
-  EC certificate on the Pi (`~/doggy/certs/`, SAN: `doggypi.local` plus
-  the Pi's LAN IP), then sets `DOGGY_SSL_CERT`/`DOGGY_SSL_KEY` in the Pi's
-  `.env`.
+Let's Encrypt was considered and rejected: it cannot issue for `.local`
+names, would require an owned domain plus DNS-01 automation, and its
+~90-day renewals need recurring internet access the firewalled Pi
+deliberately lacks. A household private CA gives the same green-lock UX
+with zero renewals and zero internet.
+
+- `scripts/setup-https.sh <user@host>`: on the Pi, generates a 10-year EC
+  private CA ("watchdoggy home CA", `~/doggy/certs/ca.pem` + key, 0600),
+  then issues a server certificate signed by it (SAN: `doggypi.local`
+  plus the Pi's LAN IP, EKU serverAuth, 825 days — Apple's maximum
+  trusted TLS lifetime; re-running the script re-issues without touching
+  the CA, so devices never need re-onboarding). Sets
+  `DOGGY_SSL_CERT`/`DOGGY_SSL_KEY` in the Pi's `.env`.
+- `GET /ca.pem` serves the CA certificate (public material) so each
+  device can download and trust it once: iOS (install profile + enable
+  in Certificate Trust Settings), Android, macOS Keychain, Windows.
+  After that one-time step the dashboard shows a normal padlock — no
+  warnings. README documents the per-platform steps in plain words.
 - `web.serve()` passes `ssl_certfile`/`ssl_keyfile` to uvicorn when both
   are set. Port stays 8000; the dashboard URL becomes
-  `https://doggypi.local:8000`. No cert vars = plain HTTP exactly as today
-  (Mac dev stays http://127.0.0.1:8000, which browsers already treat as a
-  secure context for mic/notifications).
-- README documents the one-time certificate warning.
+  `https://doggypi.local:8000`. No cert vars = plain HTTP exactly as
+  today (Mac dev stays http://127.0.0.1:8000, already a secure context
+  for mic/notifications).
+- The CA private key lives on the Pi (0600, LAN-only box) — right-sized
+  for a household threat model; noted in the README.
 
 ## 7. Push-to-talk
 
