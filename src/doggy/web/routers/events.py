@@ -30,6 +30,10 @@ def _event_dict(record: EventRecord) -> dict:
         "latency_s": record.latency_s,
         "thumb": record.thumb,
         "clip": record.clip,
+        "sound": record.sound,
+        "clear_seconds": record.clear_seconds,
+        "strikes": record.strikes,
+        "taken": record.taken,
         "age_seconds": age,
     }
 

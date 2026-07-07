@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -31,6 +31,11 @@ class EventRecord:
     latency_s: float | None
     thumb: str
     clip: str | None = None
+    sound: str | None = None
+    clear_seconds: float | None = None
+    strikes: int = 1
+    taken: list[str] = field(default_factory=list)
+    outcome_at: float | None = None
 
 
 class EventStore:
@@ -107,6 +112,11 @@ class EventStore:
                         latency_s=obj.get("latency_s"),
                         thumb=thumb,
                         clip=obj.get("clip"),
+                        sound=obj.get("sound"),
+                        clear_seconds=obj.get("clear_seconds"),
+                        strikes=int(obj.get("strikes") or 1),
+                        taken=list(obj.get("taken") or []),
+                        outcome_at=obj.get("outcome_at"),
                     )
                 )
             except (json.JSONDecodeError, KeyError, ValueError):
@@ -169,6 +179,38 @@ class EventStore:
             for record in self._records:
                 if record.id == id:
                     record.clip = clip_name
+                    self._rewrite()
+                    return
+
+    def attach_sound(self, id: str, sound: str) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.sound = sound
+                    self._rewrite()
+                    return
+
+    def bump_strikes(self, id: str) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.strikes += 1
+                    self._rewrite()
+                    return
+
+    def attach_outcome(
+        self,
+        id: str,
+        clear_seconds: float | None,
+        taken: list[str],
+        wall_time: float,
+    ) -> None:
+        with self._lock:
+            for record in self._records:
+                if record.id == id:
+                    record.clear_seconds = clear_seconds
+                    record.taken = list(taken)
+                    record.outcome_at = wall_time
                     self._rewrite()
                     return
 

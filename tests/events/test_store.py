@@ -107,6 +107,29 @@ def test_attach_clip_sets_and_persists(tmp_path):
     assert [e.clip for e in s.list()] == ["clip.mp4"]
 
 
+def test_attach_sound_outcome_and_strikes_persist(tmp_path):
+    s = EventStore(tmp_path, 100, 0)
+    r = s.add(_img(), 0.9, 1.0, 1000.0, 1.0)
+    s.attach_sound(r.id, "chirp.wav")
+    s.bump_strikes(r.id)
+    s.attach_outcome(r.id, clear_seconds=3.5, taken=["sandwich"], wall_time=1010.0)
+    reloaded = EventStore(tmp_path, 100, 0).list()[0]
+    assert reloaded.sound == "chirp.wav"
+    assert reloaded.strikes == 2
+    assert reloaded.clear_seconds == 3.5
+    assert reloaded.taken == ["sandwich"]
+    assert reloaded.outcome_at == 1010.0
+
+
+def test_old_jsonl_lines_load_with_outcome_defaults(tmp_path):
+    line = {"id": "fire_1", "ts": 1.0, "wall_time": 1000.0, "confidence": 0.9,
+            "latency_s": 1.0, "thumb": "fire_1.jpg", "clip": None}
+    (tmp_path / "events.jsonl").write_text(json.dumps(line) + "\n")
+    r = EventStore(tmp_path, 100, 0).list()[0]
+    assert r.sound is None and r.clear_seconds is None
+    assert r.strikes == 1 and r.taken == [] and r.outcome_at is None
+
+
 def test_stats_counts_and_latency(tmp_path):
     # fixed "now" = 2026-07-06 18:00 UTC; two events today, one 3 days ago
     now = 1783360800.0
