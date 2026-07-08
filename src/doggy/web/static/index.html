@@ -332,6 +332,7 @@
       <div class="card c-set">
         <h2>Settings</h2>
 
+        <!-- Essentials: the on/off switches you reach for most, always visible. -->
         <div class="toggle">
           <div><div class="t-label">Deterrent</div><div class="t-desc">Play the sound when a dog is confirmed</div></div>
           <label class="switch"><input id="safety_enabled" type="checkbox" /><span class="track"></span></label>
@@ -340,94 +341,107 @@
           <div><div class="t-label">Ignore people</div><div class="t-desc">Don't react to a person mistaken for a dog</div></div>
           <label class="switch"><input id="person_suppression_enabled" type="checkbox" /><span class="track"></span></label>
         </div>
-        <div class="toggle">
-          <div><div class="t-label">On a schedule</div><div class="t-desc">Only react during the times you pick. It keeps watching around the clock either way.</div></div>
-          <label class="switch"><input id="schedule_enabled" type="checkbox" /><span class="track"></span></label>
-        </div>
-        <div class="field" id="schedule_editor" style="display:none">
-          <div class="desc">Pick the days and hours it should react. Outside these it's off duty but still watching.</div>
-          <div id="windows"></div>
-          <div class="btnrow"><button onclick="addWindow()">Add times</button></div>
-        </div>
-
-        <div class="field">
-          <div class="row"><label>Watch for</label></div>
-          <div class="desc">Detect means it shows on the live view. Alert means the deterrent fires. People never set it off.</div>
-          <div class="watchgrid" id="watch_grid">
-            <span></span><span class="wg-h">Detect</span><span class="wg-h">Alert</span>
-            <span class="wg-name">Dogs</span>
-            <input type="checkbox" data-kind="detect" value="dog" />
-            <input type="checkbox" data-kind="alert" value="dog" />
-            <span class="wg-name">Cats</span>
-            <input type="checkbox" data-kind="detect" value="cat" />
-            <input type="checkbox" data-kind="alert" value="cat" />
-            <span class="wg-name">Birds</span>
-            <input type="checkbox" data-kind="detect" value="bird" />
-            <input type="checkbox" data-kind="alert" value="bird" />
-          </div>
-        </div>
-
-        <div class="field">
-          <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
-          <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
-          <input id="confidence" type="range" min="0" max="1" step="0.01" />
-        </div>
-        <div class="field">
-          <div class="row"><label>How much of the animal must be inside the area</label><span class="val" id="zone_overlap_v"></span></div>
-          <div class="desc">Stops a box that only scrapes the edge from setting it off.</div>
-          <input id="zone_overlap" type="range" min="0" max="1" step="0.05" />
-        </div>
-        <div class="field">
-          <div class="row"><label>How long the dog must stay before reacting</label><span class="val" id="confirm_seconds_v"></span></div>
-          <input id="confirm_seconds" type="range" min="0" max="5" step="0.1" />
-        </div>
-        <div class="field">
-          <div class="row"><label>Wait between reactions — at least</label><span class="val" id="cooldown_min_seconds_v"></span></div>
-          <input id="cooldown_min_seconds" type="range" min="0" max="60" step="1" />
-        </div>
-        <div class="field">
-          <div class="row"><label>Wait between reactions — at most</label><span class="val" id="cooldown_max_seconds_v"></span></div>
-          <input id="cooldown_max_seconds" type="range" min="0" max="120" step="1" />
-        </div>
-        <div class="field">
-          <div class="row"><label>Most reactions per hour</label><span class="val" id="max_fires_per_hour_v"></span></div>
-          <input id="max_fires_per_hour" type="range" min="0" max="60" step="1" />
-        </div>
-
-        <div class="field">
-          <div class="row"><label for="selected_sound">Deterrent sound</label></div>
-          <div class="desc">Pick a sound to play, or let it choose at random.</div>
-          <select id="selected_sound"><option value="random">Random</option></select>
-        </div>
-        <div class="field">
-          <div class="row"><label>Loudness</label><span class="val" id="max_volume_v"></span></div>
-          <input id="max_volume" type="range" min="0" max="1" step="0.01" />
-        </div>
-        <div class="toggle">
-          <div><div class="t-label">Save video clips</div><div class="t-desc">Keep a short video of each catch to review here</div></div>
-          <label class="switch"><input id="clips_enabled" type="checkbox" /><span class="track"></span></label>
-        </div>
-        <div class="toggle">
-          <div><div class="t-label">Notify this device</div><div class="t-desc" id="notify_desc">Pops a notification on this device when something is caught. Works while the dashboard is open.</div></div>
-          <label class="switch"><input id="notify_enabled" type="checkbox" /><span class="track"></span></label>
-        </div>
-        <div class="toggle">
-          <div><div class="t-label">Show counter items</div><div class="t-desc">Outline food and dishes it sees on the live view</div></div>
-          <label class="switch"><input id="show_inventory_boxes" type="checkbox" /><span class="track"></span></label>
-        </div>
-        <div class="field">
-          <div class="row"><label for="sound_upload">Add a sound</label></div>
-          <div class="desc">Upload a .wav, .mp3, or .ogg file.</div>
-          <input id="sound_upload" type="file" accept=".wav,.mp3,.ogg,audio/*" onchange="uploadSound(this)" />
-          <div class="desc" id="upload_msg"></div>
-        </div>
-
         <div class="btnrow">
           <button class="primary" id="save_btn" onclick="save()">Save settings</button>
           <button onclick="testSound()">Test sound</button>
         </div>
 
-        <details>
+        <!-- Everything else: one collapsed drawer per topic. Tap to open. -->
+        <details class="drawer">
+          <summary>Detection and sensitivity</summary>
+          <div class="field">
+            <div class="row"><label>Watch for</label></div>
+            <div class="desc">Detect means it shows on the live view. Alert means the deterrent fires. People never set it off.</div>
+            <div class="watchgrid" id="watch_grid">
+              <span></span><span class="wg-h">Detect</span><span class="wg-h">Alert</span>
+              <span class="wg-name">Dogs</span>
+              <input type="checkbox" data-kind="detect" value="dog" />
+              <input type="checkbox" data-kind="alert" value="dog" />
+              <span class="wg-name">Cats</span>
+              <input type="checkbox" data-kind="detect" value="cat" />
+              <input type="checkbox" data-kind="alert" value="cat" />
+              <span class="wg-name">Birds</span>
+              <input type="checkbox" data-kind="detect" value="bird" />
+              <input type="checkbox" data-kind="alert" value="bird" />
+            </div>
+          </div>
+          <div class="field">
+            <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
+            <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
+            <input id="confidence" type="range" min="0" max="1" step="0.01" />
+          </div>
+          <div class="field">
+            <div class="row"><label>How much of the animal must be inside the area</label><span class="val" id="zone_overlap_v"></span></div>
+            <div class="desc">Stops a box that only scrapes the edge from setting it off.</div>
+            <input id="zone_overlap" type="range" min="0" max="1" step="0.05" />
+          </div>
+          <div class="field">
+            <div class="row"><label>How long the dog must stay before reacting</label><span class="val" id="confirm_seconds_v"></span></div>
+            <input id="confirm_seconds" type="range" min="0" max="5" step="0.1" />
+          </div>
+          <div class="field">
+            <div class="row"><label>Wait between reactions — at least</label><span class="val" id="cooldown_min_seconds_v"></span></div>
+            <input id="cooldown_min_seconds" type="range" min="0" max="60" step="1" />
+          </div>
+          <div class="field">
+            <div class="row"><label>Wait between reactions — at most</label><span class="val" id="cooldown_max_seconds_v"></span></div>
+            <input id="cooldown_max_seconds" type="range" min="0" max="120" step="1" />
+          </div>
+          <div class="field">
+            <div class="row"><label>Most reactions per hour</label><span class="val" id="max_fires_per_hour_v"></span></div>
+            <input id="max_fires_per_hour" type="range" min="0" max="60" step="1" />
+          </div>
+        </details>
+
+        <details class="drawer">
+          <summary>Deterrent sound</summary>
+          <div class="field">
+            <div class="row"><label for="selected_sound">Deterrent sound</label></div>
+            <div class="desc">Pick a sound to play, or let it choose at random.</div>
+            <select id="selected_sound"><option value="random">Random</option></select>
+          </div>
+          <div class="field">
+            <div class="row"><label>Loudness</label><span class="val" id="max_volume_v"></span></div>
+            <input id="max_volume" type="range" min="0" max="1" step="0.01" />
+          </div>
+          <div class="toggle">
+            <div><div class="t-label">Save video clips</div><div class="t-desc">Keep a short video of each catch to review here</div></div>
+            <label class="switch"><input id="clips_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="field">
+            <div class="row"><label for="sound_upload">Add a sound</label></div>
+            <div class="desc">Upload a .wav, .mp3, or .ogg file.</div>
+            <input id="sound_upload" type="file" accept=".wav,.mp3,.ogg,audio/*" onchange="uploadSound(this)" />
+            <div class="desc" id="upload_msg"></div>
+          </div>
+        </details>
+
+        <details class="drawer">
+          <summary>Schedule</summary>
+          <div class="toggle">
+            <div><div class="t-label">On a schedule</div><div class="t-desc">Only react during the times you pick. It keeps watching around the clock either way.</div></div>
+            <label class="switch"><input id="schedule_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="field" id="schedule_editor" style="display:none">
+            <div class="desc">Pick the days and hours it should react. Outside these it's off duty but still watching.</div>
+            <div id="windows"></div>
+            <div class="btnrow"><button onclick="addWindow()">Add times</button></div>
+          </div>
+        </details>
+
+        <details class="drawer">
+          <summary>Notifications and display</summary>
+          <div class="toggle">
+            <div><div class="t-label">Notify this device</div><div class="t-desc" id="notify_desc">Pops a notification on this device when something is caught. Works while the dashboard is open.</div></div>
+            <label class="switch"><input id="notify_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="toggle">
+            <div><div class="t-label">Show counter items</div><div class="t-desc">Outline food and dishes it sees on the live view</div></div>
+            <label class="switch"><input id="show_inventory_boxes" type="checkbox" /><span class="track"></span></label>
+          </div>
+        </details>
+
+        <details class="drawer">
           <summary>Advanced</summary>
           <div class="field">
             <div class="row"><label>Must be seen in at least this many of the last few checks</label><span class="val" id="window_m_v"></span></div>
