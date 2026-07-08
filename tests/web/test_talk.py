@@ -33,6 +33,26 @@ def _release_talk_lock():
         pass
 
 
+def test_spawn_player_uses_raw_pcm_and_volume(monkeypatch):
+    # --raw is the bug fix: without it pw-cat routes stdin through libsndfile,
+    # which rejects headerless PCM ("Format not recognised") and no voice plays.
+    captured = {}
+
+    class _P:
+        def __init__(self, cmd, **kw):
+            captured["cmd"] = cmd
+
+    monkeypatch.setattr(talk.shutil, "which",
+                        lambda name: "/usr/bin/pw-cat" if name == "pw-cat" else None)
+    monkeypatch.setattr(talk.subprocess, "Popen", _P)
+    talk._spawn_player(0.5)
+    cmd = captured["cmd"]
+    assert "--raw" in cmd and "--playback" in cmd
+    assert cmd[cmd.index("--volume") + 1] == "0.500"
+    assert cmd[cmd.index("--rate") + 1] == "16000"
+    assert cmd[cmd.index("--format") + 1] == "s16"
+
+
 class FakeProc:
     def __init__(self):
         self.stdin = self
@@ -88,7 +108,7 @@ def test_player_dying_mid_stream_frees_the_lock(tmp_path, monkeypatch):
     # gracefully and, above all, release the one-talker lock so push-to-talk is
     # not bricked until the next service restart.
     proc = DyingProc()
-    monkeypatch.setattr(talk, "_spawn_player", lambda: proc)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: proc)
     c = _client(tmp_path)
 
     # TestClient re-raises any exception the handler propagates on context exit,
@@ -102,7 +122,7 @@ def test_player_dying_mid_stream_frees_the_lock(tmp_path, monkeypatch):
     # Proof the lock was released: a fresh talker with a working player must be
     # accepted and served, not turned away with 1013.
     fresh = FakeProc()
-    monkeypatch.setattr(talk, "_spawn_player", lambda: fresh)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: fresh)
     with c.websocket_connect("/ws/talk") as ws2:
         ws2.send_bytes(b"\x05")
     assert fresh.written == [b"\x05"]
@@ -111,7 +131,7 @@ def test_player_dying_mid_stream_frees_the_lock(tmp_path, monkeypatch):
 def test_spawn_failure_frees_the_lock(tmp_path, monkeypatch):
     # Spawning the player fails outright (FileNotFoundError race / fork failure).
     # The lock is acquired before the spawn, so it must still be released.
-    def boom():
+    def boom(volume):
         raise OSError("fork failed")
 
     monkeypatch.setattr(talk, "_spawn_player", boom)
@@ -124,7 +144,7 @@ def test_spawn_failure_frees_the_lock(tmp_path, monkeypatch):
         pass
 
     fresh = FakeProc()
-    monkeypatch.setattr(talk, "_spawn_player", lambda: fresh)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: fresh)
     with c.websocket_connect("/ws/talk") as ws2:
         ws2.send_bytes(b"\x05")
     assert fresh.written == [b"\x05"]
@@ -132,7 +152,7 @@ def test_spawn_failure_frees_the_lock(tmp_path, monkeypatch):
 
 def test_talk_pipes_frames_to_player(tmp_path, monkeypatch):
     proc = FakeProc()
-    monkeypatch.setattr(talk, "_spawn_player", lambda: proc)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: proc)
     c = _client(tmp_path)
     with c.websocket_connect("/ws/talk") as ws:
         ws.send_bytes(b"\x01\x02")
@@ -142,7 +162,7 @@ def test_talk_pipes_frames_to_player(tmp_path, monkeypatch):
 def test_second_talker_is_rejected(tmp_path, monkeypatch):
     # First talker holds the lock (blocked on receive); the second must be
     # accepted then closed with 1013 (try again later: someone is talking).
-    monkeypatch.setattr(talk, "_spawn_player", lambda: None)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: None)
     c = _client(tmp_path)
     with c.websocket_connect("/ws/talk"):
         with c.websocket_connect("/ws/talk") as ws2:
@@ -161,7 +181,7 @@ def test_index_has_talk_button(tmp_path):
 def test_missing_player_accepts_and_discards(tmp_path, monkeypatch):
     # No pw-cat on this host (Mac dev): the socket still opens and frames are
     # dropped without error, and the lock is released so a fresh talker works.
-    monkeypatch.setattr(talk, "_spawn_player", lambda: None)
+    monkeypatch.setattr(talk, "_spawn_player", lambda volume: None)
     c = _client(tmp_path)
     with c.websocket_connect("/ws/talk") as ws:
         ws.send_bytes(b"\x01\x02")

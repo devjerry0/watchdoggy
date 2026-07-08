@@ -7,6 +7,8 @@ import threading
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from doggy.core.runtime import RuntimeSettings
+
 log = logging.getLogger("doggy")
 
 # One talker at a time: the speaker is a single mono pipe, so a second caller is
@@ -15,19 +17,23 @@ log = logging.getLogger("doggy")
 _busy = threading.Lock()
 
 
-def _spawn_player() -> subprocess.Popen | None:
+def _spawn_player(volume: float) -> subprocess.Popen | None:
     # Raw PCM straight into PipeWire; on a dev Mac there is no pw-cat, so we
     # return None and the handler discards audio (the UI still works).
     exe = shutil.which("pw-cat") or shutil.which("pw-play")
     if not exe:
         log.info("push-to-talk: no pw-cat on this host; discarding audio")
         return None
+    # --raw is REQUIRED: without it pw-cat opens the stream through libsndfile,
+    # which needs a file header (WAV/FLAC) and rejects the browser's headerless
+    # PCM with "Format not recognised" -- so no voice is ever heard.
     return subprocess.Popen(
-        [exe, "--playback", "--rate", "16000", "--channels", "1",
-         "--format", "s16", "-"], stdin=subprocess.PIPE)
+        [exe, "--playback", "--raw", "--volume", f"{max(0.0, min(1.0, volume)):.3f}",
+         "--rate", "16000", "--channels", "1", "--format", "s16", "-"],
+        stdin=subprocess.PIPE)
 
 
-def build_router() -> APIRouter:
+def build_router(runtime: RuntimeSettings) -> APIRouter:
     router = APIRouter()
 
     @router.websocket("/ws/talk")
@@ -43,7 +49,7 @@ def build_router() -> APIRouter:
         # (the speaker dropping) must not strand the lock and brick push-to-talk.
         proc = None
         try:
-            proc = _spawn_player()
+            proc = _spawn_player(runtime.get().talk_volume)
             await ws.accept()
             while True:
                 data = await ws.receive_bytes()

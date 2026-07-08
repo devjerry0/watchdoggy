@@ -52,7 +52,7 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     app.include_router(sounds.build_router(settings, runtime, alerter))
     app.include_router(soothing.build_router(settings))
     app.include_router(snooze.build_router(gate))
-    app.include_router(talk.build_router())
+    app.include_router(talk.build_router(runtime))
 
     return app
 

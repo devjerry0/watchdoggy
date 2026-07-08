@@ -107,6 +107,8 @@ class TunableSettings(BaseModel):
     soothing_enabled: bool = False
     soothing_volume: float = Field(0.4, ge=0.0, le=1.0)
     soothing_resume_seconds: float = Field(45.0, ge=0.0)
+    # Loudness of your voice over push-to-talk (the pw-cat playback gain).
+    talk_volume: float = Field(0.8, ge=0.0, le=1.0)
     # Weekly arming schedule: when on, reactions only happen inside armed_windows
     # (detection keeps running around the clock). Empty windows = always armed.
     # NoDecode: the .env form is a JSON string; _parse_windows json.loads it (the
