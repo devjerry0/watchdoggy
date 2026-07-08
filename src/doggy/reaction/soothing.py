@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import subprocess
@@ -22,12 +23,15 @@ _SOOTHING_EXTS = {".mp3", ".wav", ".flac", ".ogg"}
 # mode off (or an empty library) is noticed, and a running track stops, in ~1s.
 _POLL_SECONDS = 0.5
 
-# Sentinel from _await_exit: the volume was changed mid-track, so the current
-# track should be re-spawned at the new volume (pw-play's --volume is fixed at
-# spawn; restarting is how a volume change takes effect on the running track).
+# Sentinel from _await_exit: the volume changed mid-track and could NOT be
+# applied live to the running stream (no PipeWire tools / node), so the caller
+# re-spawns the track at the new volume as a fallback.
 _REVOLUME = object()
 
 Spawn = Callable[[Path, float], "subprocess.Popen | None"]
+# Apply a volume [0,1] to a running player's audio stream in place; returns True
+# if applied live (no restart needed), False if the caller must re-spawn.
+SetVolume = Callable[["subprocess.Popen", float], bool]
 
 
 class SoothingPlayer:
@@ -50,12 +54,16 @@ class SoothingPlayer:
 
     def __init__(self, runtime: RuntimeSettings, library_dir: Path,
                  status: StatusStore, clock: Callable[[], float] = time.monotonic,
-                 spawn: Spawn | None = None) -> None:
+                 spawn: Spawn | None = None,
+                 set_volume: SetVolume | None = None) -> None:
         self._runtime = runtime
         self._library_dir = Path(library_dir)
         self._status = status
         self._clock = clock
         self._spawn = spawn or self._spawn_player
+        # Apply a live volume change to the running stream (True = applied, no
+        # restart); default uses PipeWire, falls back to a re-spawn where absent.
+        self._set_volume = set_volume or self._set_live_volume
         self._poll = _POLL_SECONDS
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -166,6 +174,11 @@ class SoothingPlayer:
                 self._set_track(None)
                 return False
             self._set_track(track.name)
+            # pw-play's --volume is overridden by the PipeWire session manager's
+            # remembered per-stream volume, so assert the wanted volume on the
+            # live stream once it registers. This is what makes the loudness
+            # actually match the slider (afplay / no-PipeWire keeps --volume).
+            self._set_volume(proc, volume)
             code = self._await_exit(proc, volume)
             with self._lock:
                 if self._proc is proc:
@@ -215,11 +228,15 @@ class SoothingPlayer:
                 self._wait_slice(proc)  # reap (bounded: one slice)
                 return None
             if cfg.soothing_volume != volume:
-                # The user moved the loudness slider: restart this track at the
-                # new volume so the change is heard now, not at the next track.
-                proc.terminate()
-                self._wait_slice(proc)  # reap (bounded: one slice)
-                return _REVOLUME
+                # The user moved the loudness slider. Prefer applying it live to
+                # the running stream (no restart); only if that is unavailable
+                # re-spawn the track at the new volume.
+                if self._set_volume(proc, cfg.soothing_volume):
+                    volume = cfg.soothing_volume
+                else:
+                    proc.terminate()
+                    self._wait_slice(proc)  # reap (bounded: one slice)
+                    return _REVOLUME
 
     def _wait_slice(self, proc) -> int | None:
         try:
@@ -278,3 +295,60 @@ class SoothingPlayer:
         except OSError:
             log.info("soothing: failed to launch %s", cmd[0])
             return None
+
+    def _set_live_volume(self, proc: subprocess.Popen, volume: float) -> bool:
+        """Set the running player's PipeWire stream volume in place, so a
+        loudness change is heard without restarting the track, and so the wanted
+        volume beats the session manager's remembered per-stream value. Best
+        effort: returns False (the caller re-spawns / keeps --volume) when the
+        PipeWire tools or the stream node are not found -- e.g. on macOS/afplay
+        or a non-PipeWire host."""
+        node = self._pw_stream_node(proc.pid)
+        if node is None:
+            return False
+        level = f"{max(0.0, min(1.0, volume)):.3f}"
+        try:
+            done = subprocess.run(["wpctl", "set-volume", str(node), level],
+                                  capture_output=True, timeout=3)
+            return done.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    def _pw_stream_node(self, pid: int) -> int | None:
+        """The PipeWire Stream/Output node id for a player process, retrying
+        briefly because the node registers a beat after the process starts. The
+        pid maps to a Client object; the audio node links to it via client.id."""
+        for attempt in range(5):
+            node = self._pw_stream_node_once(pid)
+            if node is not None:
+                return node
+            if self._stop.wait(0.2):  # also lets shutdown cut the wait short
+                return None
+            _ = attempt
+        return None
+
+    @staticmethod
+    def _pw_stream_node_once(pid: int) -> int | None:
+        try:
+            dump = subprocess.run(["pw-dump"], capture_output=True, timeout=3, text=True)
+            if dump.returncode != 0:
+                return None
+            objs = json.loads(dump.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+        client = None
+        for o in objs:
+            props = (o.get("info") or {}).get("props") or {}
+            if props.get("application.process.id") == pid:
+                client = o.get("id")
+                break
+        if client is None:
+            return None
+        for o in objs:
+            if not str(o.get("type", "")).endswith("Node"):
+                continue
+            props = (o.get("info") or {}).get("props") or {}
+            if (props.get("client.id") == client
+                    and str(props.get("media.class", "")).startswith("Stream/Output")):
+                return o.get("id")
+        return None

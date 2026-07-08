@@ -101,9 +101,14 @@ def running(player):
         player.stop()
 
 
-def _player(tmp_path, spawn, rt=None, status=None, clock=time.monotonic, poll=0.02):
+def _player(tmp_path, spawn, rt=None, status=None, clock=time.monotonic, poll=0.02,
+            set_volume=None):
+    # Default set_volume is a no-op returning False (no live apply, no real
+    # subprocess to pw-dump/wpctl): keeps tests fast and host-independent, and
+    # exercises the re-spawn fallback. Live-volume tests pass their own.
     p = SoothingPlayer(rt or _runtime(enabled=True), tmp_path,
-                       status or StatusStore(), clock=clock, spawn=spawn)
+                       status or StatusStore(), clock=clock, spawn=spawn,
+                       set_volume=set_volume or (lambda proc, v: False))
     p._poll = poll
     return p
 
@@ -183,19 +188,37 @@ def test_volume_read_fresh_per_track(tmp_path):
         assert spawn.calls[1][1] == 0.4
 
 
-def test_volume_change_restarts_current_track_at_new_volume(tmp_path):
-    # Moving the loudness slider mid-track must take effect immediately: the
-    # SAME track is re-spawned at the new volume (pw-play's --volume is fixed at
-    # spawn), rather than the change waiting for the next track to start.
+def test_volume_change_applied_live_without_restart(tmp_path):
+    # Preferred path: moving the loudness slider mid-track sets the running
+    # stream's volume in place (via set_volume) -- no re-spawn, track keeps
+    # playing from where it was.
     _tracks(tmp_path, "a.mp3", "b.mp3")
     spawn = FakeSpawn(lambda p, v: FakeProc(autofinish=False))
     rt = _runtime(enabled=True, volume=0.4)
-    with running(_player(tmp_path, spawn, rt=rt)):
+    applied: list[float] = []
+    live = lambda proc, v: (applied.append(v), True)[1]  # noqa: E731
+    with running(_player(tmp_path, spawn, rt=rt, set_volume=live)):
+        _wait_for(lambda: len(spawn.calls) == 1)
+        first = spawn.procs[0]
+        assert applied == [0.4]  # asserted once on spawn
+        rt.update(TunableSettings(soothing_enabled=True, soothing_volume=0.1))
+        _wait_for(lambda: 0.1 in applied)
+        # Still the same, un-terminated track: no re-spawn.
+        assert not first.terminated
+        assert len(spawn.calls) == 1
+
+
+def test_volume_change_restarts_when_live_apply_unavailable(tmp_path):
+    # Fallback path (no PipeWire / set_volume returns False): the SAME track is
+    # re-spawned at the new volume so the change still takes effect.
+    _tracks(tmp_path, "a.mp3", "b.mp3")
+    spawn = FakeSpawn(lambda p, v: FakeProc(autofinish=False))
+    rt = _runtime(enabled=True, volume=0.4)
+    with running(_player(tmp_path, spawn, rt=rt)):  # default set_volume -> False
         _wait_for(lambda: len(spawn.calls) == 1)
         assert spawn.calls[0][0].name == "a.mp3" and spawn.calls[0][1] == 0.4
         first = spawn.procs[0]
         rt.update(TunableSettings(soothing_enabled=True, soothing_volume=0.1))
-        # No manual finish: the running track is cut and re-spawned at 0.1.
         _wait_for(lambda: len(spawn.calls) == 2)
         assert first.terminated
         assert spawn.calls[1][0].name == "a.mp3"  # same track, not advanced to b
