@@ -82,6 +82,8 @@ Open `http://<pi-host>:8000` from any device on your network.
 - Advanced holds the detection-window and person-matching knobs. System shows temperature, power, and speed.
 - Test sound plays the deterrent. Save settings writes to the Pi's `.env`.
 
+Soothing sounds loops your own calm audio, music or white noise, through the speaker while it watches. Upload tracks from the Soothing sounds card, up to 1 GB in total, then turn it on. The deterrent always takes priority, so an alarm interrupts the music the moment a dog is confirmed and the loop resumes on its own a little later.
+
 ### HTTPS (for push-to-talk and notifications)
 
 Browsers only allow the microphone and notifications on secure pages, so those features need the dashboard served over https. One script sets it up:

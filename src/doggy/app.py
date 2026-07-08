@@ -9,6 +9,7 @@ from doggy.reaction.hub import ReactionHub, SafeReaction
 from doggy.reaction.clips import ClipBuffer, ClipService
 from doggy.reaction.outcome import OutcomeWatcher
 from doggy.reaction.recorder import Recorder
+from doggy.reaction.soothing import SoothingPlayer
 from doggy.vision.camera import build_camera
 from doggy.core.config import load_settings
 from doggy.vision.analysis import DetectionAnalyzer
@@ -50,13 +51,15 @@ def main() -> None:
     alerter = build_alerter(settings, runtime)
     clip_service = ClipService(
         event_store, event_store.dir, ClipBuffer(settings.clip_window_seconds), runtime)
+    soothing = SoothingPlayer(runtime, settings.soothing_dir, status)
     outcome = OutcomeWatcher(event_store, gate, alerter, runtime)
     # Reactions fan out on a catch; each is wrapped so one failure can't stop the
     # others or kill the detect loop. ClipService registers its pending clip here;
-    # OutcomeWatcher opens the incident it measures per-frame.
+    # OutcomeWatcher opens the incident it measures per-frame; SoothingPlayer (last)
+    # cuts its music and holds it after the catch.
     hub = ReactionHub(
         [SafeReaction(SoundReaction(alerter, event_store)), SafeReaction(clip_service),
-         SafeReaction(outcome)])
+         SafeReaction(outcome), SafeReaction(soothing)])
 
     pipeline = Pipeline(
         settings=settings, analyzer=analyzer, camera=camera,
@@ -79,6 +82,7 @@ def main() -> None:
         log.info("dashboard at http://%s:%s", settings.web_host, settings.web_port)
 
     log.info("doggy starting")
+    soothing.start()
     pipeline.run(stop)
     log.info("doggy stopped")
 

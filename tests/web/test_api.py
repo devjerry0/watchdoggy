@@ -267,6 +267,16 @@ def test_index_has_deterrence_card(tmp_path):
     assert "/api/lab" in html
 
 
+def test_index_has_soothing_card(tmp_path):
+    store, _ = _seeded_store(tmp_path, 0)
+    c = _app_with_store(tmp_path, store)
+    html = c.get("/").text
+    assert "Soothing sounds" in html
+    assert "Play soothing sounds" in html
+    assert 'id="soothing_enabled"' in html
+    assert "/api/soothing" in html
+
+
 def test_clips_route_serves_and_404(tmp_path):
     (tmp_path / "clip.mp4").write_bytes(b"data")
     store, _ = _seeded_store(tmp_path, 0)

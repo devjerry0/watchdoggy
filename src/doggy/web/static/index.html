@@ -253,7 +253,7 @@
             border:1px solid var(--lamp)}
   .lb-bar a:hover{background:var(--lamp-soft);border-color:var(--lamp-soft)}
 
-  /* ---- Mobile: interleave cards (monitor, log, activity, lab, settings, system) ---- */
+  /* ---- Mobile: interleave cards (monitor, log, activity, lab, soothing, settings, system) ---- */
   @media(max-width:720px){
     .wrap{padding:.9rem}
     header{margin-bottom:1.1rem}
@@ -262,7 +262,7 @@
     .col-live,.col-side{display:contents}
     .grid .card{min-width:0;width:100%;margin-bottom:0}
     .grid{gap:1rem}
-    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-lab{order:4}.c-set{order:5}.c-sys{order:6}
+    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-lab{order:4}.c-soothe{order:5}.c-set{order:6}.c-sys{order:7}
     #vidwrap{display:block}
     #live{width:100%;height:auto}
     .readout{grid-template-columns:1fr 1fr;gap:.75rem}
@@ -477,6 +477,27 @@
         <div id="lab_body"><div class="empty">No data yet. Once it reacts a few times, you'll see which sounds actually work.</div></div>
       </div>
 
+      <div class="card c-soothe">
+        <h2>Soothing sounds</h2>
+        <div class="toggle">
+          <div><div class="t-label">Play soothing sounds</div><div class="t-desc">Loops your calm audio through the speaker. The deterrent still interrupts it.</div></div>
+          <label class="switch"><input id="soothing_enabled" type="checkbox" /><span class="track"></span></label>
+        </div>
+        <div class="hint" id="soothing_now" style="display:none"></div>
+        <div class="field">
+          <div class="row"><label>Soothing loudness</label><span class="val" id="soothing_volume_v"></span></div>
+          <input id="soothing_volume" type="range" min="0" max="1" step="0.01" />
+        </div>
+        <div id="soothing_list"></div>
+        <div class="desc" id="soothing_usage"></div>
+        <div class="field">
+          <div class="row"><label for="soothing_upload">Add a track</label></div>
+          <div class="desc">Add calm music or white noise. Up to 1 GB total.</div>
+          <input id="soothing_upload" type="file" accept=".mp3,.wav,.flac,.ogg,audio/*" onchange="uploadSoothing(this)" />
+          <div class="desc" id="soothing_upload_msg"></div>
+        </div>
+      </div>
+
       <div class="card c-sys">
         <h2>System</h2>
         <div class="sys">
@@ -504,15 +525,15 @@
 <script>
 const KNOBS = ["confidence","zone_overlap","confirm_seconds","window_m","window_n","cooldown_min_seconds",
                "cooldown_max_seconds","max_fires_per_hour","detect_interval_seconds",
-               "person_iou_threshold","max_volume"];
+               "person_iou_threshold","max_volume","soothing_volume"];
 const pct = v => Math.round(v * 100) + "%";
 const secs = v => (Math.round(v * 10) / 10) + "s";
 // Inventory labels with irregular plurals; anything else just takes an "s".
 const PLURALS = {"sandwich":"sandwiches", "wine glass":"wine glasses",
                  "knife":"knives", "broccoli":"broccoli"};
 const plural = label => PLURALS[label] || label + "s";
-const FMT = {confidence:pct, zone_overlap:pct, person_iou_threshold:pct, max_volume:pct, confirm_seconds:secs,
-             cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs};
+const FMT = {confidence:pct, zone_overlap:pct, person_iou_threshold:pct, max_volume:pct, soothing_volume:pct,
+             confirm_seconds:secs, cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs};
 const fmt = (k, v) => (FMT[k] || String)(v);
 const STATE = {IDLE:["Watching","state-watching"], CONFIRMING:["Dog spotted","state-spotted"],
                COOLDOWN:["Cooling down","state-cooling"]};
@@ -544,6 +565,7 @@ document.getElementById("person_suppression_enabled").addEventListener("change",
 document.getElementById("escalation_enabled").addEventListener("change", e =>
   patch({escalation_enabled:e.target.checked}));
 document.getElementById("clips_enabled").addEventListener("change", e => patch({clips_enabled:e.target.checked}));
+document.getElementById("soothing_enabled").addEventListener("change", e => patch({soothing_enabled:e.target.checked}));
 document.getElementById("show_inventory_boxes").addEventListener("change", e =>
   patch({show_inventory_boxes:e.target.checked}));
 document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
@@ -884,6 +906,61 @@ async function uploadSound(input){
   input.value = "";
 }
 
+// ---- Soothing sounds ----
+function fmtSize(b){
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
+  if (b >= 1024) return Math.round(b / 1024) + " KB";
+  return b + " B";
+}
+function soothingRow(t){
+  return '<div class="ev">'
+    + '<div class="ev-meta"><div class="ev-time">' + escapeHtml(t.name) + '</div>'
+    + '<div class="ev-sub">' + fmtSize(t.size) + '</div></div>'
+    + '<button class="del" data-del="1" data-name="' + escapeHtml(t.name)
+    + '" title="Delete this track">×</button></div>';
+}
+let _soothingKey = "";
+async function refreshSoothing(){
+  let data;
+  try { data = await (await fetch("/api/soothing")).json(); } catch(e){ return; }
+  const tracks = data.tracks || [];
+  const key = JSON.stringify(tracks.map(t => [t.name, t.size])) + "|" + data.total_bytes;
+  if (key === _soothingKey) return;    // skip re-render when the library is unchanged
+  _soothingKey = key;
+  document.getElementById("soothing_list").innerHTML = tracks.length
+    ? tracks.map(soothingRow).join("")
+    : '<div class="empty">No tracks yet. Add calm audio below.</div>';
+  document.getElementById("soothing_usage").textContent =
+    tracks.length ? fmtSize(data.total_bytes) + " of 1 GB used" : "";
+}
+// Names are user-controlled, so read them from a data attribute (safely escaped
+// at render) rather than baking them into an inline onclick string.
+document.getElementById("soothing_list").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if (del){ deleteSoothing(del.dataset.name); }
+});
+async function deleteSoothing(name){
+  await fetch("/api/soothing/" + encodeURIComponent(name), {method:"DELETE"});
+  _soothingKey = ""; refreshSoothing();
+}
+async function uploadSoothing(input){
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const msg = document.getElementById("soothing_upload_msg");
+  msg.textContent = "Uploading, this can take a minute for big files.";
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const r = await fetch("/api/soothing", {method:"POST", body:fd});
+    if (r.ok){ const j = await r.json(); _soothingKey = ""; await refreshSoothing(); msg.textContent = "Added " + j.name; }
+    else {
+      let detail = "";
+      try { const j = await r.json(); if (typeof j.detail === "string") detail = j.detail; } catch(e){}
+      msg.textContent = detail || "Upload failed — use an .mp3, .wav, .flac, or .ogg file.";
+    }
+  } catch(e){ msg.textContent = "Upload failed."; }
+  input.value = "";
+}
+
 // ---- Lightbox (photo or clip) ----
 function openEvent(photo, clip){
   const imgEl = document.getElementById("lb-img");
@@ -987,6 +1064,15 @@ async function poll(){
 
   document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
   document.getElementById("show_inventory_boxes").checked = s.settings.show_inventory_boxes;
+  document.getElementById("soothing_enabled").checked = s.settings.soothing_enabled;
+  const soothingNow = document.getElementById("soothing_now");
+  if (s.settings.soothing_enabled){
+    soothingNow.style.display = "";
+    if (s.soothing_track){ soothingNow.innerHTML = "Now playing: <b>" + escapeHtml(s.soothing_track) + "</b>"; }
+    else { soothingNow.textContent = "Quiet right now."; }
+  } else {
+    soothingNow.style.display = "none";
+  }
   document.getElementById("schedule_enabled").checked = s.settings.schedule_enabled;
   document.getElementById("schedule_editor").style.display = s.settings.schedule_enabled ? "" : "none";
   syncWindows(s.settings.armed_windows || []);
@@ -1110,9 +1196,9 @@ function setupTalk(){
   btn.addEventListener("pointerleave", stop);
 }
 setupTalk();
-loadSounds(); loadEvents(); refreshStats(); refreshLab();
+loadSounds(); loadEvents(); refreshStats(); refreshLab(); refreshSoothing();
 setInterval(poll, 500); poll();
-setInterval(() => { loadEvents(); refreshStats(); refreshLab(); }, 4000);
+setInterval(() => { loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); }, 4000);
 </script>
 </body>
 </html>

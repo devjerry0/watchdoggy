@@ -48,6 +48,9 @@ class Status:
     # Power health from vcgencmd get_throttled; None = unreadable (non-Pi).
     undervolt_now: bool | None = None
     undervolt_since_boot: bool | None = None
+    # Soothing player: name of the calm-audio track playing now, or None when the
+    # mode is off, the library is empty, or playback is held after a catch.
+    soothing_track: str | None = None
 
 
 class StatusStore:

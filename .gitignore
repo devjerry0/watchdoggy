@@ -4,5 +4,6 @@ __pycache__/
 .env
 /models/
 /events/
+/soothing/
 *.mp4
 .pytest_cache/
