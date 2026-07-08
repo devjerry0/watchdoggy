@@ -61,6 +61,18 @@
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;
              margin-bottom:1rem;padding-bottom:.35rem;border-bottom:1px solid var(--seam)}
   .card-head h2{margin:0;padding:0;border:0}
+  /* Foldable secondary card: its header is the tap target; the body collapses. */
+  details.fold > summary{list-style:none;cursor:pointer;display:flex;
+             align-items:center;justify-content:space-between;gap:1rem;
+             font-family:var(--mono);font-size:.66rem;font-weight:600;text-transform:uppercase;
+             letter-spacing:.24em;color:var(--stone);
+             padding-bottom:.6rem;border-bottom:1px solid var(--seam);transition:color .15s}
+  details.fold > summary::-webkit-details-marker{display:none}
+  details.fold > summary::after{content:"▾";font-size:.72rem;color:var(--stone)}
+  details.fold[open] > summary{margin-bottom:1rem}
+  details.fold[open] > summary::after{content:"▴"}
+  details.fold > summary:hover{color:var(--lamp)}
+  details.fold > summary:hover::after{color:var(--lamp)}
 
   /* ---- The monitor: bezel, scrims, OSD ---- */
   .monitor-card{padding:.65rem .65rem 1.1rem}
@@ -262,7 +274,7 @@
     .col-live,.col-side{display:contents}
     .grid .card{min-width:0;width:100%;margin-bottom:0}
     .grid{gap:1rem}
-    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-lab{order:4}.c-soothe{order:5}.c-set{order:6}.c-sys{order:7}
+    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-set{order:4}.c-soothe{order:5}.c-lab{order:6}.c-sys{order:7}
     #vidwrap{display:block}
     #live{width:100%;height:auto}
     .readout{grid-template-columns:1fr 1fr;gap:.75rem}
@@ -490,13 +502,13 @@
         </div>
       </div>
 
-      <div class="card c-lab">
-        <h2>Deterrence</h2>
+      <details class="card fold c-lab">
+        <summary>Deterrence</summary>
         <div id="lab_body"><div class="empty">No data yet. Once it reacts a few times, you'll see which sounds actually work.</div></div>
-      </div>
+      </details>
 
-      <div class="card c-soothe">
-        <h2>Soothing sounds</h2>
+      <details class="card fold c-soothe">
+        <summary>Soothing sounds</summary>
         <div class="toggle">
           <div><div class="t-label">Play soothing sounds</div><div class="t-desc">Loops your calm audio through the speaker. The deterrent still interrupts it.</div></div>
           <label class="switch"><input id="soothing_enabled" type="checkbox" /><span class="track"></span></label>
@@ -523,16 +535,16 @@
           <input id="soothing_upload" type="file" accept=".mp3,.wav,.flac,.ogg,audio/*" onchange="uploadSoothing(this)" />
           <div class="desc" id="soothing_upload_msg"></div>
         </div>
-      </div>
+      </details>
 
-      <div class="card c-sys">
-        <h2>System</h2>
+      <details class="card fold c-sys">
+        <summary>System</summary>
         <div class="sys">
           <span><span class="k">Temperature</span> <span class="v" id="temp">–</span></span>
           <span><span class="k">Power</span> <span class="v" id="power">–</span></span>
           <span><span class="k">Speed</span> <span class="v" id="fps">–</span></span>
         </div>
-      </div>
+      </details>
     </div>
   </div>
 </div>
