@@ -60,8 +60,8 @@ def test_soothing_upload_over_limit_413_and_cleans_up(tmp_path):
     assert r.status_code == 413
     assert r.json() == {"detail": "That would go over the 1 GB limit. Delete a track first."}
     # partial file cleaned up and library unchanged (nothing landed). The temp file is
-    # dot-prefixed, so glob(".upload.*") (pattern starts with a literal dot) is what
-    # actually catches a leftover — glob("*.part") would skip hidden names entirely.
+    # Unlike the glob MODULE, pathlib's Path.glob does match dotfiles, so
+    # "*.part" would work too; ".upload.*" is used as the most specific pattern.
     assert list(soothing.glob(".upload.*")) == []
     assert list(soothing.glob("*")) == []
     assert c.get("/api/soothing").json()["tracks"] == []
