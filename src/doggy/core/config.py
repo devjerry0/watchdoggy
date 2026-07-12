@@ -96,7 +96,8 @@ class TunableSettings(BaseModel):
     clips_enabled: bool = False
     clip_window_seconds: float = 20
     clip_preroll_seconds: float = 5
-    clip_postroll_seconds: float = 3
+    # How long the clip keeps recording after the alert, to catch the retreat.
+    clip_postroll_seconds: float = 5
     clip_fps: int = Field(6, ge=1)
     clip_retention: int = Field(10, ge=0)   # 0 = unlimited
     # Escalation: fire again, louder, while the animal stands its ground.
