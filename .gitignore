@@ -16,3 +16,7 @@ __pycache__/
 /events-pull/
 /dataset-pull/
 /dataset-import/
+# training pipeline outputs (scripts/train_kitchen_model.py) + pilot scratch
+/training-runs/
+/finetune/
+/runs/

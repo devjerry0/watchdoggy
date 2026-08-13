@@ -26,6 +26,13 @@ doggy = "doggy.main:main"
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    # Mac-side only: cloud-GPU dispatch for scripts/modal_train.py. The Pi
+    # never syncs dev deps (service runs `uv run --no-sync`).
+    "modal>=1.0",
+    # NCNN export in scripts/train_kitchen_model.py: ultralytics tries to
+    # pip-install these at export time, which fails in a pip-less uv venv.
+    "ncnn>=1.0",
+    "pnnx>=20250000",
 ]
 
 # CPU-only PyTorch on ALL Linux (x86_64 CI *and* aarch64 Raspberry Pi). The
