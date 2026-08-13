@@ -64,7 +64,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
                            "reasons": meta.get("reasons", []),
                            "suggested": meta.get("suggested_label"),
                            "detections": meta.get("detections", {}),
-                           "human_boxes": meta.get("human_boxes")}}
+                           "human_boxes": meta.get("human_boxes"),
+                           "prelabels": meta.get("prelabels")}}
 
     @router.get("/api/dataset/labeled")
     def api_labeled() -> dict:
@@ -83,7 +84,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
                          "labeled_at": meta.get("labeled_at", 0),
                          "reasons": meta.get("reasons", []),
                          "detections": meta.get("detections", {}),
-                         "human_boxes": meta.get("human_boxes")})
+                         "human_boxes": meta.get("human_boxes"),
+                         "prelabels": meta.get("prelabels")})
         rows.sort(key=lambda r: -r["labeled_at"])
         return {"labeled": rows[:200]}
 
@@ -127,6 +129,37 @@ def build_router(settings: Settings, capture: DatasetCapture,
                     clean.append({"label": label,
                                   "box": [round(float(v), 1) for v in box]})
                 meta["human_boxes"] = clean
+        side.write_text(json.dumps(meta))
+        return {"ok": True}
+
+    @router.post("/api/dataset/prelabels")
+    def api_prelabels(body: dict) -> dict:
+        """Merge big-model boxes (computed off-box, on the Mac) into a
+        sidecar. The review page shows these as the machine's best guess and
+        seeds the box editor from them -- they are what training will use
+        unless a human overrides with hand boxes."""
+        name = Path(str(body.get("name", ""))).name  # traversal guard
+        side = Path(settings.dataset_dir) / f"{name}.json"
+        if not name.startswith("sample_") or not side.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        boxes = body.get("boxes")
+        if not isinstance(boxes, list):
+            raise HTTPException(status_code=422, detail="boxes must be a list")
+        clean = []
+        for b in boxes:
+            label, box = b.get("label"), b.get("box")
+            if (label not in ("dog", "person") or not isinstance(box, list)
+                    or len(box) != 4
+                    or not all(isinstance(v, (int, float)) for v in box)
+                    or box[2] <= box[0] or box[3] <= box[1]):
+                raise HTTPException(status_code=422,
+                                    detail="each box needs label dog|person "
+                                           "and box [x1,y1,x2,y2]")
+            clean.append({"label": label, "box": [round(float(v), 1) for v in box]})
+        meta = json.loads(side.read_text())
+        meta["prelabels"] = {"model": str(body.get("model", "?"))[:40],
+                             "boxes": clean}
         side.write_text(json.dumps(meta))
         return {"ok": True}
 

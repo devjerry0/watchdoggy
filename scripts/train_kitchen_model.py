@@ -133,6 +133,40 @@ def prelabel(stems: list[str]) -> dict:
     return cache
 
 
+def prelabel_push(pi_url: str) -> None:
+    """Run the big model over EVERY mirrored frame (cache-aware) and push the
+    boxes into the Pi's sidecars, so the review page shows the exact boxes
+    training will use and the box editor seeds from them."""
+    import ssl
+    import urllib.request
+
+    stems = [p.stem for p in sorted(DATASET_MIRROR.glob("sample_*.jpg"))
+             if p.with_suffix(".json").is_file()]
+    cache = prelabel(stems)
+    ctx = ssl.create_default_context()  # household CA isn't in the system store
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    pushed, failed = 0, 0
+    for stem in stems:
+        pre = cache[stem]
+        boxes = ([{"label": "dog", "box": b} for b in pre["dogs"]]
+                 + [{"label": "person", "box": b} for b in pre["people"]])
+        req = urllib.request.Request(
+            f"{pi_url}/api/dataset/prelabels",
+            data=json.dumps({"name": stem, "model": PRELABEL_MODEL.stem,
+                             "boxes": boxes}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=10):
+                pushed += 1
+        except Exception as exc:
+            failed += 1
+            if failed <= 3:
+                log(f"WARNING: push failed for {stem}: {exc}")
+    log(f"prelabels pushed for {pushed}/{len(stems)} frames"
+        + (f" ({failed} failed)" if failed else ""))
+
+
 def _device() -> str:
     try:
         import torch
@@ -483,6 +517,10 @@ def main() -> None:
                          "parallel and leaderboard them (implies --backend modal)")
     ap.add_argument("--gpu", default="L4",
                     help="Modal GPU type (T4, L4, A10G, A100, H100)")
+    ap.add_argument("--push-prelabels", action="store_true",
+                    help="no training: big-model boxes for every frame, "
+                         "pushed into the Pi's sidecars for the review page")
+    ap.add_argument("--pi-url", default="https://doggypi.local:8443")
     ap.add_argument("--skip-pull", action="store_true")
     ap.add_argument("--skip-export", action="store_true")
     ap.add_argument("--epochs", type=int, default=80)
@@ -491,6 +529,12 @@ def main() -> None:
                     help="backbone layers to freeze (small datasets need this)")
     args = ap.parse_args()
     os.environ["DOGGY_TRAIN_GPU"] = args.gpu  # read by scripts/modal_train.py
+
+    if args.push_prelabels:
+        if not args.skip_pull:
+            pull(args.host)
+        prelabel_push(args.pi_url)
+        return
 
     run_dir = RUNS / time.strftime("%Y%m%d-%H%M%S")
     run_dir.mkdir(parents=True)

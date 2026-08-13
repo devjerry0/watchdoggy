@@ -298,7 +298,17 @@ function drawBoxes(){
     }
   });
 
+  const pre = (boxes_, tag) => (boxes_ || []).forEach(b => {
+    const [x1, y1, x2, y2] = b.box;
+    const color = CLS_COLOR[b.label] || "#efe7d8";
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+    ctx.strokeRect(x1*sx, y1*sy, (x2-x1)*sx, (y2-y1)*sy);
+    ctx.fillStyle = color; ctx.font = "600 12px ui-monospace,monospace";
+    ctx.fillText(b.label + tag, x1*sx + 3, y1*sy + 13);
+  });
+
   const humanSaved = Array.isArray(current.human_boxes) && current.human_boxes.length;
+  const preBoxes = (current.prelabels && current.prelabels.boxes) || null;
   if (boxMode){
     // Machine boxes fade to dashed references; the human's boxes are the work.
     machine(det.targets, "#e4572e", true);
@@ -316,6 +326,12 @@ function drawBoxes(){
     machine(det.targets, "#e4572e", true);
     machine(det.people, "#5a8bd6", true);
     hand(current.human_boxes, false);
+  } else if (preBoxes){
+    // The big model's boxes: what training will actually use. The Pi's own
+    // (nano) boxes stay underneath as faint dashed references.
+    machine(det.targets, "#e4572e", true);
+    machine(det.people, "#5a8bd6", true);
+    pre(preBoxes, " ·x");
   } else {
     machine(det.targets, "#e4572e", false);
     machine(det.suppressed, "#9e9179", false);
@@ -347,6 +363,10 @@ function normRect(a, b){
           Math.max(a[0], b[0]), Math.max(a[1], b[1])];
 }
 function machineSeed(){
+  // Prefer the big model's pushed boxes (what training uses); fall back to
+  // the Pi's own nano detections.
+  const pre = (current && current.prelabels && current.prelabels.boxes) || null;
+  if (pre && pre.length) return pre.map(b => ({label: b.label, box: [...b.box]}));
   const det = (current && current.detections) || {};
   return [...(det.targets || []).map(d => ({label: "dog", box: [...d.box]})),
           ...(det.people || []).map(d => ({label: "person", box: [...d.box]}))];

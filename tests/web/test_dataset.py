@@ -232,3 +232,24 @@ def test_undo_keeps_hand_boxes(tmp_path):
     assert meta["human_boxes"]                # ...but the drawing work survives
     nxt = c.get("/api/dataset/next").json()["sample"]
     assert nxt["name"] == "sample_1" and nxt["human_boxes"]
+
+
+def test_prelabels_merge_into_sidecar_and_payloads(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    r = c.post("/api/dataset/prelabels", json={
+        "name": "sample_1", "model": "yolo26x",
+        "boxes": [{"label": "dog", "box": [5, 5, 50, 60]}]})
+    assert r.json() == {"ok": True}
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert meta["prelabels"]["model"] == "yolo26x"
+    assert meta["prelabels"]["boxes"][0]["label"] == "dog"
+    assert meta["reasons"] == ["fire"]  # merge, not replace
+    nxt = c.get("/api/dataset/next").json()["sample"]
+    assert nxt["prelabels"]["boxes"][0]["box"] == [5, 5, 50, 60]
+    # unknown sample and malformed boxes are rejected
+    assert c.post("/api/dataset/prelabels", json={
+        "name": "sample_9", "boxes": []}).status_code == 404
+    assert c.post("/api/dataset/prelabels", json={
+        "name": "sample_1", "boxes": [{"label": "cat", "box": [0, 0, 1, 1]}]
+    }).status_code == 422
