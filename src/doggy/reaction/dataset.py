@@ -11,6 +11,7 @@ import numpy as np
 
 from doggy.core.config import TunableSettings
 from doggy.core.runtime import RuntimeSettings
+from doggy.reaction.clips import ClipBuffer
 from doggy.reaction.hub import DogCaught
 from doggy.vision.analysis import FrameAnalysis
 from doggy.vision.detection import Detection
@@ -26,6 +27,13 @@ BORDERLINE_HIGH = 0.75
 SAMPLE_COOLDOWN_SECONDS = 10.0
 # Background negatives (empty counter, cooking, lighting changes) once an hour.
 PERIODIC_SECONDS = 3600.0
+# On a fire, also save the RAW approach sequence from a rolling pre-roll ring:
+# frames spaced CONTEXT_SPACING seconds over the last CONTEXT_WINDOW seconds.
+# The clip buffer can't serve this -- it deliberately stores ANNOTATED frames
+# (boxes burned in), which would poison training.
+CONTEXT_WINDOW = 12.0
+CONTEXT_SPACING = 2.0
+CONTEXT_MAX_FRAMES = 6
 # While a person is (or was recently) in frame, sample every couple of minutes:
 # cooking / dishwasher sessions are where the head-only misclassifications live,
 # including the frames where the model sees nothing (prime hard negatives).
@@ -65,6 +73,8 @@ class DatasetCapture:
         self._wall = wall_clock
         self._last_by_reason: dict[str, float] = {}
         self._last_person_seen: float | None = None
+        # Rolling raw-frame ring (mono ts -> jpeg) feeding fire context saves.
+        self._ring = ClipBuffer(CONTEXT_WINDOW)
 
     # -- per-frame stage ----------------------------------------------------
 
@@ -72,14 +82,19 @@ class DatasetCapture:
                  cfg: TunableSettings) -> None:
         if not cfg.dataset_enabled:
             return
+        ok, buf = cv2.imencode(".jpg", frame)
+        if ok:
+            self._ring.push(now, buf.tobytes())
         reasons = []
-        if analysis.people:
+        # Low-conf people count as "person seen": the bent-over head-only phase
+        # often scores 0.3-0.6 as person -- exactly the sessions to sample.
+        if analysis.people or any(d.label == "person" for d in analysis.lowconf):
             self._last_person_seen = now
         if analysis.suppressed and self._due("suppressed", now):
             reasons.append("suppressed")
         if self._due("borderline", now) and any(
             BORDERLINE_LOW <= d.confidence <= BORDERLINE_HIGH
-            for d in (*analysis.targets, *analysis.people)
+            for d in (*analysis.targets, *analysis.people, *analysis.lowconf)
         ):
             reasons.append("borderline")
         if self._due("periodic", now, PERIODIC_SECONDS):
@@ -103,6 +118,16 @@ class DatasetCapture:
         if not self._runtime.get().dataset_enabled:
             return
         self._save(event.frame, None, ["fire"], event_id=event.record.id)
+        # The approach sequence: spaced raw frames from before the fire (the
+        # dog walking in / the person bending down), each its own sample.
+        picked: list[bytes] = []
+        last_ts = None
+        for ts, jpeg in self._ring.slice_timed(event.mono_ts - CONTEXT_WINDOW, event.mono_ts):
+            if last_ts is None or ts - last_ts >= CONTEXT_SPACING:
+                picked.append(jpeg)
+                last_ts = ts
+        for jpeg in picked[-CONTEXT_MAX_FRAMES:]:
+            self._save_bytes(jpeg, ["fire_context"], event_id=event.record.id)
 
     # -- internals ----------------------------------------------------------
 
@@ -111,11 +136,19 @@ class DatasetCapture:
         last = self._last_by_reason.get(reason)
         return last is None or now - last >= interval
 
+    def _stem(self) -> str:
+        # Millisecond stems; bump on collision (context bursts save several
+        # frames inside one tick).
+        ms = int(self._wall() * 1000)
+        while (self._dir / f"sample_{ms}.json").exists():
+            ms += 1
+        return f"sample_{ms}"
+
     def _save(self, frame: np.ndarray, analysis: FrameAnalysis | None,
               reasons: list[str], event_id: str | None = None) -> None:
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
-            stem = f"sample_{int(self._wall() * 1000)}"
+            stem = self._stem()
             sidecar: dict = {"wall_time": self._wall(), "reasons": reasons}
             if event_id:
                 sidecar["event_id"] = event_id
@@ -125,6 +158,7 @@ class DatasetCapture:
                     "people": [_det(d) for d in analysis.people],
                     "suppressed": [_det(d) for d in analysis.suppressed],
                     "candidates": [_det(d) for d in analysis.candidates],
+                    "lowconf": [_det(d) for d in analysis.lowconf],
                 }
             cv2.imwrite(str(self._dir / f"{stem}.jpg"), frame)
             (self._dir / f"{stem}.json").write_text(json.dumps(sidecar))
@@ -132,6 +166,20 @@ class DatasetCapture:
         except OSError:
             # A full/failing SD card must never crash the detect loop.
             log.exception("dataset: failed to save sample")
+
+    def _save_bytes(self, jpeg: bytes, reasons: list[str],
+                    event_id: str | None = None) -> None:
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            stem = self._stem()
+            sidecar: dict = {"wall_time": self._wall(), "reasons": reasons}
+            if event_id:
+                sidecar["event_id"] = event_id
+            (self._dir / f"{stem}.jpg").write_bytes(jpeg)
+            (self._dir / f"{stem}.json").write_text(json.dumps(sidecar))
+            self._prune()
+        except OSError:
+            log.exception("dataset: failed to save context sample")
 
     def _prune(self) -> None:
         samples = sorted(self._dir.glob("sample_*.jpg"))

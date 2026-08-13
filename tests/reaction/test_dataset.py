@@ -15,10 +15,10 @@ def _img():
     return np.zeros((8, 8, 3), np.uint8)
 
 
-def _analysis(targets=(), people=(), suppressed=()):
+def _analysis(targets=(), people=(), suppressed=(), lowconf=()):
     return FrameAnalysis(shape=(8, 8, 3), people=list(people),
                          targets=list(targets), candidates=list(targets),
-                         suppressed=list(suppressed))
+                         suppressed=list(suppressed), lowconf=list(lowconf))
 
 
 def _cfg(**kw):
@@ -162,3 +162,54 @@ def test_stats_counts_and_reasons(tmp_path):
     assert st["samples"] == 1
     assert st["by_reason"].get("suppressed") == 1
     assert st["bytes"] > 0 and st["cap_bytes"] == 10**9
+
+
+def test_lowconf_detection_triggers_borderline_capture(tmp_path):
+    # The confusion-zone harvest: a 0.4 "dog" below the alarm threshold still
+    # produces a borderline sample (this path was dead before lowconf existed).
+    c = _capture(tmp_path)
+    weak = Detection("dog", 0.4, (0, 0, 4, 4))
+    c.on_frame(_img(), _analysis(lowconf=[weak]), 10.0, _cfg())
+    sides = _samples(tmp_path)
+    assert any("borderline" in json.loads(x.read_text())["reasons"] for x in sides)
+    side = next(json.loads(x.read_text()) for x in sides
+                if "borderline" in json.loads(x.read_text())["reasons"])
+    assert side["detections"]["lowconf"][0]["confidence"] == 0.4
+
+
+def test_lowconf_person_counts_for_person_activity(tmp_path):
+    # A bent person scoring 0.35 (below threshold) still marks the kitchen as
+    # occupied for the session sampler.
+    c = _capture(tmp_path)
+    bent = Detection("person", 0.35, (0, 4, 6, 8))
+    c.on_frame(_img(), _analysis(lowconf=[bent]), 100.0, _cfg())
+    sides = _samples(tmp_path)
+    assert any("person_activity" in json.loads(x.read_text())["reasons"] for x in sides)
+
+
+def test_fire_saves_approach_context_from_raw_ring(tmp_path):
+    # Frames flow through on_frame for 12s before a fire; the fire then saves
+    # the raw approach sequence (spaced, capped) as fire_context samples.
+    c = _capture(tmp_path)
+    for i in range(12):  # one frame per second for 12s
+        c.on_frame(_img(), _analysis(), 100.0 + i, _cfg())
+    store = EventStore(tmp_path / "events", 100, 0)
+    r = store.add(_img(), 0.9, 1.0, 1_700_000_500.0, 112.0)
+    c.on_dog_caught(DogCaught(r, _img(), 112.0))
+    sides = [json.loads(x.read_text()) for x in _samples(tmp_path)]
+    ctx = [m for m in sides if m["reasons"] == ["fire_context"]]
+    fire = [m for m in sides if m["reasons"] == ["fire"]]
+    assert len(fire) == 1
+    assert 4 <= len(ctx) <= 6          # 12s window / 2s spacing, capped at 6
+    assert all(m["event_id"] == r.id for m in ctx)
+    # Every context sample has its jpg pair.
+    for side in _samples(tmp_path):
+        assert side.with_suffix(".jpg").is_file()
+
+
+def test_no_ring_growth_when_disabled(tmp_path):
+    c = _capture(tmp_path, enabled=False)
+    cfg = TunableSettings()  # dataset_enabled False
+    for i in range(5):
+        c.on_frame(_img(), _analysis(), 100.0 + i, cfg)
+    assert c._ring.slice_timed(0, 1000) == []

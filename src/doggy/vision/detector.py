@@ -15,11 +15,20 @@ class Detector(Protocol):
     def detect(self, frame: np.ndarray) -> list[Detection]: ...
 
 
+# With training-data capture on, watched-class and person detections are ALSO
+# surfaced below the alarm threshold, down to this floor: the model's
+# half-guesses (bent people at 0.4, uncertain "dogs") are the confusion-zone
+# frames the fine-tune learns the most from. The analyzer routes sub-threshold
+# ones into `FrameAnalysis.lowconf` -- observational only, never alarm inputs.
+DATASET_FLOOR = 0.25
+
+
 def keep_detection(label: str, score: float, cfg: TunableSettings) -> bool:
     """Per-class threshold re-check after the model's low-water predict pass."""
     wanted = set(cfg.target_labels) | {PERSON_LABEL}
     if label in wanted:
-        return score >= cfg.confidence
+        floor = DATASET_FLOOR if cfg.dataset_enabled else cfg.confidence
+        return score >= floor
     return (cfg.inventory_enabled and label in INVENTORY_LABELS
             and score >= cfg.inventory_confidence)
 
@@ -65,8 +74,12 @@ class YoloDetector:
         cfg = self._runtime.get()
         # Inventory rides the same inference pass at its own (laxer) threshold;
         # predict at the lower bar, then re-apply each class's own bar below.
+        # Dataset capture lowers the bar further so confusion-zone detections
+        # exist to be captured (the analyzer keeps them out of alarm inputs).
         conf = (min(cfg.confidence, cfg.inventory_confidence)
                 if cfg.inventory_enabled else cfg.confidence)
+        if cfg.dataset_enabled:
+            conf = min(conf, DATASET_FLOOR)
         results = self._model.predict(
             frame, conf=conf, device=self._device, verbose=False
         )

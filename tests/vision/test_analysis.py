@@ -94,3 +94,19 @@ def test_chain_runs_filters_in_order():
     FilterChain([F("a"), F("b")]).run(
         FrameAnalysis((1, 1, 3), [], [], []), _cfg())
     assert calls == ["a", "b"]
+
+
+def test_lowconf_routed_out_of_alarm_inputs():
+    # A sub-threshold "dog" and person must land in lowconf only: never in
+    # targets, people, or candidates -- capture fodder, not alarm input.
+    weak_dog = Detection("dog", 0.4, (0, 0, 10, 10))
+    weak_person = Detection("person", 0.35, (20, 0, 40, 30))
+    strong_dog = Detection("dog", 0.9, (50, 50, 70, 70))
+    analyzer = DetectionAnalyzer(StubDetector([[weak_dog, weak_person, strong_dog]]),
+                                 FilterChain([]))
+    cfg = TunableSettings(confidence=0.7, dataset_enabled=True)
+    a = analyzer.analyze(np.zeros((100, 100, 3), np.uint8), cfg)
+    assert a.targets == [strong_dog]
+    assert a.candidates == [strong_dog]
+    assert a.people == []
+    assert sorted(d.label for d in a.lowconf) == ["dog", "person"]

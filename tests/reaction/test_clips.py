@@ -25,6 +25,13 @@ def test_buffer_drops_old_frames():
     assert b.slice(0.0, 3.0) == [b"b", b"c"]
 
 
+def test_slice_timed_keeps_timestamps():
+    b = ClipBuffer(window_seconds=100.0)
+    b.push(1.0, b"a")
+    b.push(2.0, b"b")
+    assert b.slice_timed(1.0, 2.0) == [(1.0, b"a"), (2.0, b"b")]
+
+
 def test_slice_returns_inclusive_range_in_order():
     b = ClipBuffer(window_seconds=100.0)
     for i in range(5):

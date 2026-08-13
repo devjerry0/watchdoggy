@@ -24,7 +24,7 @@ from doggy.reaction.dataset import DatasetCapture
 _VERDICTS = {"dog", "dog_mixed", "person", "empty", "no_dog", "skip"}
 # Review order: highest training signal first, newest first within a class.
 _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
-                    "person_activity": 3, "periodic": 4}
+                    "fire_context": 3, "person_activity": 4, "periodic": 5}
 
 
 def build_router(settings: Settings, capture: DatasetCapture,

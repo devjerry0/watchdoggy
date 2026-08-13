@@ -40,6 +40,10 @@ class ClipBuffer:
         """JPEGs whose timestamp is in ``[start, end]``, oldest -> newest."""
         return [jpeg for ts, jpeg in self._frames if start <= ts <= end]
 
+    def slice_timed(self, start: float, end: float) -> list[tuple[float, bytes]]:
+        """Like ``slice`` but keeps the timestamps (for spaced sampling)."""
+        return [(ts, jpeg) for ts, jpeg in self._frames if start <= ts <= end]
+
 
 def encode_clip(frames: list[bytes], fps: int, out_path: Path) -> Path:
     """Encode JPEG ``frames`` into an animated WebP, returning the path written.

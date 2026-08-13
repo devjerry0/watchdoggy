@@ -3,7 +3,7 @@ import pytest
 
 from doggy.core.config import TunableSettings
 from doggy.vision.detection import Detection
-from doggy.vision.detector import StubDetector, keep_detection, select_device
+from doggy.vision.detector import DATASET_FLOOR, StubDetector, keep_detection, select_device
 
 
 def test_stub_detector_scripts_returns():
@@ -55,3 +55,14 @@ def test_yolo_detects_dog_and_ignores_empty_room():
     empty = cv2.imread("tests/fixtures/empty_room.jpg")
     assert any(d.label == "dog" for d in det.detect(dog))
     assert not any(d.label == "dog" for d in det.detect(empty))
+
+
+def test_keep_detection_dataset_capture_lowers_floor_for_watched_classes():
+    # With capture on, sub-threshold dogs/people survive down to DATASET_FLOOR
+    # (the analyzer routes them to lowconf, never to alarm inputs).
+    cfg = _keep_cfg(dataset_enabled=True)
+    assert keep_detection("dog", 0.45, cfg) is True
+    assert keep_detection("person", 0.30, cfg) is True
+    assert keep_detection("dog", DATASET_FLOOR - 0.01, cfg) is False
+    # Inventory bar unaffected by capture.
+    assert keep_detection("cup", 0.35, cfg) is False
