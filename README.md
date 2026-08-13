@@ -32,6 +32,8 @@ Your only job is a few minutes of tapping on the Label page now and then. Everyt
 
 The `/training` page is the console: edit the recipe (epochs, batch, freeze, augmentation) and the schedule, queue a run manually, watch the cloud run's log live, and read every run's full report (leaderboard, deploy-truth scores, robustness table).
 
+![Training console: live model score, dataset composition, cloud budget, and the improvement chart](docs/training.png)
+
 In this kitchen the loop took the model from 15/61 dog moments caught with 5 false alarms (stock) to 63/64 caught with zero false-alarm signal — measured on the exported bundle the Pi actually runs, on frames the model never trained on.
 
 ### Privacy model
@@ -105,6 +107,8 @@ Open `http://<pi-host>:8000` from any device on your network.
 - **Label** is the annotation tool; **Training** is the training console.
 
 Soothing sounds loops your own calm audio, music or white noise, through the speaker while it watches. Upload tracks from the Soothing sounds card, up to 1 GB in total, then turn it on. The deterrent always takes priority, so an alarm interrupts the music the moment a dog is confirmed and the loop resumes on its own a little later.
+
+![Weekly activity report, per-sound deterrence rates, and the soothing schedule](docs/watch-panels.png)
 
 ### HTTPS (for push-to-talk and notifications)
 
