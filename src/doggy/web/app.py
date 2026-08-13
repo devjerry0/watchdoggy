@@ -37,6 +37,12 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     def index() -> FileResponse:
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
+    @app.get("/review")
+    def review() -> FileResponse:
+        # The labeling page: classify captured frames (dog / not a dog) so the
+        # fine-tune learns from human verdicts, not just model guesses.
+        return FileResponse(Path(__file__).parent / "static" / "review.html")
+
     @app.get("/ca.pem")
     def ca_cert() -> FileResponse:
         # Public material: lets each device trust the home CA once, after

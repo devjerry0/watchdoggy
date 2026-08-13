@@ -7,19 +7,82 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi import status as http_status
+from fastapi.responses import FileResponse
 
 from doggy.core.config import Settings
 from doggy.events.store import EventStore
 from doggy.reaction.dataset import DatasetCapture
+
+# Human verdicts the review page can attach to a sample. "skip" parks a frame
+# (unclear/blurry) without pretending it was judged.
+_VERDICTS = {"dog", "no_dog", "skip"}
+# Review order: highest training signal first, newest first within a class.
+_REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
+                    "person_activity": 3, "periodic": 4}
 
 
 def build_router(settings: Settings, capture: DatasetCapture,
                  event_store: EventStore) -> APIRouter:
     router = APIRouter()
 
+    def _sidecars() -> list[Path]:
+        d = Path(settings.dataset_dir)
+        return sorted(d.glob("sample_*.json")) if d.is_dir() else []
+
     @router.get("/api/dataset")
     def api_dataset() -> dict:
         return capture.stats()
+
+    @router.get("/api/dataset/next")
+    def api_next_unlabeled() -> dict:
+        """The next frame to review: unlabeled, highest-signal reason first."""
+        pending = []
+        labeled = 0
+        for side in _sidecars():
+            try:
+                meta = json.loads(side.read_text())
+            except (OSError, ValueError):
+                continue
+            if meta.get("human_label"):
+                labeled += 1
+                continue
+            prio = min((_REASON_PRIORITY.get(r, 9) for r in meta.get("reasons", [])),
+                       default=9)
+            pending.append((prio, -meta.get("wall_time", 0), side.stem, meta))
+        pending.sort()
+        if not pending:
+            return {"remaining": 0, "labeled": labeled, "sample": None}
+        _, _, stem, meta = pending[0]
+        return {"remaining": len(pending), "labeled": labeled,
+                "sample": {"name": stem, "image": f"/dataset/{stem}.jpg",
+                           "reasons": meta.get("reasons", []),
+                           "detections": meta.get("detections", {})}}
+
+    @router.post("/api/dataset/label")
+    def api_label(body: dict) -> dict:
+        name = Path(str(body.get("name", ""))).name  # traversal guard
+        verdict = body.get("verdict")
+        if verdict not in _VERDICTS:
+            raise HTTPException(status_code=422, detail="verdict must be dog, no_dog, or skip")
+        side = Path(settings.dataset_dir) / f"{name}.json"
+        if not name.startswith("sample_") or not side.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        meta = json.loads(side.read_text())
+        meta["human_label"] = verdict
+        meta["labeled_at"] = time.time()
+        side.write_text(json.dumps(meta))
+        return {"ok": True}
+
+    @router.get("/dataset/{name}")
+    def dataset_image(name: str) -> FileResponse:
+        # Path(name).name strips any directory components -> no path traversal.
+        safe = Path(name).name
+        path = Path(settings.dataset_dir) / safe
+        if not safe.startswith("sample_") or not safe.endswith(".jpg") or not path.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        return FileResponse(path)
 
     @router.post("/api/dataset/mark/{event_id}")
     def api_mark_false_positive(event_id: str) -> dict:
@@ -44,6 +107,9 @@ def build_router(settings: Settings, capture: DatasetCapture,
             "reasons": ["user_marked_fp"],
             "event_id": record.id,
             "event_confidence": record.confidence,
+            # The tap IS the verdict: this frame needs no second review.
+            "human_label": "no_dog",
+            "labeled_at": time.time(),
         }))
         return {"ok": True}
 

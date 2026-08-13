@@ -1,0 +1,804 @@
+[
+ {
+  "frame": "fire_1783659035362.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.54,
+    "area_frac": 0.0326,
+    "yc": 0.446,
+    "ybot": 0.57,
+    "h_frac": 0.247
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783692753115.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1783700257601.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.48,
+    "area_frac": 0.0607,
+    "yc": 0.893,
+    "ybot": 1.0,
+    "h_frac": 0.214
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783732346096.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.94,
+    "area_frac": 0.1655,
+    "yc": 0.375,
+    "ybot": 0.751,
+    "h_frac": 0.751
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783747173548.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.65,
+    "area_frac": 0.0359,
+    "yc": 0.768,
+    "ybot": 0.904,
+    "h_frac": 0.272
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783813214254.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.94,
+    "area_frac": 0.2146,
+    "yc": 0.569,
+    "ybot": 0.996,
+    "h_frac": 0.853
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783818870643.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.77,
+    "area_frac": 0.0587,
+    "yc": 0.732,
+    "ybot": 0.873,
+    "h_frac": 0.283
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783827495524.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.46,
+    "area_frac": 0.1275,
+    "yc": 0.638,
+    "ybot": 0.903,
+    "h_frac": 0.531
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783888124941.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.47,
+    "area_frac": 0.0385,
+    "yc": 0.818,
+    "ybot": 0.943,
+    "h_frac": 0.251
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783907323055.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1783964078790.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.69,
+    "area_frac": 0.0478,
+    "yc": 0.829,
+    "ybot": 0.959,
+    "h_frac": 0.26
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783990206094.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.77,
+    "area_frac": 0.0264,
+    "yc": 0.521,
+    "ybot": 0.612,
+    "h_frac": 0.183
+   }
+  ]
+ },
+ {
+  "frame": "fire_1783993774311.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1784085462738.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.8,
+    "area_frac": 0.1885,
+    "yc": 0.498,
+    "ybot": 0.823,
+    "h_frac": 0.651
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784086220836.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.89,
+    "area_frac": 0.2318,
+    "yc": 0.601,
+    "ybot": 0.977,
+    "h_frac": 0.753
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784126531294.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.7,
+    "area_frac": 0.0322,
+    "yc": 0.416,
+    "ybot": 0.561,
+    "h_frac": 0.292
+   },
+   {
+    "label": "person",
+    "conf": 0.55,
+    "area_frac": 0.1184,
+    "yc": 0.849,
+    "ybot": 1.0,
+    "h_frac": 0.301
+   },
+   {
+    "label": "dog",
+    "conf": 0.54,
+    "area_frac": 0.0166,
+    "yc": 0.455,
+    "ybot": 0.587,
+    "h_frac": 0.264
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784148196762.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1784148359136.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1784234743692.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.5,
+    "area_frac": 0.0623,
+    "yc": 0.889,
+    "ybot": 0.999,
+    "h_frac": 0.22
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784336082497.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.78,
+    "area_frac": 0.1149,
+    "yc": 0.624,
+    "ybot": 0.871,
+    "h_frac": 0.495
+   },
+   {
+    "label": "dog",
+    "conf": 0.47,
+    "area_frac": 0.0179,
+    "yc": 0.197,
+    "ybot": 0.341,
+    "h_frac": 0.289
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784419398624.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.57,
+    "area_frac": 0.2448,
+    "yc": 0.714,
+    "ybot": 0.998,
+    "h_frac": 0.568
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784420101789.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.74,
+    "area_frac": 0.1378,
+    "yc": 0.842,
+    "ybot": 1.0,
+    "h_frac": 0.316
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784420202143.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.67,
+    "area_frac": 0.1394,
+    "yc": 0.702,
+    "ybot": 0.992,
+    "h_frac": 0.58
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784485579598.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.83,
+    "area_frac": 0.0579,
+    "yc": 0.684,
+    "ybot": 0.831,
+    "h_frac": 0.295
+   },
+   {
+    "label": "person",
+    "conf": 0.82,
+    "area_frac": 0.106,
+    "yc": 0.287,
+    "ybot": 0.574,
+    "h_frac": 0.573
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784494460274.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.42,
+    "area_frac": 0.0669,
+    "yc": 0.884,
+    "ybot": 1.0,
+    "h_frac": 0.233
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784516387919.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1784717152566.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.74,
+    "area_frac": 0.2453,
+    "yc": 0.714,
+    "ybot": 0.999,
+    "h_frac": 0.57
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784736702242.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.88,
+    "area_frac": 0.1108,
+    "yc": 0.835,
+    "ybot": 1.0,
+    "h_frac": 0.331
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784741550433.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.94,
+    "area_frac": 0.2534,
+    "yc": 0.549,
+    "ybot": 0.997,
+    "h_frac": 0.895
+   },
+   {
+    "label": "dog",
+    "conf": 0.63,
+    "area_frac": 0.062,
+    "yc": 0.801,
+    "ybot": 0.942,
+    "h_frac": 0.283
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784843418719.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1784901946371.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.96,
+    "area_frac": 0.2539,
+    "yc": 0.393,
+    "ybot": 0.785,
+    "h_frac": 0.784
+   },
+   {
+    "label": "dog",
+    "conf": 0.67,
+    "area_frac": 0.0742,
+    "yc": 0.84,
+    "ybot": 0.983,
+    "h_frac": 0.286
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784932844424.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.76,
+    "area_frac": 0.1435,
+    "yc": 0.821,
+    "ybot": 0.999,
+    "h_frac": 0.357
+   },
+   {
+    "label": "dog",
+    "conf": 0.62,
+    "area_frac": 0.0123,
+    "yc": 0.158,
+    "ybot": 0.239,
+    "h_frac": 0.161
+   }
+  ]
+ },
+ {
+  "frame": "fire_1784946298092.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.46,
+    "area_frac": 0.1272,
+    "yc": 0.594,
+    "ybot": 0.836,
+    "h_frac": 0.484
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785092970174.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.87,
+    "area_frac": 0.0767,
+    "yc": 0.726,
+    "ybot": 0.996,
+    "h_frac": 0.541
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785106841727.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.44,
+    "area_frac": 0.2196,
+    "yc": 0.814,
+    "ybot": 1.0,
+    "h_frac": 0.371
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785107130503.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.75,
+    "area_frac": 0.3198,
+    "yc": 0.73,
+    "ybot": 0.998,
+    "h_frac": 0.535
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785112186887.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.53,
+    "area_frac": 0.2507,
+    "yc": 0.75,
+    "ybot": 0.999,
+    "h_frac": 0.498
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785115752191.jpg",
+  "dets": []
+ },
+ {
+  "frame": "fire_1785183787328.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.81,
+    "area_frac": 0.0479,
+    "yc": 0.894,
+    "ybot": 0.999,
+    "h_frac": 0.21
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785373770958.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.74,
+    "area_frac": 0.0283,
+    "yc": 0.384,
+    "ybot": 0.513,
+    "h_frac": 0.258
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785376013887.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.43,
+    "area_frac": 0.1125,
+    "yc": 0.585,
+    "ybot": 0.823,
+    "h_frac": 0.475
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785459623923.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.57,
+    "area_frac": 0.0304,
+    "yc": 0.113,
+    "ybot": 0.224,
+    "h_frac": 0.222
+   },
+   {
+    "label": "dog",
+    "conf": 0.54,
+    "area_frac": 0.033,
+    "yc": 0.413,
+    "ybot": 0.533,
+    "h_frac": 0.24
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785551778931.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.78,
+    "area_frac": 0.0274,
+    "yc": 0.372,
+    "ybot": 0.487,
+    "h_frac": 0.231
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785591243516.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.93,
+    "area_frac": 0.1482,
+    "yc": 0.283,
+    "ybot": 0.566,
+    "h_frac": 0.566
+   },
+   {
+    "label": "dog",
+    "conf": 0.73,
+    "area_frac": 0.0827,
+    "yc": 0.893,
+    "ybot": 1.0,
+    "h_frac": 0.213
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785618282059.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.93,
+    "area_frac": 0.1222,
+    "yc": 0.279,
+    "ybot": 0.558,
+    "h_frac": 0.558
+   },
+   {
+    "label": "dog",
+    "conf": 0.83,
+    "area_frac": 0.0584,
+    "yc": 0.706,
+    "ybot": 0.83,
+    "h_frac": 0.248
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785619401509.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.93,
+    "area_frac": 0.229,
+    "yc": 0.522,
+    "ybot": 0.945,
+    "h_frac": 0.847
+   },
+   {
+    "label": "dog",
+    "conf": 0.83,
+    "area_frac": 0.06,
+    "yc": 0.896,
+    "ybot": 1.0,
+    "h_frac": 0.208
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785711207249.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.93,
+    "area_frac": 0.2203,
+    "yc": 0.484,
+    "ybot": 0.943,
+    "h_frac": 0.918
+   },
+   {
+    "label": "dog",
+    "conf": 0.78,
+    "area_frac": 0.0682,
+    "yc": 0.838,
+    "ybot": 0.955,
+    "h_frac": 0.234
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785712020344.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.85,
+    "area_frac": 0.0735,
+    "yc": 0.885,
+    "ybot": 0.999,
+    "h_frac": 0.23
+   },
+   {
+    "label": "person",
+    "conf": 0.84,
+    "area_frac": 0.1419,
+    "yc": 0.321,
+    "ybot": 0.642,
+    "h_frac": 0.641
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785727402734.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.61,
+    "area_frac": 0.0888,
+    "yc": 0.791,
+    "ybot": 0.916,
+    "h_frac": 0.249
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785728933586.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.74,
+    "area_frac": 0.128,
+    "yc": 0.632,
+    "ybot": 0.886,
+    "h_frac": 0.507
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785806007944.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.57,
+    "area_frac": 0.1467,
+    "yc": 0.711,
+    "ybot": 0.995,
+    "h_frac": 0.568
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785940891123.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.62,
+    "area_frac": 0.0387,
+    "yc": 0.433,
+    "ybot": 0.545,
+    "h_frac": 0.224
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785962580826.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.78,
+    "area_frac": 0.1504,
+    "yc": 0.784,
+    "ybot": 1.0,
+    "h_frac": 0.432
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785964900228.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.95,
+    "area_frac": 0.1761,
+    "yc": 0.488,
+    "ybot": 0.917,
+    "h_frac": 0.858
+   },
+   {
+    "label": "person",
+    "conf": 0.49,
+    "area_frac": 0.191,
+    "yc": 0.783,
+    "ybot": 1.0,
+    "h_frac": 0.433
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785971310680.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.6,
+    "area_frac": 0.037,
+    "yc": 0.38,
+    "ybot": 0.501,
+    "h_frac": 0.241
+   }
+  ]
+ },
+ {
+  "frame": "fire_1785978170214.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.88,
+    "area_frac": 0.0417,
+    "yc": 0.283,
+    "ybot": 0.392,
+    "h_frac": 0.217
+   },
+   {
+    "label": "person",
+    "conf": 0.51,
+    "area_frac": 0.1552,
+    "yc": 0.706,
+    "ybot": 0.984,
+    "h_frac": 0.555
+   }
+  ]
+ },
+ {
+  "frame": "fire_1786238980244.jpg",
+  "dets": [
+   {
+    "label": "person",
+    "conf": 0.71,
+    "area_frac": 0.3199,
+    "yc": 0.624,
+    "ybot": 0.998,
+    "h_frac": 0.748
+   }
+  ]
+ },
+ {
+  "frame": "fire_1786239001000.jpg",
+  "dets": [
+   {
+    "label": "dog",
+    "conf": 0.78,
+    "area_frac": 0.3271,
+    "yc": 0.697,
+    "ybot": 0.999,
+    "h_frac": 0.605
+   }
+  ]
+ }
+]

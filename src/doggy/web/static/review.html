@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#171310" />
+<title>watchdoggy · review</title>
+<style>
+  :root{
+    --night:#171310; --walnut:#211b15; --seam:#372e23; --linen:#efe7d8;
+    --stone:#9e9179; --lamp:#e2a23b; --lamp-soft:#f0be6b; --ember:#e4572e; --moss:#8ea56a;
+    --serif:"Iowan Old Style","Palatino","Book Antiqua",Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--night);color:var(--linen);font-family:var(--sans);
+       line-height:1.5;padding:env(safe-area-inset-top) 0 2rem;
+       -webkit-tap-highlight-color:transparent}
+  .wrap{max-width:760px;margin:0 auto;padding:1rem}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
+         padding-bottom:.8rem;border-bottom:1px solid var(--seam);margin-bottom:1rem}
+  .mark{font-family:var(--serif);font-style:italic;font-size:1.3rem}
+  .mark a{color:var(--linen);text-decoration:none}
+  #progress{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;color:var(--stone)}
+  #stage{position:relative;border:1px solid var(--seam);border-radius:8px;overflow:hidden;
+         background:#000;line-height:0}
+  #frame{width:100%;display:block}
+  #boxes{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+  #why{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;color:var(--stone);
+       margin:.6rem 0 1rem;text-transform:uppercase}
+  .btns{display:flex;gap:.7rem}
+  .btns button{flex:1;font:inherit;font-weight:650;font-size:1.05rem;padding:1rem .5rem;
+       border-radius:10px;border:1px solid var(--seam);background:var(--walnut);
+       color:var(--linen);cursor:pointer;touch-action:manipulation}
+  #btn_dog{border-color:var(--moss);color:var(--moss)}
+  #btn_nodog{border-color:var(--ember);color:var(--ember)}
+  .btns button:active{transform:scale(.98)}
+  .keys{margin-top:.8rem;text-align:center;font-size:.75rem;color:var(--stone)}
+  .keys b{font-family:var(--mono);color:var(--lamp-soft);font-style:normal}
+  #done{display:none;text-align:center;padding:3rem 1rem;font-family:var(--serif);
+        font-style:italic;font-size:1.15rem;color:var(--stone)}
+  @media(max-width:520px){ .btns{flex-direction:column} .keys{display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="mark"><a href="/">watchdoggy</a> · review</span>
+    <span id="progress">–</span>
+  </header>
+
+  <div id="task">
+    <div id="stage">
+      <img id="frame" alt="captured frame" />
+      <canvas id="boxes"></canvas>
+    </div>
+    <div id="why"></div>
+    <div class="btns">
+      <button id="btn_dog" onclick="verdict('dog')">Dog</button>
+      <button id="btn_nodog" onclick="verdict('no_dog')">Not a dog</button>
+      <button id="btn_skip" onclick="verdict('skip')">Skip</button>
+    </div>
+    <div class="keys">Keys: <b>D</b> dog · <b>N</b> not a dog · <b>S</b> skip</div>
+  </div>
+
+  <div id="done">All caught up. New frames appear here as the camera collects them.</div>
+</div>
+
+<script>
+let current = null;
+let busy = false;
+
+const REASON_WORDS = {fire:"this fired the alarm", suppressed:"a dog box was suppressed here",
+  borderline:"the model was unsure here", person_activity:"someone was in the kitchen",
+  periodic:"background frame"};
+
+async function loadNext(){
+  let d;
+  try { d = await (await fetch("/api/dataset/next")).json(); } catch(e){ return; }
+  const task = document.getElementById("task");
+  const done = document.getElementById("done");
+  document.getElementById("progress").textContent =
+    d.remaining + " TO REVIEW · " + d.labeled + " DONE";
+  if (!d.sample){ task.style.display = "none"; done.style.display = "block"; return; }
+  task.style.display = ""; done.style.display = "none";
+  current = d.sample;
+  const img = document.getElementById("frame");
+  img.onload = drawBoxes;
+  img.src = current.image;
+  const why = (current.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
+  document.getElementById("why").textContent = "Why it was saved: " + (why || "unknown");
+}
+
+function drawBoxes(){
+  const img = document.getElementById("frame");
+  const canvas = document.getElementById("boxes");
+  canvas.width = img.clientWidth; canvas.height = img.clientHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!current || !current.detections) return;
+  const sx = img.clientWidth / img.naturalWidth, sy = img.clientHeight / img.naturalHeight;
+  const draw = (dets, color) => (dets || []).forEach(d => {
+    const [x1, y1, x2, y2] = d.box;
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.strokeRect(x1*sx, y1*sy, (x2-x1)*sx, (y2-y1)*sy);
+    ctx.fillStyle = color; ctx.font = "12px ui-monospace,monospace";
+    ctx.fillText(d.label + " " + Math.round(d.confidence*100) + "%", x1*sx + 3, y1*sy + 13);
+  });
+  draw(current.detections.targets, "#e4572e");
+  draw(current.detections.suppressed, "#9e9179");
+  draw(current.detections.people, "#5a8bd6");
+}
+
+async function verdict(v){
+  if (!current || busy) return;
+  busy = true;
+  try {
+    await fetch("/api/dataset/label", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: current.name, verdict: v})});
+  } finally {
+    busy = false;
+  }
+  loadNext();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "d" || e.key === "D") verdict("dog");
+  else if (e.key === "n" || e.key === "N") verdict("no_dog");
+  else if (e.key === "s" || e.key === "S") verdict("skip");
+});
+window.addEventListener("resize", drawBoxes);
+loadNext();
+</script>
+</body>
+</html>
