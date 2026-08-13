@@ -24,6 +24,8 @@ The stock COCO-trained model has never seen *your* kitchen from *your* camera an
 
 1. **Capture** — the detector saves interesting frames as they happen: every alarm (plus the raw seconds before it), borderline detections, suppressed boxes, person activity, and periodic background shots.
 2. **Label** — the `/label` page is a fast one-tap verdict tool (dog / person only / nothing), with a full box editor when a frame needs hand-drawn truth. A large offline model (yolo26x) pre-draws boxes for every frame — each night it scores the day's new frames on a cloud GPU, so the morning queue is already annotated and most labels are one tap.
+
+   ![Label page: filter chips, the big model's boxes, filmstrip navigation, one-tap verdicts](docs/label.png)
 3. **Train** — every couple of days (configurable), a dedicated trainer process packs the labeled dataset, sends one job to a Modal cloud GPU, and gets back a fine-tuned model: big-model label fusion, blur/dark augmentation, training, frame-level evaluation scored the way the alarm actually fires, NCNN export, and a robustness stress test (blur, darkness, overexposure, compression, camera shift).
 4. **Gate** — the new model deploys **only if it beats or ties the currently-live model on a held-out exam with zero false fires**. No regression can ship. The previous model is kept on disk for instant rollback.
 5. **Repeat** — every mistake it makes becomes training data against it.

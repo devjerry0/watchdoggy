@@ -208,7 +208,13 @@
 <script>
 // One fixed stage; a filterable filmstrip does the navigating. No page
 // scrolling to relabel -- pick a chip, arrow through, verdict with keys.
-let filter = "unlabeled";
+// Deep-linkable: /label?filter=dog jumps straight into a filter (the
+// training page's dataset callouts use this).
+const _param = new URLSearchParams(location.search).get("filter");
+let _wantFrame = new URLSearchParams(location.search).get("frame");
+let filter = ["unlabeled", "needs_boxes", "no_prelabels", "dog", "dog_mixed",
+              "person", "empty", "skip", "all"].includes(_param)
+             ? _param : "unlabeled";
 let frames = [];          // light rows for the current filter
 let idx = -1;             // position in frames
 let current = null;       // full sample detail shown on the stage
@@ -279,6 +285,11 @@ async function loadFrames(keep = "index"){
     next = found >= 0 ? found : Math.min(Math.max(idx, 0), frames.length - 1);
   }
   if (keep === "index") next = Math.min(Math.max(idx, 0), frames.length - 1);
+  if (_wantFrame){
+    const found = frames.findIndex(f => f.name === _wantFrame);
+    _wantFrame = null;
+    if (found >= 0) next = found;
+  }
   select(next);
 }
 function setFilter(key){
