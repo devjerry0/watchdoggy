@@ -18,10 +18,10 @@
   body{margin:0;background:var(--night);color:var(--linen);font-family:var(--sans);
        line-height:1.5;padding:env(safe-area-inset-top) 0 2rem;
        -webkit-tap-highlight-color:transparent}
-  .wrap{max-width:820px;margin:0 auto;padding:1rem}
+  .wrap{max-width:880px;margin:0 auto;padding:1rem}
   :focus-visible{outline:2px solid var(--lamp);outline-offset:2px;border-radius:4px}
 
-  header{padding-bottom:.7rem;margin-bottom:1.2rem;border-bottom:1px solid var(--seam)}
+  header{padding-bottom:.8rem;margin-bottom:1rem;border-bottom:1px solid var(--seam)}
   .head-row{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
        flex-wrap:wrap}
   .mark{font-family:var(--serif);font-style:italic;font-size:1.3rem}
@@ -32,50 +32,95 @@
   .menu a.on{color:var(--lamp);border-bottom:1.5px solid var(--lamp)}
   .menu a:hover{color:var(--linen)}
 
-  h2{font-family:var(--mono);font-size:.66rem;font-weight:600;text-transform:uppercase;
-     letter-spacing:.24em;color:var(--stone);margin:1.6rem 0 .7rem;
-     padding-bottom:.5rem;border-bottom:1px solid var(--seam)}
-  .line{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;
-        color:var(--stone);margin:.3rem 0}
-  .line b{color:var(--lamp);font-weight:600}
-  .line .good{color:var(--moss)} .line .bad{color:var(--ember)}
+  /* Cards */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
+  .card{background:var(--walnut);border:1px solid var(--seam);border-radius:12px;
+        padding:1rem 1.1rem}
+  .card.wide{grid-column:1 / -1}
+  .card h2{font-family:var(--mono);font-size:.62rem;font-weight:600;
+        text-transform:uppercase;letter-spacing:.22em;color:var(--stone);
+        margin:0 0 .7rem}
+  @media(max-width:640px){ .cards{grid-template-columns:1fr} }
 
-  /* Recipe + schedule forms */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-        gap:.7rem;margin:.6rem 0}
-  .field label{display:block;font-family:var(--mono);font-size:.6rem;
-        text-transform:uppercase;letter-spacing:.14em;color:var(--stone);
-        margin-bottom:.3rem}
-  .field input[type=number]{width:100%;font:inherit;font-size:.95rem;
-        padding:.45rem .6rem;border-radius:8px;border:1px solid var(--seam);
-        background:var(--walnut);color:var(--linen)}
-  .field.check{display:flex;align-items:center;gap:.5rem;padding-top:1.1rem}
+  .hero{font-family:var(--serif);font-style:italic;font-size:2rem;line-height:1.15}
+  .hero .ok{color:var(--moss)} .hero .warn{color:var(--ember)}
+  .fine{font-family:var(--mono);font-size:.66rem;letter-spacing:.07em;
+        color:var(--stone);margin-top:.35rem}
+  .fine b{color:var(--linen);font-weight:600}
+  .fine .good{color:var(--moss)} .fine .bad{color:var(--ember)}
+  .fine a{color:var(--lamp)}
+
+  /* Dataset bar */
+  .bar{display:flex;height:14px;border-radius:99px;overflow:hidden;
+       border:1px solid var(--seam);margin:.55rem 0 .4rem}
+  .bar div{height:100%}
+  .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-family:var(--mono);
+       font-size:.62rem;letter-spacing:.06em;color:var(--stone)}
+  .legend i{display:inline-block;width:.55rem;height:.55rem;border-radius:2px;
+       margin-right:.3rem}
+
+  /* Improvement chart */
+  #chart{width:100%;height:150px;display:block}
+  .chart-note{font-family:var(--mono);font-size:.62rem;color:var(--stone);
+       letter-spacing:.07em}
+
+  /* Active run */
+  .stages{display:flex;gap:.35rem;flex-wrap:wrap;margin:.4rem 0 .6rem}
+  .stage{font-family:var(--mono);font-size:.6rem;letter-spacing:.09em;
+       text-transform:uppercase;padding:.25rem .55rem;border-radius:99px;
+       border:1px solid var(--seam);color:var(--stone)}
+  .stage.done{color:var(--moss);border-color:var(--moss)}
+  .stage.now{color:var(--lamp);border-color:var(--lamp);
+       box-shadow:0 0 8px -2px var(--lamp)}
+  #epochbar{height:5px;background:var(--seam);border-radius:99px;overflow:hidden;
+       margin:.4rem 0}
+  #epochbar div{height:100%;width:0%;background:var(--lamp);transition:width 1s}
+  pre{font-family:var(--mono);font-size:.64rem;line-height:1.5;color:var(--stone);
+      background:var(--night);border:1px solid var(--seam);border-radius:8px;
+      padding:.8rem;overflow-x:auto;white-space:pre-wrap;max-height:16rem;
+      overflow-y:auto;margin:.5rem 0 0}
+  #report_pre{color:var(--linen);max-height:30rem}
+
+  /* Forms */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+        gap:.6rem;margin:.2rem 0 .5rem}
+  .field label{display:block;font-family:var(--mono);font-size:.58rem;
+        text-transform:uppercase;letter-spacing:.12em;color:var(--stone);
+        margin-bottom:.25rem}
+  .field input[type=number]{width:100%;font:inherit;font-size:.92rem;
+        padding:.4rem .55rem;border-radius:8px;border:1px solid var(--seam);
+        background:var(--night);color:var(--linen)}
+  .field.check{display:flex;align-items:center;gap:.5rem;padding-top:.9rem}
   .field.check label{margin:0}
-  .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.7rem 0}
-  .row button{font:inherit;font-size:.82rem;font-weight:600;padding:.55rem .95rem;
-        border-radius:8px;border:1.5px solid var(--seam);background:var(--walnut);
+  .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.6rem}
+  .row button{font:inherit;font-size:.8rem;font-weight:600;padding:.5rem .9rem;
+        border-radius:8px;border:1.5px solid var(--seam);background:var(--night);
         color:var(--linen);cursor:pointer}
   .row button.primary{border-color:var(--lamp);color:var(--lamp)}
-  .row button.quiet{font-weight:400;background:transparent;color:var(--stone);
-        border-width:1px}
+  .row button.quiet{font-weight:400;color:var(--stone);border-width:1px}
   .row button:hover{border-color:var(--lamp);color:var(--lamp)}
-  #msg{font-family:var(--mono);font-size:.66rem;color:var(--moss)}
-
-  /* Log + report viewers */
-  pre{font-family:var(--mono);font-size:.66rem;line-height:1.5;color:var(--linen);
-      background:var(--walnut);border:1px solid var(--seam);border-radius:8px;
-      padding:.9rem;overflow-x:auto;white-space:pre-wrap;max-height:24rem;
-      overflow-y:auto}
-  #log_pre{color:var(--stone)}
+  #msg{font-family:var(--mono);font-size:.64rem;color:var(--moss)}
 
   /* History */
-  .jobrow{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap;
+  .run{border-top:1px dashed var(--seam);padding:.6rem 0}
+  .runhead{display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap;
        font-family:var(--mono);font-size:.68rem;letter-spacing:.05em;
-       color:var(--stone);padding:.35rem 0;border-top:1px dashed var(--seam)}
-  .jobrow .k-train{color:var(--lamp)} .jobrow .k-prelabel{color:var(--sky)}
-  .jobrow .s-done{color:var(--moss)} .jobrow .s-failed{color:var(--ember)}
-  .jobrow .s-running{color:var(--lamp-soft)} .jobrow .s-queued{color:var(--stone)}
-  .jobrow a{color:var(--lamp);cursor:pointer;text-decoration:underline}
+       color:var(--stone);cursor:pointer}
+  .runhead .badge{font-weight:600;padding:.1rem .5rem;border-radius:99px;
+       border:1px solid currentColor}
+  .runhead .deployed{color:var(--moss)} .runhead .kept{color:var(--stone)}
+  .runhead .failed{color:var(--ember)} .runhead .running{color:var(--lamp-soft)}
+  .runhead .queued{color:var(--stone)}
+  .runhead .score{color:var(--linen)}
+  .runhead a{color:var(--lamp);text-decoration:underline;cursor:pointer}
+  .rundetail{display:none;padding:.5rem 0 .2rem}
+  .run.open .rundetail{display:block}
+  .mini{width:100%;border-collapse:collapse;font-family:var(--mono);
+       font-size:.64rem;color:var(--stone)}
+  .mini th{text-align:left;font-weight:500;letter-spacing:.08em;
+       text-transform:uppercase;font-size:.56rem;padding:.2rem .6rem .2rem 0}
+  .mini td{padding:.14rem .6rem .14rem 0;color:var(--linen)}
+  .mini td.dim{color:var(--stone)}
 
   @media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
@@ -90,71 +135,293 @@
     </div>
   </header>
 
-  <h2>Status</h2>
-  <div class="line" id="st_counts">–</div>
-  <div class="line" id="st_active">–</div>
-  <div class="line" id="st_next">–</div>
+  <div class="cards">
+    <div class="card">
+      <h2>Live model</h2>
+      <div class="hero" id="model_hero">–</div>
+      <div class="fine" id="model_fine">–</div>
+    </div>
 
-  <h2>Recipe — used by manual and scheduled runs</h2>
-  <div class="grid">
-    <div class="field"><label for="f_epochs">epochs</label>
-      <input id="f_epochs" type="number" min="10" max="500"></div>
-    <div class="field"><label for="f_batch">batch</label>
-      <input id="f_batch" type="number" min="4" max="64"></div>
-    <div class="field"><label for="f_freeze">freeze layers</label>
-      <input id="f_freeze" type="number" min="0" max="23"></div>
-    <div class="field check">
-      <input id="f_augment" type="checkbox">
-      <label for="f_augment">blur/dark augmentation</label></div>
-  </div>
+    <div class="card">
+      <h2>Dataset</h2>
+      <div class="hero" id="ds_hero">–</div>
+      <div class="bar" id="ds_bar"></div>
+      <div class="legend" id="ds_legend"></div>
+      <div class="fine" id="ds_fine"></div>
+    </div>
 
-  <h2>Schedule</h2>
-  <div class="grid">
-    <div class="field"><label for="f_interval">train every (hours)</label>
-      <input id="f_interval" type="number" min="6" max="336"></div>
-    <div class="field"><label for="f_minlabels">min new labels</label>
-      <input id="f_minlabels" type="number" min="1" max="100"></div>
-    <div class="field"><label for="f_nightly">nightly prelabels at (hour)</label>
-      <input id="f_nightly" type="number" min="0" max="23"></div>
-  </div>
-  <div class="row">
-    <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
-    <button class="primary" onclick="runJob('train')">Run training now</button>
-    <button onclick="runJob('prelabel')">Fetch ·x boxes now</button>
-    <span id="msg"></span>
-  </div>
+    <div class="card wide" id="active_card" style="display:none">
+      <h2>Run in progress</h2>
+      <div class="stages" id="stages"></div>
+      <div class="fine" id="epoch_text"></div>
+      <div id="epochbar"><div></div></div>
+      <pre id="live_log">(waiting for log)</pre>
+    </div>
 
-  <h2>Run log</h2>
-  <div class="line" id="log_which">no job selected — logs appear here while a run is active</div>
-  <pre id="log_pre" hidden></pre>
+    <div class="card wide">
+      <h2>Improvement — held-out catch rate per training run</h2>
+      <svg id="chart" viewBox="0 0 800 150" preserveAspectRatio="none"></svg>
+      <div class="chart-note" id="chart_note">runs appear here as the trainer completes them</div>
+    </div>
 
-  <h2>History</h2>
-  <div id="jobs"></div>
-  <div id="report_view" hidden>
-    <div class="row"><button class="quiet"
-      onclick="document.getElementById('report_view').hidden=true">Close report</button></div>
-    <pre id="report_pre"></pre>
+    <div class="card wide">
+      <h2>Recipe &amp; schedule</h2>
+      <div class="grid">
+        <div class="field"><label for="f_epochs">epochs</label>
+          <input id="f_epochs" type="number" min="10" max="500"></div>
+        <div class="field"><label for="f_batch">batch</label>
+          <input id="f_batch" type="number" min="4" max="64"></div>
+        <div class="field"><label for="f_freeze">freeze layers</label>
+          <input id="f_freeze" type="number" min="0" max="23"></div>
+        <div class="field check">
+          <input id="f_augment" type="checkbox">
+          <label for="f_augment">blur/dark augmentation</label></div>
+        <div class="field"><label for="f_interval">train every (h)</label>
+          <input id="f_interval" type="number" min="6" max="336"></div>
+        <div class="field"><label for="f_minlabels">min new labels</label>
+          <input id="f_minlabels" type="number" min="1" max="100"></div>
+        <div class="field"><label for="f_nightly">nightly ·x at (h)</label>
+          <input id="f_nightly" type="number" min="0" max="23"></div>
+      </div>
+      <div class="row">
+        <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
+        <button class="primary" onclick="runJob('train')">Run training now</button>
+        <button onclick="runJob('prelabel')">Fetch ·x boxes now</button>
+        <span id="msg"></span>
+      </div>
+      <div class="fine" id="sched_fine"></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Runs</h2>
+      <div id="runs"></div>
+      <div id="report_view" hidden>
+        <div class="row"><button class="quiet"
+          onclick="document.getElementById('report_view').hidden=true">Close report</button></div>
+        <pre id="report_pre"></pre>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 let settingsLoaded = false;
-let logJob = null;       // job id whose log is shown
-let lastJobs = [];       // latest history, for log-message context
+let lastJobs = [];
+let openRun = null;
 
 function esc(s){ return String(s).replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function _ago(ts){
+  if (!ts) return "never";
   const mins = Math.round((Date.now()/1000 - ts) / 60);
+  if (mins < 1) return "just now";
   if (mins < 60) return mins + "m ago";
   if (mins < 2880) return Math.round(mins/60) + "h ago";
   return Math.round(mins/1440) + "d ago";
 }
+function _dur(s){
+  if (s == null) return "";
+  return s >= 90 ? Math.round(s/60) + " min" : s + "s";
+}
+function heldout(j){
+  const t = j.summary && j.summary.ncnn_truth;
+  return t && t["0.7"] && t["0.7"].heldout;
+}
 
+// -- cards ------------------------------------------------------------------
+function renderModel(d){
+  const deployJobs = lastJobs.filter(j => j.kind === "train" && j.status === "done"
+                                     && /DEPLOYED/.test(j.detail || ""));
+  const latest = deployJobs[0];
+  const h = latest && heldout(latest);
+  document.getElementById("model_hero").innerHTML = h
+    ? '<span class="ok">' + h.caught + "/" + (h.caught + h.missed) + '</span> caught · '
+      + '<span class="' + (h.false_fires ? "warn" : "ok") + '">'
+      + h.false_fires + '</span> false'
+    : "self-trained";
+  const m = d.model || {};
+  const bits = ["deployed " + _ago(m.deployed_at)];
+  if (latest && latest.summary && latest.summary.gate && latest.summary.gate.deployed){
+    const old = latest.summary.gate.deployed;
+    bits.push("replaced a model that caught " + old.caught + "/"
+              + (old.caught + old.missed));
+  }
+  bits.push(m.rollback_available ? "rollback bundle on disk" : "no rollback bundle");
+  document.getElementById("model_fine").innerHTML =
+    bits.join(" · ") + (h ? " · scored on frames it never trained on" : "");
+}
+
+async function renderDataset(){
+  let d;
+  try { d = await (await fetch("/api/dataset/frames?filter=unlabeled")).json(); }
+  catch(e){ return; }
+  const c = d.counts;
+  document.getElementById("ds_hero").textContent = c.all + " frames";
+  const parts = [["dog", "var(--moss)", c.dog + (c.dog_mixed || 0)],
+                 ["person", "var(--ember)", c.person],
+                 ["nothing", "var(--stone)", c.empty],
+                 ["unlabeled", "var(--seam)", c.unlabeled]];
+  const total = Math.max(1, parts.reduce((a, p) => a + p[2], 0));
+  document.getElementById("ds_bar").innerHTML = parts.map(p =>
+    '<div style="background:' + p[1] + ';width:' + (100 * p[2] / total) + '%"></div>'
+  ).join("");
+  document.getElementById("ds_legend").innerHTML = parts.map(p =>
+    '<span><i style="background:' + p[1] + '"></i>' + p[0] + " " + p[2] + "</span>"
+  ).join("");
+  const warn = [];
+  if (c.unlabeled) warn.push('<a href="/label"><b>' + c.unlabeled + "</b> to label</a>");
+  if (c.needs_boxes) warn.push('<a href="/label" class="bad"><b>' + c.needs_boxes
+    + "</b> need hand boxes</a>");
+  if (c.no_prelabels) warn.push(c.no_prelabels + " await tonight's ·x pass");
+  document.getElementById("ds_fine").innerHTML =
+    warn.join(" · ") || "everything labeled and boxed";
+}
+
+function renderChart(){
+  const runs = lastJobs.filter(j => j.kind === "train" && j.status === "done"
+                               && heldout(j)).reverse();
+  const svg = document.getElementById("chart");
+  const note = document.getElementById("chart_note");
+  if (runs.length < 1){ svg.innerHTML = ""; return; }
+  const W = 800, H = 150, PAD = 24;
+  const xs = i => runs.length === 1 ? W / 2
+    : PAD + i * (W - 2 * PAD) / (runs.length - 1);
+  const ys = frac => H - PAD - frac * (H - 2 * PAD);
+  let out = "";
+  for (const g of [0, 0.5, 1])
+    out += '<line x1="0" x2="' + W + '" y1="' + ys(g) + '" y2="' + ys(g)
+        + '" stroke="#372e23" stroke-width="1"/>'
+        + '<text x="4" y="' + (ys(g) - 4) + '" fill="#9e9179" font-size="11" '
+        + 'font-family="monospace">' + (g * 100) + "%</text>";
+  const pts = runs.map((j, i) => {
+    const h = heldout(j);
+    return [xs(i), ys(h.caught / Math.max(1, h.caught + h.missed)), h];
+  });
+  out += '<polyline fill="none" stroke="#8ea56a" stroke-width="2.5" points="'
+      + pts.map(p => p[0] + "," + p[1]).join(" ") + '"/>';
+  for (const [x, y, h] of pts){
+    out += '<circle cx="' + x + '" cy="' + y + '" r="4" fill="#8ea56a"/>';
+    if (h.false_fires > 0)
+      out += '<circle cx="' + x + '" cy="' + ys(0) + '" r="5" fill="#e4572e"/>';
+  }
+  svg.innerHTML = out;
+  const last = heldout(runs[runs.length - 1]);
+  note.textContent = runs.length + " scored run" + (runs.length > 1 ? "s" : "")
+    + " · latest " + last.caught + "/" + (last.caught + last.missed)
+    + " · red dots on the floor mark runs with false fires (none is the goal)";
+}
+
+// -- active run -------------------------------------------------------------
+const STAGES = [["upload", /uploading /], ["prelabel", /prelabeling /],
+                ["build", /train \d+ imgs/], ["train", /training yolo/],
+                ["evaluate", /evaluating \d+ models/], ["export", /exporting NCNN/],
+                ["stress", /stress-testing/], ["gate", /results ->/]];
+async function renderActive(){
+  const active = lastJobs.find(j => j.status === "running");
+  const card = document.getElementById("active_card");
+  if (!active){ card.style.display = "none"; return; }
+  card.style.display = "";
+  let text = "";
+  try {
+    const r = await fetch("/api/training/log/" + active.id);
+    if (r.ok) text = await r.text();
+  } catch(e){}
+  let reached = -1;
+  STAGES.forEach(([name, re], i) => { if (re.test(text)) reached = i; });
+  document.getElementById("stages").innerHTML = STAGES.map(([name], i) =>
+    '<span class="stage' + (i < reached ? " done" : i === reached ? " now" : "")
+    + '">' + name + "</span>").join("");
+  const epochs = [...text.matchAll(/^\s{4,}(\d+)\/(\d+)\s/gm)];
+  const last = epochs[epochs.length - 1];
+  const bar = document.querySelector("#epochbar div");
+  if (last && reached <= 3){
+    document.getElementById("epoch_text").textContent =
+      "epoch " + last[1] + " / " + last[2];
+    bar.style.width = (100 * parseInt(last[1], 10) / parseInt(last[2], 10)) + "%";
+  } else {
+    document.getElementById("epoch_text").textContent =
+      active.kind === "train" ? "" : "prelabel pass";
+    bar.style.width = reached >= 4 ? "100%" : "0%";
+  }
+  const pre = document.getElementById("live_log");
+  const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+  pre.textContent = text.split("\n").slice(-60).join("\n") || "(waiting for log)";
+  if (stick) pre.scrollTop = pre.scrollHeight;
+}
+
+// -- history ----------------------------------------------------------------
+function badge(j){
+  if (j.status === "failed") return ["failed", "failed"];
+  if (j.status === "running") return ["running", "running"];
+  if (j.status === "queued") return ["queued", "queued"];
+  if (j.kind === "prelabel") return ["done", "kept"];
+  return /DEPLOYED/.test(j.detail || "") ? ["deployed", "deployed"] : ["kept", "kept"];
+}
+function renderRuns(){
+  document.getElementById("runs").innerHTML = lastJobs.map(j => {
+    const [word, cls] = badge(j);
+    const h = heldout(j);
+    const s = j.summary || {};
+    const score = h ? '<span class="score">' + h.caught + "/" + (h.caught + h.missed)
+      + " · " + h.false_fires + " FP</span>" : "";
+    let detail = "";
+    if (j.summary){
+      const g = s.gate || {};
+      const rows = [];
+      if (g.deployed) rows.push(["vs deployed",
+        g.new.caught + "/" + (g.new.caught + g.new.missed) + " vs "
+        + g.deployed.caught + "/" + (g.deployed.caught + g.deployed.missed)
+        + " — " + esc(g.reason || "")]);
+      if (s.dataset) rows.push(["dataset", s.dataset.train + " train (+"
+        + (s.dataset.augmented || 0) + " aug) / " + s.dataset.val + " held out"
+        + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")]);
+      if (s.recipe) rows.push(["recipe", s.recipe.epochs + " epochs · batch "
+        + s.recipe.batch + " · freeze " + s.recipe.freeze
+        + (s.recipe.augment ? " · augmented" : "")]);
+      if (s.ncnn_truth) rows.push(["thresholds", ["0.5","0.6","0.7","0.8"].map(t => {
+        const x = s.ncnn_truth[t] && s.ncnn_truth[t].heldout;
+        return x ? t + ": " + x.caught + "/" + (x.caught + x.missed)
+                 + "·" + x.false_fires + "FP" : "";
+      }).filter(Boolean).join("  ")]);
+      if (s.robustness) rows.push(["stress", Object.entries(s.robustness).map(
+        ([n, v]) => n + " " + v.caught + "/" + v.dogs
+        + (v.false_fires ? "(" + v.false_fires + "FP)" : "")).join("  ")]);
+      if (s.duration_s) rows.push(["duration", _dur(s.duration_s)]);
+      detail = '<table class="mini">' + rows.map(r =>
+        "<tr><th>" + r[0] + "</th><td>" + r[1] + "</td></tr>").join("") + "</table>";
+    }
+    return '<div class="run' + (openRun === j.id ? " open" : "") + '" id="run_' + esc(j.id) + '">'
+      + '<div class="runhead" onclick="toggleRun(\'' + esc(j.id) + '\')">'
+      + "<span>" + _ago(j.updated_at) + "</span>"
+      + "<span>" + esc(j.kind) + (j.auto ? " · auto" : "") + "</span>"
+      + '<span class="badge ' + cls + '">' + word + "</span>" + score
+      + (j.detail && !j.summary ? "<span>" + esc(j.detail) + "</span>" : "")
+      + '<a onclick="event.stopPropagation();showLog(\'' + esc(j.id) + '\')">log</a>'
+      + (j.kind === "train" && j.status === "done"
+         ? '<a onclick="event.stopPropagation();showReport(\'' + esc(j.id) + '\')">report</a>' : "")
+      + "</div><div class='rundetail'>" + detail + "</div></div>";
+  }).join("") || '<div class="fine">no runs yet — queue one above</div>';
+}
+function toggleRun(id){ openRun = openRun === id ? null : id; renderRuns(); }
+async function showLog(jobId){
+  const r = await fetch("/api/training/log/" + jobId);
+  document.getElementById("report_pre").textContent =
+    r.ok ? await r.text() : "(no log recorded — this run predates log capture)";
+  document.getElementById("report_view").hidden = false;
+  document.getElementById("report_view").scrollIntoView({behavior: "smooth"});
+}
+async function showReport(jobId){
+  const r = await fetch("/api/training/report/" + jobId);
+  if (!r.ok) return;
+  document.getElementById("report_pre").textContent = await r.text();
+  document.getElementById("report_view").hidden = false;
+  document.getElementById("report_view").scrollIntoView({behavior: "smooth"});
+}
+
+// -- settings + actions -----------------------------------------------------
 const FIELDS = {epochs:"f_epochs", batch:"f_batch", freeze:"f_freeze",
                 train_interval_hours:"f_interval", min_new_labels:"f_minlabels",
                 nightly_prelabel_hour:"f_nightly"};
-
 function fillSettings(s){
   for (const [key, id] of Object.entries(FIELDS))
     document.getElementById(id).value = s[key];
@@ -185,8 +452,8 @@ async function runJob(kind){
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify(body)})).json();
   document.getElementById("msg").textContent = d.already_pending
-    ? "already queued — the trainer picks it up on its next pass (≤30 min)"
-    : "queued — the trainer picks it up on its next pass (≤30 min)";
+    ? "already queued — trainer runs it within 30 min"
+    : "queued — trainer runs it within 30 min";
   refresh();
 }
 
@@ -195,76 +462,27 @@ async function refresh(){
   try { d = await (await fetch("/api/training/status")).json(); } catch(e){ return; }
   if (!settingsLoaded && d.settings) fillSettings(d.settings);
   lastJobs = d.jobs || [];
-
-  document.getElementById("st_counts").innerHTML =
-    "<b>" + d.unlabeled + "</b> unlabeled frames · <b>" + d.missing_prelabels
-    + "</b> lack ·x boxes — <a style='color:var(--lamp)' href='/label'>go label</a>";
-  const active = (d.jobs || []).find(j => j.status === "queued" || j.status === "running");
-  document.getElementById("st_active").innerHTML = active
-    ? "now: <b>" + esc(active.kind) + " " + esc(active.status) + "</b>"
-      + (active.detail ? " — " + esc(active.detail) : "")
-    : (d.last_train
-       ? "last training " + _ago(d.last_train.updated_at) + " — "
-         + (/DEPLOYED/.test(d.last_train.detail)
-            ? "<span class='good'>" + esc(d.last_train.detail) + "</span>"
-            : esc(d.last_train.detail))
-       : "no training runs yet");
-  document.getElementById("st_next").textContent = d.next_auto_train
-    ? (d.next_auto_train < Date.now()/1000
-       ? "next auto training: on the trainer's next pass"
-       : "next auto training in ~"
-         + Math.max(1, Math.round((d.next_auto_train - Date.now()/1000)/3600)) + "h")
-    : "next auto training: after the first run completes";
-
-  document.getElementById("jobs").innerHTML = (d.jobs || []).map(j =>
-    '<div class="jobrow"><span>' + _ago(j.updated_at) + '</span>'
-    + '<span class="k-' + esc(j.kind) + '">' + esc(j.kind) + '</span>'
-    + '<span class="s-' + esc(j.status) + '">' + esc(j.status) + '</span>'
-    + (j.auto ? '<span>auto</span>' : '')
-    + (j.detail ? '<span>' + esc(j.detail) + '</span>' : '')
-    + '<a onclick="showLog(\'' + esc(j.id) + '\')">log</a>'
-    + (j.kind === "train" && j.status === "done"
-       ? '<a onclick="showReport(\'' + esc(j.id) + '\')">report</a>' : '')
-    + '</div>').join("");
-
-  if (!logJob && active && active.status === "running") showLog(active.id);
-  if (logJob) pollLog();
+  renderModel(d);
+  renderChart();
+  renderRuns();
+  renderActive();
+  const active = lastJobs.find(j => j.status === "queued" || j.status === "running");
+  document.getElementById("sched_fine").textContent = active
+    ? "a " + active.kind + " job is " + active.status
+    : (d.next_auto_train
+       ? (d.next_auto_train < Date.now()/1000
+          ? "next auto training: on the trainer's next pass (needs "
+            + d.settings.min_new_labels + "+ new labels)"
+          : "next auto training in ~"
+            + Math.max(1, Math.round((d.next_auto_train - Date.now()/1000)/3600))
+            + "h if " + d.settings.min_new_labels + "+ new labels exist")
+       : "first training run hasn't happened yet");
 }
 
-async function showLog(jobId){
-  logJob = jobId;
-  document.getElementById("log_which").textContent = "log · " + jobId;
-  pollLog();
-}
-async function pollLog(){
-  if (!logJob) return;
-  const r = await fetch("/api/training/log/" + logJob);
-  const pre = document.getElementById("log_pre");
-  if (!r.ok){
-    const job = lastJobs.find(j => j.id === logJob);
-    const finished = job && (job.status === "done" || job.status === "failed");
-    pre.hidden = false;
-    pre.textContent = finished
-      ? "(no log recorded — this run predates log capture)"
-      : "(no log yet — appears once the trainer starts the run)";
-    return;
-  }
-  const text = await r.text();
-  const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-  pre.hidden = false;
-  pre.textContent = text || "(empty)";
-  if (stick) pre.scrollTop = pre.scrollHeight;
-}
-async function showReport(jobId){
-  const r = await fetch("/api/training/report/" + jobId);
-  if (!r.ok) return;
-  document.getElementById("report_pre").textContent = await r.text();
-  document.getElementById("report_view").hidden = false;
-  document.getElementById("report_view").scrollIntoView({behavior: "smooth"});
-}
-
-setInterval(refresh, 10000);
+renderDataset();
 refresh();
+setInterval(refresh, 8000);
+setInterval(renderDataset, 60000);
 </script>
 </body>
 </html>

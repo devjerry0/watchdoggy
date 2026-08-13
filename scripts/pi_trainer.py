@@ -90,9 +90,11 @@ def _jobs() -> list[dict]:
     return jobs
 
 
-def _write_result(job_id: str, status: str, detail: str) -> None:
-    (JOBS_DIR / f"{job_id}.result.json").write_text(json.dumps(
-        {"status": status, "detail": detail, "updated_at": time.time()}))
+def _write_result(job_id: str, status: str, detail: str,
+                  extra: dict | None = None) -> None:
+    payload = {"status": status, "detail": detail, "updated_at": time.time()}
+    payload.update(extra or {})
+    (JOBS_DIR / f"{job_id}.result.json").write_text(json.dumps(payload))
 
 
 def _sidecar_stats() -> tuple[int, int, float]:
@@ -217,6 +219,7 @@ def _recipe_arguments(job: dict) -> list[str]:
 
 
 def _run_train_job(job: dict) -> str:
+    started = time.time()
     with tempfile.TemporaryDirectory() as tmp:
         arguments = ["--out-dir", tmp] + _recipe_arguments(job)
         if DEPLOYED_BUNDLE.is_dir():
@@ -227,6 +230,12 @@ def _run_train_job(job: dict) -> str:
         summary = json.loads((out / "summary.json").read_text())
         (JOBS_DIR / f"{job['id']}.report.md").write_text(
             (out / "report.md").read_text())
+        # The scorecard the training page renders: gate compare, threshold
+        # curve, robustness, dataset shape, recipe, duration.
+        job["_summary"] = {key: summary.get(key) for key in
+                           ("gate", "dataset", "recipe", "ncnn_truth",
+                            "robustness")}
+        job["_summary"]["duration_s"] = round(time.time() - started)
         gate = summary["gate"]
         heldout = summary["ncnn_heldout"]
         verdict = (f"held-out {heldout['caught']}/"
@@ -270,7 +279,8 @@ def main() -> int:
         log(f"job {job['id']} FAILED: {exc}")
         _write_result(job["id"], "failed", str(exc)[:300])
         return 1
-    _write_result(job["id"], "done", detail)
+    extra = {"summary": job["_summary"]} if "_summary" in job else None
+    _write_result(job["id"], "done", detail, extra)
     log(f"job {job['id']} done: {detail}")
     return 0
 

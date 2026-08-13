@@ -112,12 +112,18 @@ def build_router(settings: Settings) -> APIRouter:
         if last_train:
             next_auto = (last_train.get("updated_at", 0)
                          + trainer["train_interval_hours"] * 3600.0)
+        model_path = Path(settings.model_path)
+        deployed_at = (model_path.stat().st_mtime if model_path.exists() else None)
         return {"unlabeled": unlabeled,
                 "missing_prelabels": missing_prelabels,
                 "jobs": jobs[:_HISTORY_SHOWN],
                 "last_train": last_train,
                 "next_auto_train": next_auto,
-                "settings": trainer}
+                "settings": trainer,
+                "model": {"path": str(settings.model_path),
+                          "deployed_at": deployed_at,
+                          "rollback_available":
+                              model_path.with_name(model_path.name + ".prev").exists()}}
 
     @router.get("/api/training/settings")
     def api_get_settings() -> dict:

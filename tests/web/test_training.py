@@ -122,7 +122,8 @@ def test_pages_served_with_menu(tmp_path):
         html = c.get(route).text
         assert "Person only" in html and "person there too" in html
     training = c.get("/training").text
-    assert "Recipe" in training and "Run log" in training
+    assert "Recipe" in training and "Live model" in training
+    assert "Improvement" in training
     for html in (c.get("/label").text, c.get("/training").text, c.get("/").text):
         assert 'href="/label"' in html and 'href="/training"' in html
 

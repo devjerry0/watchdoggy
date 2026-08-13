@@ -153,7 +153,12 @@ def run_pipeline(run_name: str, recipe: dict) -> tuple[dict, bytes | None]:
         "report_md": (run_dir / "report.md").read_text(),
         "dataset": {"train": dataset_stats["train"],
                     "val": dataset_stats["val"],
+                    "augmented": dataset_stats["augmented"],
+                    "hand_boxed": dataset_stats["hand_boxed"],
                     "dropped": [stem for stem, _ in dataset_stats["dropped"]]},
+        "recipe": recipe,
+        "ncnn_truth": metrics["ncnn_truth"],
+        "robustness": metrics["robustness"],
         "ncnn_heldout": metrics["ncnn_truth"]["0.7"]["heldout"],
     }
     bundle_tar = _tar_bytes(bundle) if gate["deploy"] else None
@@ -199,7 +204,8 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(
         {key: results[key] for key in
-         ("run_name", "gate", "dataset", "ncnn_heldout")}, indent=1))
+         ("run_name", "gate", "dataset", "recipe", "ncnn_truth",
+          "robustness", "ncnn_heldout")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     if bundle_tar:
