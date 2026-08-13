@@ -21,32 +21,38 @@
   .wrap{max-width:820px;margin:0 auto;padding:1rem}
   :focus-visible{outline:2px solid var(--lamp);outline-offset:2px;border-radius:4px}
 
-  header{padding-bottom:.7rem;margin-bottom:1rem}
+  header{padding-bottom:.7rem;margin-bottom:.9rem}
   .head-row{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;
        flex-wrap:wrap}
+  .mark{font-family:var(--serif);font-style:italic;font-size:1.3rem}
+  .mark a{color:var(--linen);text-decoration:none}
   .menu{display:flex;gap:1.1rem;font-family:var(--mono);font-size:.66rem;
        text-transform:uppercase;letter-spacing:.18em}
   .menu a{color:var(--stone);text-decoration:none;padding-bottom:.15rem}
   .menu a.on{color:var(--lamp);border-bottom:1.5px solid var(--lamp)}
   .menu a:hover{color:var(--linen)}
-  .mark{font-family:var(--serif);font-style:italic;font-size:1.3rem}
-  .mark a{color:var(--linen);text-decoration:none}
   #progress{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;color:var(--stone)}
   #bar{height:3px;background:var(--seam);border-radius:99px;margin-top:.6rem;overflow:hidden}
   #bar div{height:100%;width:0%;background:var(--lamp);border-radius:99px;transition:width .4s}
 
-  /* Editing banner */
-  #editbar{display:none;align-items:center;justify-content:space-between;gap:1rem;
-           background:var(--walnut);border:1px solid var(--lamp);border-radius:8px;
-           padding:.5rem .8rem;margin-bottom:.8rem;font-size:.85rem}
-  #editbar b{color:var(--lamp)}
-  #editbar button{font:inherit;font-size:.8rem;padding:.3rem .7rem;border-radius:7px;
-           border:1px solid var(--seam);background:transparent;color:var(--stone);cursor:pointer}
+  /* Filter chips */
+  #chips{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.8rem}
+  .chip{font-family:var(--mono);font-size:.64rem;letter-spacing:.08em;
+        text-transform:uppercase;padding:.32rem .6rem;border-radius:99px;
+        border:1px solid var(--seam);background:transparent;color:var(--stone);
+        cursor:pointer}
+  .chip:hover{border-color:var(--lamp);color:var(--lamp)}
+  .chip.on{border-color:var(--lamp);color:var(--lamp);
+        box-shadow:0 0 0 1px var(--lamp) inset}
+  .chip .n{opacity:.7;margin-left:.3rem}
+  .chip.warn{border-color:var(--ember);color:var(--ember)}
+  .chip.warn.on{box-shadow:0 0 0 1px var(--ember) inset}
 
   /* Stage */
   #stage{position:relative;border:1px solid var(--seam);border-radius:10px;overflow:hidden;
          background:#000;line-height:0;cursor:zoom-in}
   #stage.zoomed{cursor:zoom-out}
+  #stage.boxmode{cursor:crosshair;touch-action:none}
   #frame{width:100%;display:block;transition:transform .18s ease;transform-origin:center}
   #boxes{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;
          transition:transform .18s ease;transform-origin:center}
@@ -55,6 +61,29 @@
          opacity:0;background:rgba(23,19,16,.45)}
   #flash.show{animation:flashfade .55s ease-out}
   @keyframes flashfade{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+  #empty{display:none;text-align:center;padding:2.5rem 1rem;
+         font-family:var(--serif);font-style:italic;font-size:1.15rem;color:var(--stone)}
+
+  /* Filmstrip */
+  #stripwrap{display:flex;align-items:center;gap:.3rem;margin-top:.55rem}
+  .chev{font:inherit;font-size:1.1rem;line-height:1;padding:.9rem .45rem;
+        border-radius:8px;border:1px solid var(--seam);background:transparent;
+        color:var(--stone);cursor:pointer;flex:none}
+  .chev:hover{color:var(--lamp);border-color:var(--lamp)}
+  #strip{display:flex;gap:.4rem;overflow-x:auto;scrollbar-width:thin;
+         scroll-behavior:smooth;flex:1;padding:.15rem}
+  .thumb{position:relative;flex:none;width:86px;border-radius:7px;overflow:hidden;
+         border:2px solid var(--seam);cursor:pointer;line-height:0}
+  .thumb img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+  .thumb.v-dog{border-color:var(--moss)}
+  .thumb.v-dog_mixed{border-color:var(--lamp)}
+  .thumb.v-person{border-color:var(--ember)}
+  .thumb.v-no_dog{border-color:var(--ember)}
+  .thumb.v-skip{opacity:.55}
+  .thumb.on{border-color:var(--linen);box-shadow:0 0 0 1.5px var(--linen)}
+  .thumb .hb{position:absolute;top:.2rem;right:.2rem;width:.5rem;height:.5rem;
+        border:1.5px solid var(--lamp);border-radius:2px;background:rgba(23,19,16,.65)}
+
   #why{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;color:var(--stone);
        margin:.55rem 0 .9rem;text-transform:uppercase;display:flex;justify-content:space-between;
        gap:1rem;flex-wrap:wrap}
@@ -76,40 +105,16 @@
   #btn_person{border-color:var(--ember);color:var(--ember)}
   #btn_empty{color:var(--stone)}
   .btns button.suggested{box-shadow:0 0 0 1px currentColor, 0 0 14px -2px currentColor}
-  .underrow{display:flex;justify-content:space-between;align-items:center;margin-top:.7rem}
+  .btns button.current{box-shadow:0 0 0 2px currentColor}
+  .underrow{display:flex;justify-content:space-between;align-items:center;margin-top:.7rem;
+       gap:.5rem;flex-wrap:wrap}
   .underrow button{font:inherit;font-size:.8rem;padding:.4rem .8rem;border-radius:8px;
        border:1px solid var(--seam);background:transparent;color:var(--stone);cursor:pointer}
   .underrow button:hover{color:var(--lamp);border-color:var(--lamp)}
   .underrow button:disabled{opacity:.4;cursor:default}
   #tally{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;color:var(--stone)}
 
-  /* Done state */
-  #done{display:none;text-align:center;padding:2.5rem 1rem}
-  #done .big{font-family:var(--serif);font-style:italic;font-size:1.3rem;color:var(--linen)}
-  #done .sub{color:var(--stone);font-size:.9rem;margin-top:.4rem}
-
-  /* History rail */
-  #history{margin-top:1.6rem}
-  #history h2{font-family:var(--mono);font-size:.66rem;font-weight:600;text-transform:uppercase;
-       letter-spacing:.24em;color:var(--stone);margin:0 0 .7rem;padding-bottom:.5rem;
-       border-bottom:1px solid var(--seam)}
-  #rail{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.6rem}
-  .cell{position:relative;border-radius:8px;overflow:hidden;cursor:pointer;line-height:0;
-        border:2px solid var(--seam);transition:border-color .15s}
-  .cell:hover{border-color:var(--lamp)}
-  .cell img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
-  .cell .v{position:absolute;left:0;right:0;bottom:0;font-family:var(--mono);font-size:.58rem;
-        letter-spacing:.06em;text-align:center;padding:.15rem 0;
-        background:rgba(23,19,16,.82);line-height:1.4}
-  .cell.v-dog{border-color:var(--moss)} .cell.v-dog .v{color:var(--moss)}
-  .cell.v-dog_mixed{border-color:var(--lamp)} .cell.v-dog_mixed .v{color:var(--lamp)}
-  .cell.v-person{border-color:var(--ember)} .cell.v-person .v{color:var(--ember)}
-  .cell.v-empty .v, .cell.v-no_dog .v{color:var(--stone)}
-  .cell.v-skip{opacity:.55}
-  .cell.active{border-color:var(--linen)}
-
   /* Box editor */
-  #stage.boxmode{cursor:crosshair;touch-action:none}
   #boxbar{display:none}
   #task.boxmode .btns, #task.boxmode .underrow{display:none}
   #task.boxmode #boxbar{display:block}
@@ -131,14 +136,10 @@
   #boxhint{font-family:var(--mono);font-size:.6rem;letter-spacing:.11em;
        color:var(--stone);margin-top:.55rem;text-transform:uppercase}
 
-  .cell .hb{position:absolute;top:.28rem;right:.28rem;width:.55rem;height:.55rem;
-       border:1.5px solid var(--lamp);border-radius:2px;background:rgba(23,19,16,.65)}
-
-
   @media(max-width:560px){
     .btns{grid-template-columns:1fr 1fr}
     .btns button .k{display:none}
-    #rail{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
+    .thumb{width:72px}
   }
   @media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
@@ -148,22 +149,26 @@
   <header>
     <div class="head-row">
       <span class="mark"><a href="/">watchdoggy</a> · label</span>
-      <nav class="menu"><a href="/">Dashboard</a><a href="/label" class="on">Label</a><a href="/training">Training</a></nav>
+      <nav class="menu"><a href="/">Dashboard</a><a href="/label" class="on">Label</a>
+        <a href="/training">Training</a></nav>
       <span id="progress">–</span>
     </div>
     <div id="bar"><div></div></div>
   </header>
 
-  <div id="editbar">
-    <span>Editing a labeled frame — currently <b id="edit_current">–</b></span>
-    <button onclick="exitEdit()">Back to queue (Esc)</button>
-  </div>
+  <div id="chips"></div>
 
   <div id="task">
     <div id="stage" onclick="toggleZoom(event)">
       <img id="frame" alt="captured frame" />
       <canvas id="boxes"></canvas>
       <div id="flash"></div>
+    </div>
+    <div id="empty">nothing here — pick another filter</div>
+    <div id="stripwrap">
+      <button class="chev" onclick="step(-1)" aria-label="previous frame">&#8249;</button>
+      <div id="strip"></div>
+      <button class="chev" onclick="step(1)" aria-label="next frame">&#8250;</button>
     </div>
     <div id="why"><span id="why_text"></span><span id="hint_sug"></span></div>
     <div class="btns">
@@ -198,76 +203,124 @@
         drag it to move · corners resize · box every dog and person</div>
     </div>
   </div>
-
-  <div id="done">
-    <div class="big">All caught up.</div>
-    <div class="sub" id="done_sub">New frames appear here as the camera collects them.</div>
-  </div>
-
-  <div id="history">
-    <h2>Labeled so far — tap any to change</h2>
-    <div id="rail"></div>
-  </div>
-
 </div>
 
 <script>
-let current = null;       // sample being judged (queue or edit)
-let mode = "queue";       // "queue" | "edit"
-let undoStack = [];       // [{name}] most recent verdicts this session
-let session = 0;          // verdicts this session
+// One fixed stage; a filterable filmstrip does the navigating. No page
+// scrolling to relabel -- pick a chip, arrow through, verdict with keys.
+let filter = "unlabeled";
+let frames = [];          // light rows for the current filter
+let idx = -1;             // position in frames
+let current = null;       // full sample detail shown on the stage
+let counts = {};
+let undoStack = [];
+let session = 0;
 let zoomed = false;
+let busy = false;
 
+const CHIP_DEFS = [
+  ["unlabeled", "Queue"], ["needs_boxes", "Needs boxes"],
+  ["no_prelabels", "No ·x"], ["dog", "Dog"], ["dog_mixed", "Dog+bad box"],
+  ["person", "Person"], ["empty", "Nothing"], ["skip", "Skipped"], ["all", "All"],
+];
 const VERDICT_WORDS = {dog:"Dog", dog_mixed:"Dog + bad box", person:"Person only",
                        empty:"Nothing", no_dog:"Not a dog", skip:"Skipped"};
+const VERDICT_BTN = {dog:"btn_dog", dog_mixed:"btn_mixed", person:"btn_person",
+                     empty:"btn_empty", no_dog:"btn_person"};
 const REASON_WORDS = {fire:"fired the alarm", suppressed:"a dog box was suppressed",
   borderline:"the model was unsure", person_activity:"someone was in the kitchen",
-  periodic:"background frame", user_marked_fp:"marked from the catch log"};
+  periodic:"background frame", user_marked_fp:"marked from the catch log",
+  fire_context:"moments before an alarm"};
 
 function esc(s){ return String(s).replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-async function loadNext(){
-  exitZoom();
+// -- filters + filmstrip ----------------------------------------------------
+function renderChips(){
+  document.getElementById("chips").innerHTML = CHIP_DEFS.map(([key, word]) => {
+    const warn = key === "needs_boxes" && counts[key] > 0;
+    return '<button class="chip' + (filter === key ? " on" : "")
+      + (warn ? " warn" : "") + '" onclick="setFilter(\'' + key + '\')">'
+      + word + '<span class="n">' + (counts[key] ?? 0) + '</span></button>';
+  }).join("");
+}
+function renderStrip(){
+  document.getElementById("strip").innerHTML = frames.map((f, i) =>
+    '<div class="thumb' + (f.verdict ? " v-" + esc(f.verdict) : "")
+    + (i === idx ? " on" : "") + '" data-i="' + i + '">'
+    + '<img loading="lazy" src="' + esc(f.image) + '" alt="">'
+    + (f.hand_boxes ? '<div class="hb"></div>' : '') + '</div>').join("");
+  const active = document.querySelector("#strip .thumb.on");
+  if (active) active.scrollIntoView({block: "nearest", inline: "center"});
+}
+document.getElementById("strip").addEventListener("click", e => {
+  const t = e.target.closest(".thumb");
+  if (t) select(parseInt(t.dataset.i, 10));
+});
+
+async function loadFrames(keep = "index"){
   let d;
-  try { d = await (await fetch("/api/dataset/next")).json(); } catch(e){ return; }
-  const total = d.remaining + d.labeled;
+  try { d = await (await fetch("/api/dataset/frames?filter=" + filter)).json(); }
+  catch(e){ return; }
+  const prevName = (frames[idx] || {}).name;
+  frames = d.frames; counts = d.counts;
+  const total = counts.all || 0;
+  const done = total - (counts.unlabeled || 0);
   document.getElementById("progress").textContent =
-    d.remaining + " TO GO · " + d.labeled + " DONE";
+    (counts.unlabeled || 0) + " TO GO · " + done + " DONE";
   document.getElementById("bar").firstElementChild.style.width =
-    total ? (100 * d.labeled / total) + "%" : "0%";
-  const task = document.getElementById("task");
-  const done = document.getElementById("done");
-  if (!d.sample){
-    task.style.display = "none"; done.style.display = "block";
-    document.getElementById("done_sub").textContent = d.labeled
-      ? d.labeled + " frames labeled. New ones appear as the camera collects them."
-      : "New frames appear here as the camera collects them.";
-    current = null;
-    return;
+    total ? (100 * done / total) + "%" : "0%";
+  renderChips();
+  if (!frames.length){ idx = -1; current = null; showEmpty(true); renderStrip(); return; }
+  showEmpty(false);
+  let next = 0;
+  if (keep === "name" && prevName){
+    const found = frames.findIndex(f => f.name === prevName);
+    next = found >= 0 ? found : Math.min(Math.max(idx, 0), frames.length - 1);
   }
-  task.style.display = ""; done.style.display = "none";
-  showSample(d.sample);
+  if (keep === "index") next = Math.min(Math.max(idx, 0), frames.length - 1);
+  select(next);
+}
+function setFilter(key){
+  filter = key; idx = -1;
+  if (boxMode) exitBoxMode();
+  loadFrames();
+}
+function step(delta){
+  if (!frames.length) return;
+  select((idx + delta + frames.length) % frames.length);
+}
+function showEmpty(on){
+  document.getElementById("stage").style.display = on ? "none" : "";
+  document.getElementById("empty").style.display = on ? "block" : "none";
 }
 
-function showSample(sample){
+// -- stage ------------------------------------------------------------------
+async function select(i){
+  if (i < 0 || i >= frames.length) return;
   if (boxMode) exitBoxMode();
-  current = sample;
+  exitZoom();
+  idx = i;
+  renderStrip();
+  let d;
+  try { d = await (await fetch("/api/dataset/sample/" + frames[i].name)).json(); }
+  catch(e){ return; }
+  current = d;
   const img = document.getElementById("frame");
   img.onload = drawBoxes;
-  img.src = sample.image;
-  let why = (sample.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
-  if (Array.isArray(sample.human_boxes)) why += " · hand boxes saved";
+  img.src = d.image;
+  let why = (d.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
+  if (Array.isArray(d.human_boxes)) why += " · hand boxes saved";
+  if (d.verdict) why += " · labeled: " + (VERDICT_WORDS[d.verdict] || d.verdict);
   document.getElementById("why_text").textContent = "Saved because: " + (why || "unknown");
-  const sugKey = sample.suggested === "no_dog" ? "person" : sample.suggested;
-  const sug = sugKey && VERDICT_WORDS[sugKey];
+  const sugKey = d.suggested === "no_dog" ? "person" : d.suggested;
   document.getElementById("hint_sug").textContent =
-    (mode === "queue" && sug) ? "machine hint: " + sug.toLowerCase() : "";
-  // Soft glow on the hinted button; the human can and should overrule freely.
-  for (const [id, v] of [["btn_dog","dog"],["btn_mixed","dog_mixed"],
-                          ["btn_person","person"],["btn_empty","empty"]]){
-    document.getElementById(id).classList.toggle(
-      "suggested", mode === "queue" && sugKey === v);
+    (!d.verdict && sugKey && VERDICT_WORDS[sugKey])
+      ? "machine hint: " + VERDICT_WORDS[sugKey].toLowerCase() : "";
+  for (const [v, id] of Object.entries(VERDICT_BTN)){
+    const btn = document.getElementById(id);
+    btn.classList.toggle("suggested", !d.verdict && sugKey === v);
+    btn.classList.toggle("current", d.verdict === v);
   }
 }
 
@@ -306,7 +359,6 @@ function drawBoxes(){
         ctx.fillRect(cx*sx - 5, cy*sy - 5, 10, 10);
     }
   });
-
   const pre = (boxes_, tag) => (boxes_ || []).forEach(b => {
     const [x1, y1, x2, y2] = b.box;
     const color = CLS_COLOR[b.label] || "#efe7d8";
@@ -319,7 +371,6 @@ function drawBoxes(){
   const humanSaved = Array.isArray(current.human_boxes) && current.human_boxes.length;
   const preBoxes = (current.prelabels && current.prelabels.boxes) || null;
   if (boxMode){
-    // Machine boxes fade to dashed references; the human's boxes are the work.
     machine(det.targets, "#e4572e", true);
     machine(det.suppressed, "#9e9179", true);
     machine(det.people, "#5a8bd6", true);
@@ -336,8 +387,6 @@ function drawBoxes(){
     machine(det.people, "#5a8bd6", true);
     hand(current.human_boxes, false);
   } else if (preBoxes){
-    // The big model's boxes: what training will actually use. The Pi's own
-    // (nano) boxes stay underneath as faint dashed references.
     machine(det.targets, "#e4572e", true);
     machine(det.people, "#5a8bd6", true);
     pre(preBoxes, " ·x");
@@ -349,8 +398,6 @@ function drawBoxes(){
 }
 
 // -- box editor -------------------------------------------------------------
-// Hand-drawn boxes become the frame's COMPLETE ground truth at training time,
-// overriding every model. Coordinates live in natural image pixels.
 let boxMode = false, editBoxes = [], selBox = -1, activeCls = "dog", drag = null;
 const CLS_COLOR = {dog:"#8ea56a", person:"#5a8bd6"};
 const stageEl = document.getElementById("stage");
@@ -363,7 +410,7 @@ function natCoords(e){
           Math.max(0, Math.min(img.naturalHeight,
             (e.clientY - r.top) / r.height * img.naturalHeight))];
 }
-function natPerPx(){  // natural pixels per screen pixel, for hit thresholds
+function natPerPx(){
   const img = document.getElementById("frame");
   return img.naturalWidth / img.getBoundingClientRect().width;
 }
@@ -372,21 +419,16 @@ function normRect(a, b){
           Math.max(a[0], b[0]), Math.max(a[1], b[1])];
 }
 function machineSeed(){
-  // Prefer the big model's pushed boxes (what training uses); fall back to
-  // the Pi's own nano detections.
   const pre = (current && current.prelabels && current.prelabels.boxes) || null;
   if (pre && pre.length) return pre.map(b => ({label: b.label, box: [...b.box]}));
   const det = (current && current.detections) || {};
   return [...(det.targets || []).map(d => ({label: "dog", box: [...d.box]})),
           ...(det.people || []).map(d => ({label: "person", box: [...d.box]}))];
 }
-
 function enterBoxMode(){
   if (!current || boxMode) return;
   exitZoom();
   boxMode = true; selBox = -1; drag = null;
-  // Saved hand boxes win; otherwise seed from the machine so there is
-  // something to grab and fix instead of a blank slate.
   editBoxes = (Array.isArray(current.human_boxes) ? current.human_boxes
                : machineSeed()).map(b => ({label: b.label, box: [...b.box]}));
   document.getElementById("task").classList.add("boxmode");
@@ -419,9 +461,7 @@ function updateBoxbar(){
   document.getElementById("cls_person").classList.toggle("on", activeCls === "person");
   document.getElementById("bx_del").disabled = selBox < 0;
 }
-
 function hitBox(p){
-  // Smallest box containing p wins, so nested boxes stay selectable.
   let best = -1, bestArea = Infinity;
   const pad = 4 * natPerPx();
   editBoxes.forEach((b, i) => {
@@ -442,7 +482,6 @@ function hitHandle(p){
     if (Math.abs(p[0] - cx) < t && Math.abs(p[1] - cy) < t) return fixed;
   return null;
 }
-
 stageEl.addEventListener("pointerdown", e => {
   if (!boxMode || !current) return;
   e.preventDefault();
@@ -493,12 +532,10 @@ stageEl.addEventListener("pointerup", e => {
   drag = null;
   updateBoxbar(); drawBoxes();
 });
-
 async function saveBoxes(){
   if (!current || busy) return;
   const boxes = editBoxes.map(b => ({label: b.label,
                                      box: b.box.map(v => Math.round(v * 10) / 10)}));
-  // The boxes ARE the verdict: any dog box makes it a dog frame.
   const v = boxes.some(b => b.label === "dog") ? "dog"
           : boxes.some(b => b.label === "person") ? "person" : "empty";
   exitBoxMode();
@@ -506,7 +543,7 @@ async function saveBoxes(){
                     "Boxes saved · " + VERDICT_WORDS[v]);
 }
 
-// -- zoom (head-blobs are small; tap to look closer, tap again to reset) ----
+// -- zoom -------------------------------------------------------------------
 function toggleZoom(e){
   if (boxMode) return;
   const stage = document.getElementById("stage");
@@ -529,7 +566,6 @@ function exitZoom(){
 }
 
 // -- verdicts ---------------------------------------------------------------
-let busy = false;
 async function submitLabel(body, word){
   if (busy) return;
   busy = true;
@@ -543,15 +579,14 @@ async function submitLabel(body, word){
   document.getElementById("undo_btn").disabled = false;
   document.getElementById("tally").textContent = session + " this session";
   flash(word);
-  refreshHistory();
-  if (mode === "edit") exitEdit(false);
-  loadNext();
+  // In the queue the labeled frame leaves the filter, so keeping the index
+  // lands on the next frame; in verdict filters the frame may stay put.
+  loadFrames("index");
 }
 function verdict(v){
   if (!current) return;
   submitLabel({name: current.name, verdict: v}, VERDICT_WORDS[v] || v);
 }
-
 async function undo(){
   const last = undoStack.pop();
   document.getElementById("undo_btn").disabled = undoStack.length === 0;
@@ -561,61 +596,17 @@ async function undo(){
     body: JSON.stringify({name: last.name, verdict: "clear"})});
   session = Math.max(0, session - 1);
   document.getElementById("tally").textContent = session ? session + " this session" : "";
-  refreshHistory();
-  if (mode === "edit") exitEdit(false);
-  loadNext();  // the cleared frame rejoins the queue (usually right back on top)
+  loadFrames("index");
 }
-
 function flash(word){
   const f = document.getElementById("flash");
   f.textContent = word;
   f.classList.remove("show");
-  void f.offsetWidth;  // restart the animation
+  void f.offsetWidth;
   f.classList.add("show");
 }
 
-// -- history rail -----------------------------------------------------------
-let _histKey = null;
-async function refreshHistory(){
-  let d;
-  try { d = await (await fetch("/api/dataset/labeled")).json(); } catch(e){ return; }
-  const key = JSON.stringify(d.labeled.map(r => r.name + r.verdict));
-  if (key === _histKey) return;
-  _histKey = key;
-  document.getElementById("rail").innerHTML = d.labeled.map(r =>
-    '<div class="cell v-' + esc(r.verdict) + '" data-name="' + esc(r.name) + '">'
-    + '<img loading="lazy" src="' + esc(r.image) + '" alt="">'
-    + (Array.isArray(r.human_boxes) ? '<div class="hb" title="hand boxes"></div>' : '')
-    + '<div class="v">' + esc(VERDICT_WORDS[r.verdict] || r.verdict) + '</div></div>'
-  ).join("");
-  window._labeledByName = Object.fromEntries(d.labeled.map(r => [r.name, r]));
-}
-document.getElementById("rail").addEventListener("click", e => {
-  const cell = e.target.closest(".cell");
-  if (!cell) return;
-  const r = (window._labeledByName || {})[cell.dataset.name];
-  if (!r) return;
-  enterEdit(r, cell);
-});
-
-function enterEdit(r, cell){
-  mode = "edit";
-  document.querySelectorAll("#rail .cell.active").forEach(c => c.classList.remove("active"));
-  if (cell) cell.classList.add("active");
-  document.getElementById("editbar").style.display = "flex";
-  document.getElementById("edit_current").textContent = VERDICT_WORDS[r.verdict] || r.verdict;
-  document.getElementById("task").style.display = "";
-  document.getElementById("done").style.display = "none";
-  showSample(r);
-  window.scrollTo({top: 0, behavior: "smooth"});
-}
-function exitEdit(reload = true){
-  mode = "queue";
-  document.getElementById("editbar").style.display = "none";
-  document.querySelectorAll("#rail .cell.active").forEach(c => c.classList.remove("active"));
-  if (reload) loadNext();
-}
-
+// -- keys -------------------------------------------------------------------
 document.addEventListener("keydown", e => {
   if (boxMode){
     if (e.key === "Escape") exitBoxMode();
@@ -627,7 +618,8 @@ document.addEventListener("keydown", e => {
     }
     return;  // verdict keys must never fire mid-annotation
   }
-  if (e.key === "Escape" && mode === "edit") { exitEdit(); return; }
+  if (e.key === "ArrowLeft"){ step(-1); return; }
+  if (e.key === "ArrowRight"){ step(1); return; }
   const k = e.key.toLowerCase();
   if (k === "d") verdict("dog");
   else if (k === "m") verdict("dog_mixed");
@@ -637,9 +629,8 @@ document.addEventListener("keydown", e => {
   else if (k === "u") undo();
   else if (k === "f") enterBoxMode();
 });
-
 window.addEventListener("resize", drawBoxes);
-loadNext(); refreshHistory();
+loadFrames();
 </script>
 </body>
 </html>

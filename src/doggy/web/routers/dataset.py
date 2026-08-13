@@ -25,6 +25,13 @@ _VERDICTS = {"dog", "dog_mixed", "person", "empty", "no_dog", "skip"}
 # Review order: highest training signal first, newest first within a class.
 _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
                     "fire_context": 3, "person_activity": 4, "periodic": 5}
+# Filmstrip filters. "unlabeled" is the work queue; "needs_boxes" finds
+# dog-verdict frames where NO model produced a dog box (training would drop
+# them without hand boxes); "no_prelabels" finds frames the big model hasn't
+# scored yet.
+_FRAME_FILTERS = {"unlabeled", "dog", "dog_mixed", "person", "empty", "skip",
+                  "needs_boxes", "no_prelabels", "all"}
+_NANO_FALLBACK_CONF = 0.45  # mirrors training's PRELABEL_CONF fallback rule
 
 
 def build_router(settings: Settings, capture: DatasetCapture,
@@ -38,6 +45,83 @@ def build_router(settings: Settings, capture: DatasetCapture,
     @router.get("/api/dataset")
     def api_dataset() -> dict:
         return capture.stats()
+
+    def _has_dog_box(meta: dict) -> bool:
+        """Would training find ANY dog box for this frame? Mirrors the fuse
+        precedence: hand boxes, then big-model prelabels, then nano fallback."""
+        hand = meta.get("human_boxes")
+        if isinstance(hand, list):
+            return any(b.get("label") == "dog" for b in hand)
+        pre = (meta.get("prelabels") or {}).get("boxes") or []
+        if any(b.get("label") == "dog" for b in pre):
+            return True
+        targets = meta.get("detections", {}).get("targets", [])
+        return any(d.get("label") == "dog"
+                   and d.get("confidence", 0) >= _NANO_FALLBACK_CONF
+                   for d in targets)
+
+    def _matches(name: str, verdict: str | None, meta: dict) -> bool:
+        if name == "all":
+            return True
+        if name == "unlabeled":
+            return not verdict
+        if name == "no_prelabels":
+            return "prelabels" not in meta
+        if name == "needs_boxes":
+            return verdict in ("dog", "dog_mixed") and not _has_dog_box(meta)
+        return verdict == name
+
+    @router.get("/api/dataset/frames")
+    def api_frames(filter: str = "unlabeled") -> dict:
+        """The filmstrip: light rows for one filter + counts for every chip.
+        Unlabeled sorts highest-signal first (like the queue); everything
+        else newest first."""
+        if filter not in _FRAME_FILTERS:
+            raise HTTPException(status_code=422,
+                                detail=f"filter must be one of {sorted(_FRAME_FILTERS)}")
+        rows = []
+        counts = dict.fromkeys(_FRAME_FILTERS, 0)
+        for side in _sidecars():
+            try:
+                meta = json.loads(side.read_text())
+            except (OSError, ValueError):
+                continue
+            verdict = meta.get("human_label")
+            for chip in _FRAME_FILTERS:
+                counts[chip] += _matches(chip, verdict, meta)
+            if not _matches(filter, verdict, meta):
+                continue
+            prio = min((_REASON_PRIORITY.get(r, 9)
+                        for r in meta.get("reasons", [])), default=9)
+            rows.append({"name": side.stem,
+                         "image": f"/dataset/{side.stem}.jpg",
+                         "verdict": verdict,
+                         "hand_boxes": isinstance(meta.get("human_boxes"), list),
+                         "_sort": ((prio, -meta.get("wall_time", 0))
+                                   if filter == "unlabeled"
+                                   else (-meta.get("labeled_at",
+                                                   meta.get("wall_time", 0)),))})
+        rows.sort(key=lambda r: r["_sort"])
+        for row in rows:
+            row.pop("_sort")
+        return {"frames": rows[:400], "counts": counts}
+
+    @router.get("/api/dataset/sample/{name}")
+    def api_sample(name: str) -> dict:
+        """Everything the stage needs to show one frame."""
+        safe = Path(name).name  # traversal guard
+        side = Path(settings.dataset_dir) / f"{safe}.json"
+        if not safe.startswith("sample_") or not side.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        meta = json.loads(side.read_text())
+        return {"name": safe, "image": f"/dataset/{safe}.jpg",
+                "verdict": meta.get("human_label"),
+                "reasons": meta.get("reasons", []),
+                "suggested": meta.get("suggested_label"),
+                "detections": meta.get("detections", {}),
+                "human_boxes": meta.get("human_boxes"),
+                "prelabels": meta.get("prelabels")}
 
     @router.get("/api/dataset/next")
     def api_next_unlabeled() -> dict:

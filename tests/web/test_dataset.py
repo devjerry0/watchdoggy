@@ -253,3 +253,57 @@ def test_prelabels_merge_into_sidecar_and_payloads(tmp_path):
     assert c.post("/api/dataset/prelabels", json={
         "name": "sample_1", "boxes": [{"label": "cat", "box": [0, 0, 1, 1]}]
     }).status_code == 422
+
+
+def _seed_full(ddir, stem, verdict=None, prelabel_dogs=None, hand=None,
+               nano_dog_conf=None, wall=100.0):
+    import json as _json
+    ddir.mkdir(parents=True, exist_ok=True)
+    import numpy as np, cv2
+    cv2.imwrite(str(ddir / f"{stem}.jpg"), np.zeros((8, 8, 3), np.uint8))
+    meta = {"wall_time": wall, "reasons": ["fire"]}
+    if verdict:
+        meta["human_label"] = verdict
+        meta["labeled_at"] = wall + 1
+    if prelabel_dogs is not None:
+        meta["prelabels"] = {"model": "yolo26x", "boxes": [
+            {"label": "dog", "box": [0, 0, 4, 4]} for _ in range(prelabel_dogs)]}
+    if hand:
+        meta["human_boxes"] = hand
+    if nano_dog_conf is not None:
+        meta["detections"] = {"targets": [
+            {"label": "dog", "confidence": nano_dog_conf, "box": [0, 0, 4, 4]}]}
+    (ddir / f"{stem}.json").write_text(_json.dumps(meta))
+
+
+def test_frames_filters_and_counts(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1")                                  # unlabeled, no prelabels
+    _seed_full(ddir, "sample_2", verdict="dog", prelabel_dogs=1)  # fine dog
+    _seed_full(ddir, "sample_3", verdict="dog", prelabel_dogs=0)  # NEEDS BOXES
+    _seed_full(ddir, "sample_4", verdict="person", prelabel_dogs=0)
+    _seed_full(ddir, "sample_5", verdict="dog", prelabel_dogs=0,
+               hand=[{"label": "dog", "box": [1, 1, 3, 3]}])      # saved by hand boxes
+    _seed_full(ddir, "sample_6", verdict="dog", nano_dog_conf=0.9)  # nano fallback saves it
+    d = c.get("/api/dataset/frames?filter=unlabeled").json()
+    assert [f["name"] for f in d["frames"]] == ["sample_1"]
+    assert d["counts"]["unlabeled"] == 1
+    assert d["counts"]["dog"] == 4
+    assert d["counts"]["needs_boxes"] == 1
+    assert d["counts"]["no_prelabels"] == 2  # samples 1 and 6 lack the key
+    needs = c.get("/api/dataset/frames?filter=needs_boxes").json()["frames"]
+    assert [f["name"] for f in needs] == ["sample_3"]
+    dogs = c.get("/api/dataset/frames?filter=dog").json()["frames"]
+    assert {f["name"] for f in dogs} == {"sample_2", "sample_3", "sample_5", "sample_6"}
+    assert [f for f in dogs if f["name"] == "sample_5"][0]["hand_boxes"] is True
+    assert c.get("/api/dataset/frames?filter=bogus").status_code == 422
+
+
+def test_sample_detail_and_guards(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1", verdict="dog", prelabel_dogs=1)
+    d = c.get("/api/dataset/sample/sample_1").json()
+    assert d["verdict"] == "dog"
+    assert d["prelabels"]["boxes"][0]["label"] == "dog"
+    assert c.get("/api/dataset/sample/sample_none").status_code == 404
+    assert c.get("/api/dataset/sample/..%2Fx").status_code == 404
