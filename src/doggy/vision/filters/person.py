@@ -78,8 +78,12 @@ class PersonSuppressionFilter:
         if not self._recent:
             return
         person_boxes = [box for _, box in self._recent]
-        analysis.targets = _suppress_against_boxes(
+        survivors = _suppress_against_boxes(
             analysis.targets, person_boxes, cfg.person_iou_threshold)
+        # Record what was dropped -- these misclassification specimens are gold
+        # for training-data capture. Observational only.
+        analysis.suppressed.extend(d for d in analysis.targets if d not in survivors)
+        analysis.targets = survivors
         # Reseed from the alert set, not from `targets`, so detect-only animals
         # never re-enter the candidate list.
         alertable = set(cfg.alert_labels)

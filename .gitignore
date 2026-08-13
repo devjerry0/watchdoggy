@@ -7,3 +7,4 @@ __pycache__/
 /soothing/
 *.mp4
 .pytest_cache/
+/dataset/

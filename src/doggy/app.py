@@ -7,6 +7,7 @@ import threading
 from doggy.reaction.sound import SoundReaction, build_alerter
 from doggy.reaction.hub import ReactionHub, SafeReaction
 from doggy.reaction.clips import ClipBuffer, ClipService
+from doggy.reaction.dataset import DatasetCapture
 from doggy.reaction.outcome import OutcomeWatcher
 from doggy.reaction.recorder import Recorder
 from doggy.reaction.soothing import SoothingPlayer
@@ -53,19 +54,21 @@ def main() -> None:
         event_store, event_store.dir, ClipBuffer(settings.clip_window_seconds), runtime)
     soothing = SoothingPlayer(runtime, settings.soothing_dir, status)
     outcome = OutcomeWatcher(event_store, gate, alerter, runtime)
+    dataset = DatasetCapture(settings.dataset_dir, settings.dataset_cap_bytes, runtime)
     # Reactions fan out on a catch; each is wrapped so one failure can't stop the
     # others or kill the detect loop. ClipService registers its pending clip here;
-    # OutcomeWatcher opens the incident it measures per-frame; SoothingPlayer (last)
-    # cuts its music and holds it after the catch.
+    # OutcomeWatcher opens the incident it measures per-frame; SoothingPlayer
+    # cuts its music and holds it after the catch; DatasetCapture (last) keeps
+    # the fire frame for training.
     hub = ReactionHub(
         [SafeReaction(SoundReaction(alerter, event_store)), SafeReaction(clip_service),
-         SafeReaction(outcome), SafeReaction(soothing)])
+         SafeReaction(outcome), SafeReaction(soothing), SafeReaction(dataset)])
 
     pipeline = Pipeline(
         settings=settings, analyzer=analyzer, camera=camera,
         runtime=runtime, status=status, raw_buffer=raw_buffer,
         annotated_buffer=annotated_buffer, gate=gate, recorder=recorder, hub=hub,
-        clip_service=clip_service, outcome=outcome,
+        clip_service=clip_service, outcome=outcome, dataset=dataset,
     )
 
     stop = threading.Event()
@@ -76,7 +79,8 @@ def main() -> None:
         from doggy.web import serve
         threading.Thread(
             target=serve,
-            args=(settings, runtime, annotated_buffer, status, alerter, event_store, gate),
+            args=(settings, runtime, annotated_buffer, status, alerter, event_store,
+                  gate, dataset),
             daemon=True,
         ).start()
         log.info("dashboard at http://%s:%s", settings.web_host, settings.web_port)

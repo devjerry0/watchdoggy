@@ -17,6 +17,7 @@ from doggy.hardware.power import PowerMonitor
 from doggy.decision.gate import FireGate
 from doggy.decision.schedule import armed_state
 from doggy.reaction.hub import DogCaught, ReactionHub
+from doggy.reaction.dataset import DatasetCapture
 from doggy.reaction.outcome import OutcomeWatcher
 from doggy.reaction.recorder import Recorder
 from doggy.core.runtime import RuntimeSettings
@@ -39,6 +40,7 @@ class Pipeline:
                  raw_buffer: FrameBuffer, annotated_buffer: FrameBuffer,
                  gate: FireGate, recorder: Recorder, hub: ReactionHub,
                  clip_service: ClipService, outcome: OutcomeWatcher,
+                 dataset: DatasetCapture | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  rng: random.Random | None = None) -> None:
         self.settings = settings
@@ -55,6 +57,9 @@ class Pipeline:
         self.clip_service = clip_service
         # Per-frame stage here and a hub Reaction (opens its incident on fire).
         self.outcome = outcome
+        # Per-frame stage here and a hub Reaction (keeps the fire frame);
+        # optional so web-less tests need not build one.
+        self.dataset = dataset
         self.clock = clock
         self.trigger = TriggerLogic(runtime, rng=rng or random.Random())
         self.inventory_tracker = InventoryTracker()
@@ -93,6 +98,9 @@ class Pipeline:
         # After the fire block so the fire frame that opens an incident is
         # also its first observation.
         self.outcome.on_frame(analysis, now, cfg)
+        if self.dataset is not None:
+            # RAW frame, deliberately: annotated pixels would poison training.
+            self.dataset.on_frame(frame, analysis, now, cfg)
         self.clip_service.finalize_due(now, cfg)
         self.status.update(state=self.trigger.state.value, confidence=round(top, CONFIDENCE_DECIMALS),
                            # targets counts what is drawn/"in view"; certainty still comes from candidates.

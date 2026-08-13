@@ -20,6 +20,8 @@ class FrameAnalysis:
     - `people`: person-labeled detections (used for suppression / overlay).
     - `inventory`: food/tableware on the counter; observed only, never a
       target or candidate, so it can never fire the deterrent.
+    - `suppressed`: target detections a filter dropped as misclassified people;
+      observational only (training-data mining), never re-enters candidates.
     """
 
     shape: tuple[int, ...]
@@ -27,6 +29,7 @@ class FrameAnalysis:
     targets: list[Detection]
     candidates: list[Detection]
     inventory: list[Detection] = field(default_factory=list)
+    suppressed: list[Detection] = field(default_factory=list)
 
 
 class DetectionAnalyzer:

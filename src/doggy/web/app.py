@@ -6,6 +6,7 @@ from typing import Callable
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 
+from doggy.reaction.dataset import DatasetCapture
 from doggy.reaction.sound import Alerter
 from doggy.core.config import Settings, TunableSettings
 from doggy.events.store import EventStore
@@ -14,6 +15,7 @@ from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 from doggy.web.door import create_door_app
 from doggy.web.envfile import write_env as _write_env
+from doggy.web.routers import dataset as dataset_router
 from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk
 from doggy.web.routers import settings as settings_router
 from doggy.web.routers import status as status_router
@@ -22,7 +24,13 @@ from doggy.web.routers import status as status_router
 def create_app(settings: Settings, runtime: RuntimeSettings,
                annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
                event_store: EventStore, gate: FireGate,
+               dataset: DatasetCapture | None = None,
                save_env: Callable[[TunableSettings], None] = _write_env) -> FastAPI:
+    # Web-only callers (tests) may omit the capture service; stats/mark only
+    # touch the dataset dir, so a local instance is equivalent.
+    if dataset is None:
+        dataset = DatasetCapture(settings.dataset_dir, settings.dataset_cap_bytes,
+                                 runtime)
     app = FastAPI(title="doggy")
 
     @app.get("/")
@@ -54,19 +62,22 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     app.include_router(snooze.build_router(gate))
     app.include_router(talk.build_router(runtime))
     app.include_router(speaker.build_router())
+    app.include_router(dataset_router.build_router(settings, dataset, event_store))
 
     return app
 
 
 def serve(settings: Settings, runtime: RuntimeSettings,
           annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
-          event_store: EventStore, gate: FireGate) -> None:
+          event_store: EventStore, gate: FireGate,
+          dataset: DatasetCapture | None = None) -> None:
     import logging
     import threading
 
     import uvicorn
 
-    app = create_app(settings, runtime, annotated_buffer, status, alerter, event_store, gate)
+    app = create_app(settings, runtime, annotated_buffer, status, alerter, event_store,
+                     gate, dataset)
     # TLS is all-or-nothing: with only one of cert/key set we serve plain http.
     if not (settings.ssl_cert and settings.ssl_key):
         uvicorn.run(app, host=settings.web_host, port=settings.web_port,

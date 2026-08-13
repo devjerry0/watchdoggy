@@ -100,6 +100,11 @@ class TunableSettings(BaseModel):
     clip_postroll_seconds: float = 5
     clip_fps: int = Field(6, ge=1)
     clip_retention: int = Field(10, ge=0)   # 0 = unlimited
+    # Training-data capture: save raw frames + detection sidecars at the moments
+    # that matter for fine-tuning (fires, suppressed/borderline detections,
+    # periodic negatives). Frames never leave the Pi; pull with
+    # scripts/pull-dataset.sh when it's time to train.
+    dataset_enabled: bool = False
     # Escalation: fire again, louder, while the animal stands its ground.
     escalation_enabled: bool = False
     escalation_seconds: float = Field(8.0, ge=1)
@@ -196,6 +201,10 @@ class Settings(TunableSettings, BaseSettings):
     # soothing_limit_bytes caps the whole library (1 GiB) and each single file.
     soothing_dir: Path = Path("soothing")
     soothing_limit_bytes: int = 1_073_741_824
+    # Training-data capture storage (raw frames + JSON sidecars), oldest pruned
+    # past the cap (2 GiB).
+    dataset_dir: Path = Path("dataset")
+    dataset_cap_bytes: int = 2_147_483_648
     web_enabled: bool = True
     web_host: str = "127.0.0.1"
     web_port: int = 8000

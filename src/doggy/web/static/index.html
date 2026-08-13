@@ -226,6 +226,7 @@
   .ev .del{flex:none;width:30px;height:30px;padding:0;font-size:1.15rem;line-height:1;
            color:var(--stone);background:transparent;border:1px solid transparent;border-radius:8px}
   .ev .del:hover{color:var(--ember);border-color:var(--ember)}
+  .ev-fp{margin-top:.3rem;padding:.15rem .5rem;font-size:.68rem}
 
   /* ---- Activity ---- */
   .act-top{font-size:1rem;font-weight:550;margin-bottom:.8rem}
@@ -281,7 +282,7 @@
     .col-live,.col-side{display:contents}
     .grid .card{min-width:0;width:100%;margin-bottom:0}
     .grid{gap:1rem}
-    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-set{order:4}.c-soothe{order:5}.c-lab{order:6}.c-sys{order:7}
+    .c-mon{order:1}.c-log{order:2}.c-act{order:3}.c-set{order:4}.c-soothe{order:5}.c-lab{order:6}.c-data{order:7}.c-sys{order:8}
     #vidwrap{display:block}
     #live{width:100%;height:auto}
     .readout{grid-template-columns:1fr 1fr;gap:.75rem}
@@ -554,6 +555,17 @@
         </div>
       </details>
 
+      <details class="card fold c-data">
+        <summary>Training data<span class="fold-note" id="data_summary"></span></summary>
+        <div class="toggle">
+          <div><div class="t-label">Collect training data</div><div class="t-desc">Saves camera frames from confusing moments so the detector can be retrained on this kitchen. Everything stays on this device.</div></div>
+          <label class="switch"><input id="dataset_enabled" type="checkbox" /><span class="track"></span></label>
+        </div>
+        <div class="desc" id="data_stats"></div>
+        <div class="desc">Tip: in the catch log, tap "Not a dog" on any false alarm. Those labels teach the retraining exactly what it got wrong.</div>
+        <div class="btnrow"><button class="linkbtn" onclick="clearDataset()">Clear collected data</button></div>
+      </details>
+
       <details class="card fold c-sys">
         <summary>System</summary>
         <div class="sys">
@@ -625,6 +637,8 @@ document.getElementById("clips_enabled").addEventListener("change", e => patch({
 document.getElementById("soothing_enabled").addEventListener("change", e => patch({soothing_enabled:e.target.checked}));
 document.getElementById("show_inventory_boxes").addEventListener("change", e =>
   patch({show_inventory_boxes:e.target.checked}));
+document.getElementById("dataset_enabled").addEventListener("change", e =>
+  patch({dataset_enabled:e.target.checked}));
 document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
 document.getElementById("schedule_enabled").addEventListener("change", e => {
   patch({schedule_enabled:e.target.checked});
@@ -825,9 +839,16 @@ function evRow(e){
     + '<div class="thumb" title="Click to enlarge" onclick="openEvent(\'/events/' + e.thumb + '\', ' + clipArg + ')">'
     + '<img src="/events/' + e.thumb + '" alt="reaction snapshot">' + play + '</div>'
     + '<div class="ev-meta"><div class="ev-time">' + timeLabel(e) + '</div>'
-    + '<div class="ev-sub">' + pct(e.confidence) + ' sure' + lat + strikes + took + '</div></div>'
+    + '<div class="ev-sub">' + pct(e.confidence) + ' sure' + lat + strikes + took + '</div>'
+    + '<button class="linkbtn ev-fp" onclick="markFalsePositive(this, \'' + e.id + '\')">Not a dog</button></div>'
     + '<button class="del" title="Delete this reaction" onclick="deleteEvent(\'' + e.id + '\')">×</button>'
     + '</div>';
+}
+async function markFalsePositive(btn, id){
+  // Labels this catch as a false alarm for retraining (keeps the event itself).
+  const r = await fetch("/api/dataset/mark/" + encodeURIComponent(id), {method:"POST"});
+  btn.textContent = r.ok ? "Noted" : "Failed";
+  btn.disabled = true;
 }
 function timeLabel(e){
   if (e.wall_time){
@@ -1123,6 +1144,7 @@ async function poll(){
 
   document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
   document.getElementById("show_inventory_boxes").checked = s.settings.show_inventory_boxes;
+  document.getElementById("dataset_enabled").checked = s.settings.dataset_enabled;
   document.getElementById("soothing_enabled").checked = s.settings.soothing_enabled;
   const soothingNow = document.getElementById("soothing_now");
   if (s.settings.soothing_enabled){
@@ -1261,6 +1283,26 @@ function setupTalk(){
   btn.addEventListener("pointerleave", stop);
 }
 setupTalk();
+// ---- Training data ----
+async function refreshData(){
+  let d;
+  try { d = await (await fetch("/api/dataset")).json(); } catch(e){ return; }
+  const parts = Object.entries(d.by_reason).map(([k, n]) => {
+    const names = {fire:"alerts", suppressed:"suppressed", borderline:"borderline",
+                   periodic:"background", user_marked_fp:"marked by you"};
+    return n + " " + (names[k] || k);
+  });
+  document.getElementById("data_stats").textContent = d.samples
+    ? d.samples + " frames saved (" + fmtSize(d.bytes) + " of " + fmtSize(d.cap_bytes) + "): " + parts.join(", ")
+    : "Nothing collected yet.";
+  document.getElementById("data_summary").textContent = d.samples ? (d.samples + " frames") : "";
+}
+async function clearDataset(){
+  if (!confirm("Delete all collected training frames? This can't be undone.")) return;
+  await fetch("/api/dataset/clear", {method:"POST"});
+  refreshData();
+}
+
 // ---- Speaker volume (the hardware sink level, via /api/speaker-volume) ----
 // Not a tunable setting: it's the PipeWire sink's own volume, so it has its own
 // endpoint and its own touch-lock (mirrors the KNOB one) instead of KNOBS/patch.
@@ -1286,9 +1328,9 @@ async function refreshSpeaker(){
   document.getElementById("speaker_volume_v").textContent = pct(d.volume);
 }
 
-loadSounds(); loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker();
+loadSounds(); loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); refreshData();
 setInterval(poll, 500); poll();
-setInterval(() => { loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); }, 4000);
+setInterval(() => { loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); refreshData(); }, 4000);
 </script>
 </body>
 </html>

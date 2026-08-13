@@ -39,6 +39,7 @@ src/doggy/
     clips.py           ClipBuffer + ClipService (per-frame capture and a catch reaction)
     outcome.py         OutcomeWatcher: clear-time + theft measurement per catch, drives escalation (per-frame stage + hub reaction, like ClipService)
     soothing.py        SoothingPlayer: loops the calm-audio library, a catch interrupts it (daemon-thread loop + hub reaction)
+    dataset.py         DatasetCapture: saves raw frames + detection sidecars at confusing moments for fine-tuning (per-frame stage + hub reaction)
   events/
     store.py           EventStore/EventRecord: the only writer of events.jsonl + JPEGs
   hardware/            the Pi's physical signals
@@ -48,7 +49,7 @@ src/doggy/
     app.py             create_app + serve (plain http, or https + onboarding door) + GET /
     door.py            onboarding door on plain http: trust-probes the https side, serves the home CA
     envfile.py         in-place .env writer for settings saved from the dashboard
-    routers/           one router per endpoint group: status, settings, events, sounds, snooze, talk, soothing
+    routers/           one router per endpoint group: status, settings, events, sounds, snooze, talk, soothing, speaker, dataset
     static/index.html  the single-page dashboard
 ```
 
