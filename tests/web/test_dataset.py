@@ -142,3 +142,11 @@ def test_rich_verdicts_person_and_empty(tmp_path):
     assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "person"
     assert json.loads((ddir / "sample_2.json").read_text())["human_label"] == "empty"
     assert c.get("/api/dataset/next").json()["sample"] is None
+
+
+def test_dog_mixed_verdict_flags_frame_for_box_surgery(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    assert c.post("/api/dataset/label",
+                  json={"name": "sample_1", "verdict": "dog_mixed"}).json() == {"ok": True}
+    assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "dog_mixed"
