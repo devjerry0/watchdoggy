@@ -116,8 +116,50 @@ def test_report_endpoint_serves_markdown_and_guards(tmp_path):
     assert c.get("/api/training/report/..%2Fsecrets").status_code == 404
 
 
-def test_training_page_served_at_both_routes(tmp_path):
+def test_pages_served_with_menu(tmp_path):
     c, _ = _client(tmp_path)
-    for route in ("/training", "/review"):
+    for route in ("/label", "/review"):
         html = c.get(route).text
-        assert "Training runs" in html and "Person only" in html
+        assert "Person only" in html and "person there too" in html
+    training = c.get("/training").text
+    assert "Recipe" in training and "Run log" in training
+    for html in (c.get("/label").text, c.get("/training").text, c.get("/").text):
+        assert 'href="/label"' in html and 'href="/training"' in html
+
+
+def test_settings_roundtrip_and_validation(tmp_path):
+    c, _ = _client(tmp_path)
+    d = c.get("/api/training/settings").json()
+    assert d["epochs"] == 200 and d["augment"] is True
+    r = c.post("/api/training/settings",
+               json={"epochs": 120, "augment": False, "nightly_prelabel_hour": 3})
+    assert r.json()["settings"]["epochs"] == 120
+    d = c.get("/api/training/settings").json()
+    assert d["epochs"] == 120 and d["augment"] is False and d["batch"] == 16
+    assert c.post("/api/training/settings",
+                  json={"epochs": 9999}).status_code == 422
+    assert c.post("/api/training/settings",
+                  json={"augment": "yes"}).status_code == 422
+
+
+def test_request_carries_validated_params(tmp_path):
+    c, root = _client(tmp_path)
+    d = c.post("/api/training/request",
+               json={"kind": "train",
+                     "params": {"epochs": 80, "augment": False}}).json()
+    assert d["job"]["params"] == {"epochs": 80, "augment": False}
+    assert c.post("/api/training/request",
+                  json={"kind": "prelabel",
+                        "params": {"epochs": 0}}).status_code == 422
+
+
+def test_log_endpoint_tails_and_guards(tmp_path):
+    c, root = _client(tmp_path)
+    jobs = root / "jobs"
+    jobs.mkdir()
+    (jobs / "job_5.log").write_text("\n".join(f"line{i}" for i in range(300)))
+    r = c.get("/api/training/log/job_5")
+    assert r.status_code == 200
+    assert "line299" in r.text and "line50" not in r.text  # last 200 only
+    assert c.get("/api/training/log/job_none").status_code == 404
+    assert c.get("/api/training/log/..%2F.env").status_code == 404

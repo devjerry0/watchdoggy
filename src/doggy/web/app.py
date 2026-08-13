@@ -38,11 +38,16 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     def index() -> FileResponse:
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
-    @app.get("/training")
+    @app.get("/label")
     @app.get("/review")  # legacy alias: old bookmarks keep working
+    def label_page() -> FileResponse:
+        # The labeling tool: verdicts, hand-drawn boxes, history rail.
+        return FileResponse(Path(__file__).parent / "static" / "label.html")
+
+    @app.get("/training")
     def training_page() -> FileResponse:
-        # Labeling + training in one place: classify captured frames, draw
-        # boxes, watch the trainer's cloud runs, read their reports.
+        # The training console: recipe + schedule, run logs, job history,
+        # and full reports from the trainer's cloud runs.
         return FileResponse(Path(__file__).parent / "static" / "training.html")
 
     @app.get("/ca.pem")

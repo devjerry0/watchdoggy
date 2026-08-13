@@ -39,12 +39,24 @@ MODAL = Path.home() / "modal-env/bin/modal"
 PIPELINE = DOGGY_ROOT / "scripts/modal_pipeline.py"
 LOCAL_API = "https://localhost:8443"
 
-TRAIN_INTERVAL = 48 * 3600.0
-MIN_NEW_LABELS = 5
 AUTO_PRELABEL_MIN = 10
 PRELABEL_COOLDOWN = 6 * 3600.0
-NIGHTLY_PRELABEL_HOUR = 2   # every night: ·x boxes for ALL new frames
 STALE_RUNNING = 3 * 3600.0
+# Recipe + schedule defaults; the training page's settings file overrides.
+SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
+                     "train_interval_hours": 48, "min_new_labels": 5,
+                     "nightly_prelabel_hour": 2}
+
+
+def _settings() -> dict:
+    merged = dict(SETTINGS_DEFAULTS)
+    path = JOBS_DIR / "trainer-settings.json"
+    if path.is_file():
+        try:
+            merged.update(json.loads(path.read_text()))
+        except (OSError, ValueError):
+            pass
+    return merged
 
 
 def log(message: str) -> None:
@@ -112,11 +124,11 @@ def _labels_since(when: float) -> int:
     return count
 
 
-def _last_nightly_slot() -> float:
-    """The most recent 2am, as a timestamp."""
+def _last_nightly_slot(hour: int) -> float:
+    """The most recent occurrence of the nightly hour, as a timestamp."""
     slot = time.localtime()
     seconds_today = slot.tm_hour * 3600 + slot.tm_min * 60 + slot.tm_sec
-    slot_offset = NIGHTLY_PRELABEL_HOUR * 3600
+    slot_offset = hour * 3600
     if seconds_today >= slot_offset:
         return time.time() - (seconds_today - slot_offset)
     return time.time() - seconds_today - 24 * 3600 + slot_offset
@@ -128,17 +140,19 @@ def _synthesize_job(jobs: list[dict]) -> dict | None:
                     if j.get("kind") == kind and j.get("status") == "done"),
                    default=0.0)
 
+    conf = _settings()
     now = time.time()
     last_train = newest_done("train")
     new_labels = _labels_since(last_train)
-    if now - last_train >= TRAIN_INTERVAL and new_labels >= MIN_NEW_LABELS:
+    if (now - last_train >= conf["train_interval_hours"] * 3600.0
+            and new_labels >= conf["min_new_labels"]):
         return _queue_auto("train",
                            f"auto: {new_labels} new labels since last run")
     missing, _, _ = _sidecar_stats()
     last_prelabel = newest_done("prelabel")
-    # Nightly: after 2am, prelabel EVERY new frame once, so the morning's
-    # review queue is already stocked with ·x boxes.
-    if missing > 0 and last_prelabel < _last_nightly_slot():
+    # Nightly: after the configured hour, prelabel EVERY new frame once, so
+    # the morning's label queue is already stocked with ·x boxes.
+    if missing > 0 and last_prelabel < _last_nightly_slot(conf["nightly_prelabel_hour"]):
         return _queue_auto("prelabel",
                            f"nightly: {missing} new frames to prelabel")
     if missing >= AUTO_PRELABEL_MIN and now - last_prelabel >= PRELABEL_COOLDOWN:
@@ -170,10 +184,14 @@ def _merge_prelabels(prelabels_file: Path) -> int:
     return merged
 
 
-def _modal(entrypoint: str, arguments: list[str]) -> None:
-    subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
-                    "--dataset-dir", str(DATASET_DIR)] + arguments,
-                   check=True, cwd=DOGGY_ROOT, timeout=3 * 3600)
+def _modal(entrypoint: str, arguments: list[str], job_id: str) -> None:
+    # The full cloud-run output streams into the job's log file, which the
+    # training page tails live via /api/training/log/{job_id}.
+    with open(JOBS_DIR / f"{job_id}.log", "ab") as log_file:
+        subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
+                        "--dataset-dir", str(DATASET_DIR)] + arguments,
+                       check=True, cwd=DOGGY_ROOT, timeout=3 * 3600,
+                       stdout=log_file, stderr=subprocess.STDOUT)
 
 
 def _install_bundle(bundle_dir: Path) -> None:
@@ -186,17 +204,24 @@ def _install_bundle(bundle_dir: Path) -> None:
 
 def _run_prelabel_job(job: dict) -> str:
     with tempfile.TemporaryDirectory() as tmp:
-        _modal("kickoff_prelabels", ["--out-dir", tmp])
+        _modal("kickoff_prelabels", ["--out-dir", tmp], job["id"])
         merged = _merge_prelabels(Path(tmp) / "prelabels.json")
     return f"{merged} frames prelabeled"
 
 
+def _recipe_arguments(job: dict) -> list[str]:
+    recipe = {**_settings(), **(job.get("params") or {})}
+    return ["--epochs", str(recipe["epochs"]), "--batch", str(recipe["batch"]),
+            "--freeze", str(recipe["freeze"]),
+            "--augment" if recipe["augment"] else "--no-augment"]
+
+
 def _run_train_job(job: dict) -> str:
     with tempfile.TemporaryDirectory() as tmp:
-        arguments = ["--out-dir", tmp]
+        arguments = ["--out-dir", tmp] + _recipe_arguments(job)
         if DEPLOYED_BUNDLE.is_dir():
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
-        _modal("kickoff", arguments)
+        _modal("kickoff", arguments, job["id"])
         out = Path(tmp)
         merged = _merge_prelabels(out / "prelabels.json")
         summary = json.loads((out / "summary.json").read_text())

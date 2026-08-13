@@ -38,9 +38,9 @@ PIPELINE_ROOT = VOL / "pipeline"
 KEEP_RUNS = 5
 
 # The proven recipe from the sweep: "long" (200 epochs) won on the full
-# dataset with augmentation. Autonomous runs use it as-is; the 10-config
-# sweep stays available manually via train_kitchen_model.py --sweep.
-RECIPE = {"epochs": 200, "batch": 16, "freeze": 10}
+# dataset with augmentation. The training page can override per run; the
+# 10-config sweep stays available manually via train_kitchen_model.py --sweep.
+DEFAULT_RECIPE = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True}
 
 app = modal.App("watchdoggy-pipeline")
 
@@ -117,7 +117,7 @@ def _prune_old_runs(runs_dir: Path) -> None:
 
 @app.function(image=image, gpu=GPU, volumes={str(VOL): volume},
               timeout=120 * MINUTES)
-def run_pipeline(run_name: str) -> tuple[dict, bytes | None]:
+def run_pipeline(run_name: str, recipe: dict) -> tuple[dict, bytes | None]:
     """The whole training day in one container. Returns (results, bundle_tar)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
@@ -128,13 +128,16 @@ def run_pipeline(run_name: str) -> tuple[dict, bytes | None]:
     from kitchen_training.report import report
     from kitchen_training.training import train
 
+    recipe = {**DEFAULT_RECIPE, **recipe}
+    print(f"[pipeline] recipe: {recipe}", flush=True)
     cache_before = set(json.loads(PRELABEL_CACHE.read_text())
                        if PRELABEL_CACHE.is_file() else {})
     run_dir = RUNS / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_stats = build(run_dir, augment=True)
-    best = train(run_dir, "local", **RECIPE)
+    dataset_stats = build(run_dir, augment=recipe["augment"])
+    best = train(run_dir, "local", epochs=recipe["epochs"],
+                 batch=recipe["batch"], freeze=recipe["freeze"])
     weights_by_name = {"fine-tune": best, "baseline": BASE_MODEL}
     metrics = evaluate(run_dir, weights_by_name)
     bundle = export(run_dir, best)
@@ -208,14 +211,17 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
 
 @app.local_entrypoint()
 def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
-            seed_models: str = "") -> None:
+            seed_models: str = "", epochs: int = 200, batch: int = 16,
+            freeze: int = 10, augment: bool = True) -> None:
     """Full pipeline run. --seed-models <dir> uploads yolo26n/x.pt first
     (one-time, from a machine that has them)."""
     run_name = _upload(Path(dataset_dir),
                        Path(deployed_dir) if deployed_dir else None,
                        Path(seed_models) if seed_models else None)
+    recipe = {"epochs": epochs, "batch": batch, "freeze": freeze,
+              "augment": augment}
     print("[pipeline] running the full pipeline in the cloud ...")
-    results, bundle_tar = run_pipeline.remote(run_name)
+    results, bundle_tar = run_pipeline.remote(run_name, recipe)
     _write_results(Path(out_dir), results, bundle_tar)
 
 

@@ -294,6 +294,11 @@
   @media(prefers-reduced-motion:reduce){
     *,*::before,*::after{animation:none!important;transition:none!important}
   }
+  .menu{display:flex;gap:1.1rem;font-family:var(--mono);font-size:.66rem;
+       text-transform:uppercase;letter-spacing:.18em;align-self:center}
+  .menu a{color:var(--stone);text-decoration:none;padding-bottom:.15rem}
+  .menu a.on{color:var(--lamp);border-bottom:1.5px solid var(--lamp)}
+  .menu a:hover{color:var(--linen)}
 </style>
 </head>
 <body>
@@ -303,6 +308,8 @@
       <span class="mark">watchdoggy</span>
       <span class="brand-sub">Kitchen counter watch</span>
     </div>
+    <nav class="menu"><a href="/" class="on">Dashboard</a><a href="/label">Label</a>
+      <a href="/training">Training</a></nav>
     <div class="pill" id="statepill"><span class="dot"></span><span id="statetext">–</span></div>
   </header>
 

@@ -20,6 +20,10 @@ set -euo pipefail
 
 echo "==> trainer user"
 id trainer >/dev/null 2>&1 || sudo useradd -m -s /bin/bash trainer
+# Group membership + group-traverse on doggy's home: the trainer reads the
+# dataset and scripts but never gains write on the detector's files.
+sudo usermod -aG doggy trainer
+sudo chmod 750 /home/doggy
 sudo install -o trainer -g trainer -m 600 /tmp/modal.toml /home/trainer/.modal.toml
 rm -f /tmp/modal.toml
 

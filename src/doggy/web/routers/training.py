@@ -9,14 +9,23 @@ from fastapi.responses import PlainTextResponse
 
 from doggy.core.config import Settings
 
-# Job kinds the review page can request. "train" = full cloud pipeline run
+# Job kinds the training page can request. "train" = full cloud pipeline run
 # (prelabel + build + fine-tune + eval + gated deploy); "prelabel" = fresh
-# big-model boxes only, so the review page is stocked before a labeling
+# big-model boxes only, so the label page is stocked before a labeling
 # session. The trainer daemon -- a separate user with the one firewall
 # exception -- consumes these files and writes its results back into them.
 _KINDS = {"train", "prelabel"}
 _HISTORY_SHOWN = 10
-AUTO_TRAIN_INTERVAL_SECONDS = 48 * 3600.0
+
+# Trainer settings: recipe knobs for cloud runs + the auto-schedule. The web
+# writes trainer-settings.json; the daemon reads it each pass. Bounds keep a
+# fat-fingered form from queueing a 10-hour GPU burn.
+SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
+                     "train_interval_hours": 48, "min_new_labels": 5,
+                     "nightly_prelabel_hour": 2}
+_INT_BOUNDS = {"epochs": (10, 500), "batch": (4, 64), "freeze": (0, 23),
+               "train_interval_hours": (6, 336), "min_new_labels": (1, 100),
+               "nightly_prelabel_hour": (0, 23)}
 
 
 def build_router(settings: Settings) -> APIRouter:
@@ -63,6 +72,34 @@ def build_router(settings: Settings) -> APIRouter:
                 missing_prelabels += 1
         return unlabeled, missing_prelabels
 
+    def _settings_path() -> Path:
+        return Path(settings.jobs_dir) / "trainer-settings.json"
+
+    def _trainer_settings() -> dict:
+        merged = dict(SETTINGS_DEFAULTS)
+        if _settings_path().is_file():
+            try:
+                merged.update(json.loads(_settings_path().read_text()))
+            except (OSError, ValueError):
+                pass
+        return merged
+
+    def _validated(body: dict) -> dict:
+        clean = {}
+        for key, (low, high) in _INT_BOUNDS.items():
+            if key not in body:
+                continue
+            value = body[key]
+            if not isinstance(value, int) or not low <= value <= high:
+                raise HTTPException(status_code=422,
+                                    detail=f"{key} must be {low}..{high}")
+            clean[key] = value
+        if "augment" in body:
+            if not isinstance(body["augment"], bool):
+                raise HTTPException(status_code=422, detail="augment must be bool")
+            clean["augment"] = body["augment"]
+        return clean
+
     @router.get("/api/training/status")
     def api_status() -> dict:
         jobs = _jobs()
@@ -70,14 +107,28 @@ def build_router(settings: Settings) -> APIRouter:
         last_train = next((j for j in jobs
                            if j.get("kind") == "train"
                            and j.get("status") == "done"), None)
+        trainer = _trainer_settings()
         next_auto = None
         if last_train:
-            next_auto = last_train.get("updated_at", 0) + AUTO_TRAIN_INTERVAL_SECONDS
+            next_auto = (last_train.get("updated_at", 0)
+                         + trainer["train_interval_hours"] * 3600.0)
         return {"unlabeled": unlabeled,
                 "missing_prelabels": missing_prelabels,
                 "jobs": jobs[:_HISTORY_SHOWN],
                 "last_train": last_train,
-                "next_auto_train": next_auto}
+                "next_auto_train": next_auto,
+                "settings": trainer}
+
+    @router.get("/api/training/settings")
+    def api_get_settings() -> dict:
+        return _trainer_settings()
+
+    @router.post("/api/training/settings")
+    def api_save_settings(body: dict) -> dict:
+        merged = {**_trainer_settings(), **_validated(body)}
+        Path(settings.jobs_dir).mkdir(parents=True, exist_ok=True)
+        _settings_path().write_text(json.dumps(merged))
+        return {"ok": True, "settings": merged}
 
     @router.post("/api/training/request")
     def api_request(body: dict) -> dict:
@@ -85,6 +136,7 @@ def build_router(settings: Settings) -> APIRouter:
         if kind not in _KINDS:
             raise HTTPException(status_code=422,
                                 detail="kind must be train or prelabel")
+        params = _validated(body.get("params") or {})
         pending = [j for j in _jobs()
                    if j.get("kind") == kind
                    and j.get("status") in ("queued", "running")]
@@ -94,9 +146,20 @@ def build_router(settings: Settings) -> APIRouter:
         jobs_dir.mkdir(parents=True, exist_ok=True)
         job = {"id": f"job_{int(time.time() * 1000)}", "kind": kind,
                "status": "queued", "requested_at": time.time(),
-               "updated_at": time.time(), "detail": "", "auto": False}
+               "updated_at": time.time(), "detail": "", "auto": False,
+               "params": params}
         (jobs_dir / f"{job['id']}.json").write_text(json.dumps(job))
         return {"ok": True, "job": job, "already_pending": False}
+
+    @router.get("/api/training/log/{job_id}", response_class=PlainTextResponse)
+    def api_log(job_id: str) -> str:
+        """Tail of a job's cloud-run log (written live by the daemon)."""
+        safe = Path(job_id).name  # traversal guard
+        path = Path(settings.jobs_dir) / f"{safe}.log"
+        if not safe.startswith("job_") or not path.is_file():
+            raise HTTPException(status_code=404, detail="not found")
+        lines = path.read_text(errors="replace").splitlines()
+        return "\n".join(lines[-200:])
 
     @router.get("/api/training/report/{job_id}", response_class=PlainTextResponse)
     def api_report(job_id: str) -> str:
