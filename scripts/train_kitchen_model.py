@@ -190,7 +190,19 @@ def _iou(a, b) -> float:
 
 # -- stage: build -----------------------------------------------------------
 
-def build(run_dir: Path) -> dict:
+def _augment_variants(img):
+    """Photometric variants that keep every box valid: motion blur (a dog
+    trotting through a 2fps exposure), defocus, and a dusk-dark kitchen."""
+    import cv2
+    import numpy as np
+    k = np.zeros((9, 9), np.float32)
+    k[4, :] = 1.0 / 9.0
+    return {"mblur": cv2.filter2D(img, -1, k),
+            "gblur": cv2.GaussianBlur(img, (5, 5), 0),
+            "dark": (img * 0.5).astype(np.uint8)}
+
+
+def build(run_dir: Path, augment: bool = False) -> dict:
     samples = []
     for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
         meta = json.loads(side.read_text())
@@ -208,6 +220,7 @@ def build(run_dir: Path) -> dict:
         (ds / sub).mkdir(parents=True)
 
     stats = {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
+             "augmented": 0,
              "boxes": {"train": {"person": 0, "dog": 0},
                        "val": {"person": 0, "dog": 0}},
              "verdicts": {}}
@@ -258,10 +271,18 @@ def build(run_dir: Path) -> dict:
         # Stable split: the stem's hash decides, forever.
         digest = int(hashlib.sha1(stem.encode()).hexdigest(), 16)
         split = "val" if digest % VAL_FRACTION_MOD == 0 else "train"
+        label_text = "\n".join(lines) + ("\n" if lines else "")
         shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg", ds / f"images/{split}/{stem}.jpg")
-        (ds / f"labels/{split}/{stem}.txt").write_text(
-            "\n".join(lines) + ("\n" if lines else ""))
+        (ds / f"labels/{split}/{stem}.txt").write_text(label_text)
         stats[split] += 1
+        if augment and split == "train":
+            # Train-split only -- the held-out exam stays pristine originals.
+            import cv2
+            img = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
+            for tag, aug in _augment_variants(img).items():
+                cv2.imwrite(str(ds / f"images/train/{stem}_{tag}.jpg"), aug)
+                (ds / f"labels/train/{stem}_{tag}.txt").write_text(label_text)
+                stats["augmented"] += 1
         for ln in lines:
             key = "person" if ln.startswith(f"{CLS['person']} ") else "dog"
             stats["boxes"][split][key] += 1
@@ -269,7 +290,8 @@ def build(run_dir: Path) -> dict:
     (ds / "data.yaml").write_text(
         f"path: {ds.resolve()}\ntrain: images/train\nval: images/val\n"
         "names:\n  0: person\n  1: dog\n")
-    log(f"train {stats['train']} imgs {stats['boxes']['train']} | "
+    log(f"train {stats['train']} imgs (+{stats['augmented']} augmented) "
+        f"{stats['boxes']['train']} | "
         f"val {stats['val']} imgs {stats['boxes']['val']} | "
         f"hand-boxed {stats['hand_boxed']} | dropped {len(stats['dropped'])} | "
         f"nano-fallback {stats['fallback']}")
@@ -417,6 +439,45 @@ def rank_key(m: dict):
             -(m["map50_val"] or 0.0))
 
 
+def ncnn_truth(run_dir: Path, ncnn_dir: Path) -> dict:
+    """Deploy-truth: score the exported NCNN bundle itself. The NCNN export
+    silently swaps YOLO26's end2end head for the classic NMS head, so its
+    confidence distribution differs from the .pt the leaderboard scored --
+    and the Pi runs THIS, not the .pt."""
+    from ultralytics import YOLO
+    log("scoring the NCNN bundle (deploy-truth) ...")
+    model = YOLO(str(ncnn_dir), task="detect")
+    val_stems = {p.stem for p in (run_dir / "dataset/images/val").glob("*.jpg")}
+    rows = []
+    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
+        meta = json.loads(side.read_text())
+        v = meta.get("human_label")
+        jpg = side.with_suffix(".jpg")
+        if v in (None, "skip") or not jpg.is_file():
+            continue
+        res = model.predict(str(jpg), conf=0.25, imgsz=640, device="cpu",
+                            verbose=False)[0]
+        c = max((float(b.conf[0]) for b in res.boxes
+                 if res.names[int(b.cls[0])] == "dog"), default=0.0)
+        rows.append((v in ("dog", "dog_mixed"), side.stem in val_stems, c))
+    out = {}
+    for thr in THRESHOLDS:
+        for scope, rs in (("all", rows), ("heldout", [r for r in rows if r[1]])):
+            s = out.setdefault(f"{thr:.1f}", {})[scope] = {}
+            s["caught"] = sum(1 for t, _, c in rs if t and c >= thr)
+            s["missed"] = sum(1 for t, _, c in rs if t and c < thr)
+            s["false_fires"] = sum(1 for t, _, c in rs if not t and c >= thr)
+            s["quiet"] = sum(1 for t, _, c in rs if not t and c < thr)
+    out["max_nondog_conf"] = round(max((c for t, _, c in rows if not t),
+                                      default=0.0), 3)
+    h = out[f"{FIRE_CONF:.1f}"]["heldout"]
+    log(f"  NCNN held-out @{FIRE_CONF}: catches "
+        f"{h['caught']}/{h['caught'] + h['missed']}, "
+        f"false-fires {h['false_fires']} | max non-dog conf "
+        f"{out['max_nondog_conf']}")
+    return out
+
+
 # -- stage: export ----------------------------------------------------------
 
 def export(run_dir: Path, best: Path) -> Path:
@@ -493,6 +554,20 @@ def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
                    "the history rail, and draw their boxes:"]
         md += [f"- {stem}" for stem, _ in dataset_stats["dropped"]]
 
+    nt = metrics.get("ncnn_truth")
+    if nt:
+        md += ["", f"## Deploy-truth: the NCNN bundle itself ({winner})",
+               "The Pi runs this bundle, whose NMS head scores differently "
+               "than the .pt above.", "",
+               "| threshold | all frames | held-out |", "|---|---|---|"]
+        for thr in (f"{t:.1f}" for t in THRESHOLDS):
+            a, h = nt[thr]["all"], nt[thr]["heldout"]
+            md.append(f"| {thr} | {a['caught']}/{a['caught']+a['missed']} · "
+                      f"{a['false_fires']} FP | {h['caught']}/{h['caught']+h['missed']} · "
+                      f"{h['false_fires']} FP |")
+        md.append(f"\nHighest dog-confidence on any non-dog frame: "
+                  f"{nt['max_nondog_conf']}")
+
     if ncnn:
         md += ["", "## Deploy", "```",
                f"rsync -az {ncnn}/ doggy@doggypi.local:doggy/models/kitchen_ncnn_model/",
@@ -517,6 +592,10 @@ def main() -> None:
                          "parallel and leaderboard them (implies --backend modal)")
     ap.add_argument("--gpu", default="L4",
                     help="Modal GPU type (T4, L4, A10G, A100, H100)")
+    ap.add_argument("--augment", action="store_true",
+                    help="add motion-blur/defocus/dark copies of every TRAIN "
+                         "frame (labels carry over; the held-out exam stays "
+                         "pristine)")
     ap.add_argument("--push-prelabels", action="store_true",
                     help="no training: big-model boxes for every frame, "
                          "pushed into the Pi's sidecars for the review page")
@@ -542,7 +621,7 @@ def main() -> None:
 
     if not args.skip_pull:
         pull(args.host)
-    dataset_stats = build(run_dir)
+    dataset_stats = build(run_dir, augment=args.augment)
     if args.sweep:
         weights_by_name = sweep(run_dir, args.gpu)
     else:
@@ -557,6 +636,7 @@ def main() -> None:
         # A broken exporter must never cost us the training + eval results.
         try:
             ncnn = export(run_dir, weights_by_name[winner])
+            metrics["ncnn_truth"] = ncnn_truth(run_dir, ncnn)
         except Exception as exc:
             log(f"WARNING: NCNN export failed ({exc}); report continues without it")
     report(run_dir, dataset_stats, metrics, winner, ncnn)
