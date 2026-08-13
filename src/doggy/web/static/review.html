@@ -39,6 +39,7 @@
   .btns button:active{transform:scale(.98)}
   .keys{margin-top:.8rem;text-align:center;font-size:.75rem;color:var(--stone)}
   .keys b{font-family:var(--mono);color:var(--lamp-soft);font-style:normal}
+  .hint{margin-top:.6rem;text-align:center;font-size:.75rem;color:var(--stone)}
   #done{display:none;text-align:center;padding:3rem 1rem;font-family:var(--serif);
         font-style:italic;font-size:1.15rem;color:var(--stone)}
   @media(max-width:520px){ .btns{flex-direction:column} .keys{display:none} }
@@ -64,6 +65,7 @@
       <button id="btn_skip" onclick="verdict('skip')">Skip</button>
     </div>
     <div class="keys">Keys: <b>D</b> dog · <b>P</b> person · <b>B</b> nothing · <b>S</b> skip</div>
+    <div class="hint">A dog with a person around still counts as Dog. The question is only whether a real dog is in the frame; people are recorded automatically.</div>
   </div>
 
   <div id="done">All caught up. New frames appear here as the camera collects them.</div>
