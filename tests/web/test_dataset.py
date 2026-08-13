@@ -129,3 +129,16 @@ def test_mark_fp_is_prelabeled_no_dog(tmp_path):
     assert side["human_label"] == "no_dog"
     # And it never shows up in the review queue.
     assert c.get("/api/dataset/next").json()["sample"] is None
+
+
+def test_rich_verdicts_person_and_empty(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    _seed_sample(ddir, "sample_2", ["periodic"], 90)
+    assert c.post("/api/dataset/label",
+                  json={"name": "sample_1", "verdict": "person"}).json() == {"ok": True}
+    assert c.post("/api/dataset/label",
+                  json={"name": "sample_2", "verdict": "empty"}).json() == {"ok": True}
+    assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "person"
+    assert json.loads((ddir / "sample_2.json").read_text())["human_label"] == "empty"
+    assert c.get("/api/dataset/next").json()["sample"] is None

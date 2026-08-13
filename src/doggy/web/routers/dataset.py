@@ -13,9 +13,12 @@ from doggy.core.config import Settings
 from doggy.events.store import EventStore
 from doggy.reaction.dataset import DatasetCapture
 
-# Human verdicts the review page can attach to a sample. "skip" parks a frame
-# (unclear/blurry) without pretending it was judged.
-_VERDICTS = {"dog", "no_dog", "skip"}
+# Human verdicts the review page can attach to a sample. "dog" = a real dog is
+# present (a person may be too); "person" = person but no dog (the false-alarm
+# class); "empty" = nothing of interest (pure background negative); "skip"
+# parks a frame (unclear/blurry) without pretending it was judged. "no_dog" is
+# the legacy coarse verdict from the catch log's one-tap button, kept valid.
+_VERDICTS = {"dog", "person", "empty", "no_dog", "skip"}
 # Review order: highest training signal first, newest first within a class.
 _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
                     "person_activity": 3, "periodic": 4}
@@ -63,7 +66,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
         name = Path(str(body.get("name", ""))).name  # traversal guard
         verdict = body.get("verdict")
         if verdict not in _VERDICTS:
-            raise HTTPException(status_code=422, detail="verdict must be dog, no_dog, or skip")
+            raise HTTPException(status_code=422,
+                                detail="verdict must be dog, person, empty, or skip")
         side = Path(settings.dataset_dir) / f"{name}.json"
         if not name.startswith("sample_") or not side.is_file():
             raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,

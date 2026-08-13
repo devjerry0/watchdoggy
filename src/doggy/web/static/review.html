@@ -34,7 +34,8 @@
        border-radius:10px;border:1px solid var(--seam);background:var(--walnut);
        color:var(--linen);cursor:pointer;touch-action:manipulation}
   #btn_dog{border-color:var(--moss);color:var(--moss)}
-  #btn_nodog{border-color:var(--ember);color:var(--ember)}
+  #btn_person{border-color:var(--ember);color:var(--ember)}
+  #btn_empty{border-color:var(--seam);color:var(--stone)}
   .btns button:active{transform:scale(.98)}
   .keys{margin-top:.8rem;text-align:center;font-size:.75rem;color:var(--stone)}
   .keys b{font-family:var(--mono);color:var(--lamp-soft);font-style:normal}
@@ -58,10 +59,11 @@
     <div id="why"></div>
     <div class="btns">
       <button id="btn_dog" onclick="verdict('dog')">Dog</button>
-      <button id="btn_nodog" onclick="verdict('no_dog')">Not a dog</button>
+      <button id="btn_person" onclick="verdict('person')">Person, no dog</button>
+      <button id="btn_empty" onclick="verdict('empty')">Nothing here</button>
       <button id="btn_skip" onclick="verdict('skip')">Skip</button>
     </div>
-    <div class="keys">Keys: <b>D</b> dog · <b>N</b> not a dog · <b>S</b> skip</div>
+    <div class="keys">Keys: <b>D</b> dog · <b>P</b> person · <b>B</b> nothing · <b>S</b> skip</div>
   </div>
 
   <div id="done">All caught up. New frames appear here as the camera collects them.</div>
@@ -127,7 +129,8 @@ async function verdict(v){
 
 document.addEventListener("keydown", e => {
   if (e.key === "d" || e.key === "D") verdict("dog");
-  else if (e.key === "n" || e.key === "N") verdict("no_dog");
+  else if (e.key === "p" || e.key === "P") verdict("person");
+  else if (e.key === "b" || e.key === "B") verdict("empty");
   else if (e.key === "s" || e.key === "S") verdict("skip");
 });
 window.addEventListener("resize", drawBoxes);
