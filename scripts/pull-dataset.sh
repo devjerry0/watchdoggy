@@ -11,7 +11,7 @@ TARGET="${1:?usage: pull-dataset.sh <user@host> [dest]}"
 DEST="${2:-./dataset-pull}"
 
 mkdir -p "$DEST"
-rsync -az --info=progress2 "$TARGET:doggy/dataset/" "$DEST/"
+rsync -az "$TARGET:doggy/dataset/" "$DEST/"
 COUNT=$(find "$DEST" -name 'sample_*.jpg' | wc -l | tr -d ' ')
 echo "==> $COUNT frames in $DEST"
 echo "    Each sample_*.jpg has a sample_*.json sidecar with what the detector"

@@ -17,6 +17,7 @@ from doggy.vision.analysis import DetectionAnalyzer
 from doggy.vision.detector import build_detector
 from doggy.vision.filters.base import FilterChain
 from doggy.vision.filters.person import PersonSuppressionFilter
+from doggy.vision.filters.size import OversizeFilter
 from doggy.vision.filters.zone import ZoneInclusionFilter
 from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
@@ -47,7 +48,7 @@ def main() -> None:
 
     detector = build_detector(settings, runtime)   # loads model now (fail fast)
     analyzer = DetectionAnalyzer(
-        detector, FilterChain([PersonSuppressionFilter(), ZoneInclusionFilter()]))
+        detector, FilterChain([PersonSuppressionFilter(), OversizeFilter(), ZoneInclusionFilter()]))
     camera = build_camera(settings)
     alerter = build_alerter(settings, runtime)
     clip_service = ClipService(

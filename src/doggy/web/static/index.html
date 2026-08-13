@@ -490,6 +490,14 @@
             <input id="person_memory_seconds" type="range" min="0" max="10" step="0.5" />
           </div>
           <div class="toggle">
+            <div><div class="t-label">Ignore giant dogs</div><div class="t-desc">A dog box too big to be a dog is a bent-over person. No real dog fills a sixth of this camera's view.</div></div>
+            <label class="switch"><input id="oversize_suppression_enabled" type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="field">
+            <div class="row"><label>Biggest believable dog</label><span class="val" id="oversize_area_ceiling_v"></span></div>
+            <input id="oversize_area_ceiling" type="range" min="0.05" max="0.5" step="0.01" />
+          </div>
+          <div class="toggle">
             <div><div class="t-label">Escalate while it stays</div><div class="t-desc">Play again, louder, if the animal doesn't leave after the first sound.</div></div>
             <label class="switch"><input id="escalation_enabled" type="checkbox" /><span class="track"></span></label>
           </div>
@@ -593,14 +601,14 @@
 <script>
 const KNOBS = ["confidence","zone_overlap","confirm_seconds","window_m","window_n","cooldown_min_seconds",
                "cooldown_max_seconds","max_fires_per_hour","detect_interval_seconds",
-               "person_iou_threshold","person_memory_seconds","clip_postroll_seconds","max_volume","soothing_volume","talk_volume"];
+               "person_iou_threshold","person_memory_seconds","oversize_area_ceiling","clip_postroll_seconds","max_volume","soothing_volume","talk_volume"];
 const pct = v => Math.round(v * 100) + "%";
 const secs = v => (Math.round(v * 10) / 10) + "s";
 // Inventory labels with irregular plurals; anything else just takes an "s".
 const PLURALS = {"sandwich":"sandwiches", "wine glass":"wine glasses",
                  "knife":"knives", "broccoli":"broccoli"};
 const plural = label => PLURALS[label] || label + "s";
-const FMT = {confidence:pct, zone_overlap:pct, person_iou_threshold:pct, max_volume:pct, soothing_volume:pct,
+const FMT = {confidence:pct, zone_overlap:pct, person_iou_threshold:pct, oversize_area_ceiling:pct, max_volume:pct, soothing_volume:pct,
              talk_volume:pct,
              confirm_seconds:secs, cooldown_min_seconds:secs, cooldown_max_seconds:secs, detect_interval_seconds:secs,
              person_memory_seconds:secs, clip_postroll_seconds:secs};
@@ -639,6 +647,8 @@ document.getElementById("show_inventory_boxes").addEventListener("change", e =>
   patch({show_inventory_boxes:e.target.checked}));
 document.getElementById("dataset_enabled").addEventListener("change", e =>
   patch({dataset_enabled:e.target.checked}));
+document.getElementById("oversize_suppression_enabled").addEventListener("change", e =>
+  patch({oversize_suppression_enabled:e.target.checked}));
 document.getElementById("selected_sound").addEventListener("change", e => patch({selected_sound:e.target.value}));
 document.getElementById("schedule_enabled").addEventListener("change", e => {
   patch({schedule_enabled:e.target.checked});
@@ -1145,6 +1155,7 @@ async function poll(){
   document.getElementById("clips_enabled").checked = s.settings.clips_enabled;
   document.getElementById("show_inventory_boxes").checked = s.settings.show_inventory_boxes;
   document.getElementById("dataset_enabled").checked = s.settings.dataset_enabled;
+  document.getElementById("oversize_suppression_enabled").checked = s.settings.oversize_suppression_enabled;
   document.getElementById("soothing_enabled").checked = s.settings.soothing_enabled;
   const soothingNow = document.getElementById("soothing_now");
   if (s.settings.soothing_enabled){

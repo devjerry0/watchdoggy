@@ -82,6 +82,11 @@ class TunableSettings(BaseModel):
     # A "dog" whose box overlaps a person's by at least this IoU is treated as a
     # misclassified person and suppressed (not fired on). High by design.
     person_iou_threshold: float = Field(0.85, ge=0.0, le=1.0)
+    # A "dog" box too big to be a dog is a bent-over person the model misread
+    # (no person box emitted, so IoU suppression can't see it). Calibrated from
+    # real triggering frames: true dogs peaked at 11% of the frame.
+    oversize_suppression_enabled: bool = True
+    oversize_area_ceiling: float = Field(0.16, ge=0.0, le=1.0)
     # The model flickers person<->dog on the same body across frames. Remember
     # where people were for this long, so a "dog" landing where a person just
     # was (high IoU) is suppressed even in a frame with no person box.
