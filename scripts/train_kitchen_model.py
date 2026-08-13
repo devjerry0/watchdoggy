@@ -19,6 +19,8 @@ This script IS the future dashboard button's backend: keep it argument-driven
 and side-effect free outside its run directory (and the dataset mirror).
 
 Label fusion rules (the heart of it):
+  hand boxes drawn on /review are the complete truth for a frame and
+             override everything below.
   dog        keep big-model dog+person boxes; if the big model missed the dog,
              fall back to the nano's sidecar box; drop the frame if neither.
   dog_mixed  big-model dog boxes that heavily overlap a person box are the
@@ -171,7 +173,7 @@ def build(run_dir: Path) -> dict:
     for sub in ("images/train", "images/val", "labels/train", "labels/val"):
         (ds / sub).mkdir(parents=True)
 
-    stats = {"train": 0, "val": 0, "dropped": [], "fallback": 0,
+    stats = {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
              "boxes": {"train": {"person": 0, "dog": 0},
                        "val": {"person": 0, "dog": 0}},
              "verdicts": {}}
@@ -188,7 +190,13 @@ def build(run_dir: Path) -> dict:
         stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
 
         lines: list[str] = []
-        if verdict in ("dog", "dog_mixed"):
+        hand = meta.get("human_boxes")
+        if isinstance(hand, list):
+            # Hand-drawn boxes are the complete truth for this frame; no
+            # model, fallback, or overlap heuristic gets a say.
+            lines = [yolo_line(CLS[b["label"]], b["box"], w, h) for b in hand]
+            stats["hand_boxed"] += 1
+        elif verdict in ("dog", "dog_mixed"):
             if verdict == "dog_mixed":
                 # The human says one of the dog boxes is a person in disguise.
                 dogs = [d for d in dogs
@@ -202,7 +210,9 @@ def build(run_dir: Path) -> dict:
                 if dogs:
                     stats["fallback"] += 1
             if not dogs:
-                stats["dropped"].append((stem, "dog verdict but no box found"))
+                stats["dropped"].append(
+                    (stem, "dog verdict but no model drew a box -- "
+                           "draw one by hand on /review"))
                 continue
             lines += [yolo_line(CLS["dog"], b, w, h) for b in dogs]
             lines += [yolo_line(CLS["person"], b, w, h) for b in people]
@@ -227,7 +237,10 @@ def build(run_dir: Path) -> dict:
         "names:\n  0: person\n  1: dog\n")
     log(f"train {stats['train']} imgs {stats['boxes']['train']} | "
         f"val {stats['val']} imgs {stats['boxes']['val']} | "
-        f"dropped {len(stats['dropped'])} | nano-fallback {stats['fallback']}")
+        f"hand-boxed {stats['hand_boxed']} | dropped {len(stats['dropped'])} | "
+        f"nano-fallback {stats['fallback']}")
+    for stem, why in stats["dropped"]:
+        log(f"  NEEDS BOXES: {stem} ({why})")
     return stats
 
 
@@ -440,6 +453,11 @@ def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
                            f"{'fires' if t else 'quiet'} "
                            f"({'improvement' if t == truth else 'REGRESSION'})")
     md += changed or ["- none"]
+
+    if dataset_stats.get("dropped"):
+        md += ["", "Frames excluded from training -- open /review, tap them in "
+                   "the history rail, and draw their boxes:"]
+        md += [f"- {stem}" for stem, _ in dataset_stats["dropped"]]
 
     if ncnn:
         md += ["", "## Deploy", "```",

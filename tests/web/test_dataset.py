@@ -185,3 +185,50 @@ def test_relabel_overwrites(tmp_path):
     c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
     c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "person"})
     assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "person"
+
+
+def test_label_with_hand_boxes_persists_and_lists(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    r = c.post("/api/dataset/label", json={
+        "name": "sample_1", "verdict": "dog",
+        "boxes": [{"label": "dog", "box": [10, 20, 110, 120]},
+                  {"label": "person", "box": [200.4, 5, 260, 400]}]})
+    assert r.json() == {"ok": True}
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert meta["human_label"] == "dog"
+    assert meta["human_boxes"] == [{"label": "dog", "box": [10, 20, 110, 120]},
+                                   {"label": "person", "box": [200.4, 5, 260, 400]}]
+    row = c.get("/api/dataset/labeled").json()["labeled"][0]
+    assert row["human_boxes"][0]["label"] == "dog"
+
+
+def test_label_rejects_malformed_boxes(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    bad = [
+        [{"label": "cat", "box": [0, 0, 5, 5]}],       # unknown class
+        [{"label": "dog", "box": [5, 5, 5, 9]}],       # zero width
+        [{"label": "dog", "box": [0, 0, 5]}],          # wrong arity
+        [{"label": "dog", "box": ["a", 0, 5, 5]}],     # non-numeric
+        "boxes-as-string",                              # not a list
+    ]
+    for boxes in bad:
+        r = c.post("/api/dataset/label",
+                   json={"name": "sample_1", "verdict": "dog", "boxes": boxes})
+        assert r.status_code == 422, boxes
+    assert "human_boxes" not in json.loads((ddir / "sample_1.json").read_text())
+
+
+def test_undo_keeps_hand_boxes(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    c.post("/api/dataset/label", json={
+        "name": "sample_1", "verdict": "dog",
+        "boxes": [{"label": "dog", "box": [1, 2, 3, 4]}]})
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "clear"})
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert "human_label" not in meta          # back in the queue...
+    assert meta["human_boxes"]                # ...but the drawing work survives
+    nxt = c.get("/api/dataset/next").json()["sample"]
+    assert nxt["name"] == "sample_1" and nxt["human_boxes"]

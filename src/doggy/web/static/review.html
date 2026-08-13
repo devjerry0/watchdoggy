@@ -102,6 +102,32 @@
   .cell.v-skip{opacity:.55}
   .cell.active{border-color:var(--linen)}
 
+  /* Box editor */
+  #stage.boxmode{cursor:crosshair;touch-action:none}
+  #boxbar{display:none}
+  #task.boxmode .btns, #task.boxmode .underrow{display:none}
+  #task.boxmode #boxbar{display:block}
+  #boxbar .row1{display:flex;gap:.6rem}
+  #boxbar .row1 button{flex:1;font:inherit;font-weight:650;font-size:.95rem;
+       padding:.75rem .4rem;border-radius:10px;border:1.5px solid var(--seam);
+       background:var(--walnut);color:var(--linen);cursor:pointer;touch-action:manipulation}
+  #cls_dog.on{border-color:var(--moss);color:var(--moss);
+       box-shadow:0 0 0 1px var(--moss)}
+  #cls_person.on{border-color:var(--sky);color:var(--sky);
+       box-shadow:0 0 0 1px var(--sky)}
+  #bx_save{border-color:var(--lamp);color:var(--lamp)}
+  #boxbar .row2{display:flex;gap:.6rem;margin-top:.55rem;flex-wrap:wrap}
+  #boxbar .row2 button{font:inherit;font-size:.78rem;padding:.4rem .75rem;
+       border-radius:8px;border:1px solid var(--seam);background:transparent;
+       color:var(--stone);cursor:pointer}
+  #boxbar .row2 button:hover{color:var(--lamp);border-color:var(--lamp)}
+  #boxbar .row2 button:disabled{opacity:.35;cursor:default}
+  #boxhint{font-family:var(--mono);font-size:.6rem;letter-spacing:.11em;
+       color:var(--stone);margin-top:.55rem;text-transform:uppercase}
+
+  .cell .hb{position:absolute;top:.28rem;right:.28rem;width:.55rem;height:.55rem;
+       border:1.5px solid var(--lamp);border-radius:2px;background:rgba(23,19,16,.65)}
+
   @media(max-width:560px){
     .btns{grid-template-columns:1fr 1fr}
     .btns button .k{display:none}
@@ -144,8 +170,24 @@
     </div>
     <div class="underrow">
       <button onclick="verdict('skip')">Skip (S)</button>
+      <button onclick="enterBoxMode()">Fix boxes (F)</button>
       <span id="tally"></span>
       <button id="undo_btn" onclick="undo()" disabled>Undo (U)</button>
+    </div>
+    <div id="boxbar">
+      <div class="row1">
+        <button id="cls_dog" class="on" onclick="setCls('dog')">Dog box (1)</button>
+        <button id="cls_person" onclick="setCls('person')">Person box (2)</button>
+        <button id="bx_save" onclick="saveBoxes()">Save boxes (Enter)</button>
+      </div>
+      <div class="row2">
+        <button onclick="seedMachine()">Copy machine boxes</button>
+        <button id="bx_del" onclick="deleteSel()" disabled>Delete selected (&#9003;)</button>
+        <button onclick="clearAllBoxes()">Clear all</button>
+        <button onclick="exitBoxMode()">Cancel (Esc)</button>
+      </div>
+      <div id="boxhint">drag on empty space to draw · tap a box to select ·
+        drag it to move · corners resize · box every dog and person</div>
     </div>
   </div>
 
@@ -200,11 +242,13 @@ async function loadNext(){
 }
 
 function showSample(sample){
+  if (boxMode) exitBoxMode();
   current = sample;
   const img = document.getElementById("frame");
   img.onload = drawBoxes;
   img.src = sample.image;
-  const why = (sample.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
+  let why = (sample.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
+  if (Array.isArray(sample.human_boxes)) why += " · hand boxes saved";
   document.getElementById("why_text").textContent = "Saved because: " + (why || "unknown");
   const sugKey = sample.suggested === "no_dog" ? "person" : sample.suggested;
   const sug = sugKey && VERDICT_WORDS[sugKey];
@@ -224,22 +268,218 @@ function drawBoxes(){
   canvas.width = img.clientWidth; canvas.height = img.clientHeight;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!current || !current.detections) return;
+  if (!current) return;
   const sx = img.clientWidth / img.naturalWidth, sy = img.clientHeight / img.naturalHeight;
-  const draw = (dets, color) => (dets || []).forEach(d => {
+  const det = current.detections || {};
+
+  const machine = (dets, color, faint) => (dets || []).forEach(d => {
     const [x1, y1, x2, y2] = d.box;
+    ctx.save();
+    if (faint){ ctx.globalAlpha = 0.45; ctx.setLineDash([5, 4]); }
     ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.strokeRect(x1*sx, y1*sy, (x2-x1)*sx, (y2-y1)*sy);
-    ctx.fillStyle = color; ctx.font = "12px ui-monospace,monospace";
-    ctx.fillText(d.label + " " + Math.round(d.confidence*100) + "%", x1*sx + 3, y1*sy + 13);
+    if (!faint){
+      ctx.fillStyle = color; ctx.font = "12px ui-monospace,monospace";
+      ctx.fillText(d.label + " " + Math.round(d.confidence*100) + "%", x1*sx + 3, y1*sy + 13);
+    }
+    ctx.restore();
   });
-  draw(current.detections.targets, "#e4572e");
-  draw(current.detections.suppressed, "#9e9179");
-  draw(current.detections.people, "#5a8bd6");
+  const hand = (boxes, showHandles) => (boxes || []).forEach((b, i) => {
+    const [x1, y1, x2, y2] = b.box;
+    const color = CLS_COLOR[b.label] || "#efe7d8";
+    const sel = showHandles && i === selBox;
+    ctx.strokeStyle = color; ctx.lineWidth = sel ? 3 : 2.5;
+    ctx.strokeRect(x1*sx, y1*sy, (x2-x1)*sx, (y2-y1)*sy);
+    ctx.fillStyle = color; ctx.font = "600 12px ui-monospace,monospace";
+    ctx.fillText(b.label, x1*sx + 3, y1*sy + 13);
+    if (sel){
+      for (const [cx, cy] of [[x1,y1],[x2,y1],[x1,y2],[x2,y2]])
+        ctx.fillRect(cx*sx - 5, cy*sy - 5, 10, 10);
+    }
+  });
+
+  const humanSaved = Array.isArray(current.human_boxes) && current.human_boxes.length;
+  if (boxMode){
+    // Machine boxes fade to dashed references; the human's boxes are the work.
+    machine(det.targets, "#e4572e", true);
+    machine(det.suppressed, "#9e9179", true);
+    machine(det.people, "#5a8bd6", true);
+    hand(editBoxes, true);
+    if (drag && drag.kind === "draw" && drag.cur){
+      const r = normRect(drag.anchor, drag.cur);
+      ctx.save();
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = CLS_COLOR[activeCls]; ctx.lineWidth = 2;
+      ctx.strokeRect(r[0]*sx, r[1]*sy, (r[2]-r[0])*sx, (r[3]-r[1])*sy);
+      ctx.restore();
+    }
+  } else if (humanSaved){
+    machine(det.targets, "#e4572e", true);
+    machine(det.people, "#5a8bd6", true);
+    hand(current.human_boxes, false);
+  } else {
+    machine(det.targets, "#e4572e", false);
+    machine(det.suppressed, "#9e9179", false);
+    machine(det.people, "#5a8bd6", false);
+  }
+}
+
+// -- box editor -------------------------------------------------------------
+// Hand-drawn boxes become the frame's COMPLETE ground truth at training time,
+// overriding every model. Coordinates live in natural image pixels.
+let boxMode = false, editBoxes = [], selBox = -1, activeCls = "dog", drag = null;
+const CLS_COLOR = {dog:"#8ea56a", person:"#5a8bd6"};
+const stageEl = document.getElementById("stage");
+
+function natCoords(e){
+  const img = document.getElementById("frame");
+  const r = img.getBoundingClientRect();
+  return [Math.max(0, Math.min(img.naturalWidth,
+            (e.clientX - r.left) / r.width * img.naturalWidth)),
+          Math.max(0, Math.min(img.naturalHeight,
+            (e.clientY - r.top) / r.height * img.naturalHeight))];
+}
+function natPerPx(){  // natural pixels per screen pixel, for hit thresholds
+  const img = document.getElementById("frame");
+  return img.naturalWidth / img.getBoundingClientRect().width;
+}
+function normRect(a, b){
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]),
+          Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+}
+function machineSeed(){
+  const det = (current && current.detections) || {};
+  return [...(det.targets || []).map(d => ({label: "dog", box: [...d.box]})),
+          ...(det.people || []).map(d => ({label: "person", box: [...d.box]}))];
+}
+
+function enterBoxMode(){
+  if (!current || boxMode) return;
+  exitZoom();
+  boxMode = true; selBox = -1; drag = null;
+  // Saved hand boxes win; otherwise seed from the machine so there is
+  // something to grab and fix instead of a blank slate.
+  editBoxes = (Array.isArray(current.human_boxes) ? current.human_boxes
+               : machineSeed()).map(b => ({label: b.label, box: [...b.box]}));
+  document.getElementById("task").classList.add("boxmode");
+  stageEl.classList.add("boxmode");
+  updateBoxbar(); drawBoxes();
+}
+function exitBoxMode(){
+  boxMode = false; drag = null; selBox = -1;
+  document.getElementById("task").classList.remove("boxmode");
+  stageEl.classList.remove("boxmode");
+  drawBoxes();
+}
+function setCls(c){
+  activeCls = c;
+  if (selBox >= 0){ editBoxes[selBox].label = c; }
+  updateBoxbar(); drawBoxes();
+}
+function seedMachine(){
+  editBoxes = machineSeed().map(b => ({label: b.label, box: [...b.box]}));
+  selBox = -1; updateBoxbar(); drawBoxes();
+}
+function deleteSel(){
+  if (selBox < 0) return;
+  editBoxes.splice(selBox, 1); selBox = -1;
+  updateBoxbar(); drawBoxes();
+}
+function clearAllBoxes(){ editBoxes = []; selBox = -1; updateBoxbar(); drawBoxes(); }
+function updateBoxbar(){
+  document.getElementById("cls_dog").classList.toggle("on", activeCls === "dog");
+  document.getElementById("cls_person").classList.toggle("on", activeCls === "person");
+  document.getElementById("bx_del").disabled = selBox < 0;
+}
+
+function hitBox(p){
+  // Smallest box containing p wins, so nested boxes stay selectable.
+  let best = -1, bestArea = Infinity;
+  const pad = 4 * natPerPx();
+  editBoxes.forEach((b, i) => {
+    const [x1, y1, x2, y2] = b.box;
+    if (p[0] >= x1 - pad && p[0] <= x2 + pad && p[1] >= y1 - pad && p[1] <= y2 + pad){
+      const area = (x2 - x1) * (y2 - y1);
+      if (area < bestArea){ bestArea = area; best = i; }
+    }
+  });
+  return best;
+}
+function hitHandle(p){
+  if (selBox < 0) return null;
+  const [x1, y1, x2, y2] = editBoxes[selBox].box;
+  const t = 14 * natPerPx();
+  for (const [cx, cy, fixed] of [[x1,y1,[x2,y2]], [x2,y1,[x1,y2]],
+                                 [x1,y2,[x2,y1]], [x2,y2,[x1,y1]]])
+    if (Math.abs(p[0] - cx) < t && Math.abs(p[1] - cy) < t) return fixed;
+  return null;
+}
+
+stageEl.addEventListener("pointerdown", e => {
+  if (!boxMode || !current) return;
+  e.preventDefault();
+  stageEl.setPointerCapture(e.pointerId);
+  const p = natCoords(e);
+  const fixed = hitHandle(p);
+  if (fixed){ drag = {kind: "resize", fixed}; return; }
+  const i = hitBox(p);
+  if (i >= 0){
+    selBox = i;
+    drag = {kind: "maybemove", anchor: p, orig: [...editBoxes[i].box]};
+  } else {
+    selBox = -1;
+    drag = {kind: "draw", anchor: p, cur: null};
+  }
+  updateBoxbar(); drawBoxes();
+});
+stageEl.addEventListener("pointermove", e => {
+  if (!boxMode || !drag) return;
+  e.preventDefault();
+  const p = natCoords(e);
+  if (drag.kind === "draw"){ drag.cur = p; }
+  else if (drag.kind === "maybemove" || drag.kind === "move"){
+    const dx = p[0] - drag.anchor[0], dy = p[1] - drag.anchor[1];
+    if (drag.kind === "maybemove" && Math.hypot(dx, dy) < 4 * natPerPx()) return;
+    drag.kind = "move";
+    const img = document.getElementById("frame");
+    const [x1, y1, x2, y2] = drag.orig;
+    const w = x2 - x1, h = y2 - y1;
+    const nx = Math.max(0, Math.min(img.naturalWidth - w, x1 + dx));
+    const ny = Math.max(0, Math.min(img.naturalHeight - h, y1 + dy));
+    editBoxes[selBox].box = [nx, ny, nx + w, ny + h];
+  }
+  else if (drag.kind === "resize"){
+    editBoxes[selBox].box = normRect(drag.fixed, p);
+  }
+  drawBoxes();
+});
+stageEl.addEventListener("pointerup", e => {
+  if (!boxMode || !drag) return;
+  if (drag.kind === "draw" && drag.cur){
+    const r = normRect(drag.anchor, drag.cur);
+    if (r[2] - r[0] > 8 && r[3] - r[1] > 8){
+      editBoxes.push({label: activeCls, box: r});
+      selBox = editBoxes.length - 1;
+    }
+  }
+  drag = null;
+  updateBoxbar(); drawBoxes();
+});
+
+async function saveBoxes(){
+  if (!current || busy) return;
+  const boxes = editBoxes.map(b => ({label: b.label,
+                                     box: b.box.map(v => Math.round(v * 10) / 10)}));
+  // The boxes ARE the verdict: any dog box makes it a dog frame.
+  const v = boxes.some(b => b.label === "dog") ? "dog"
+          : boxes.some(b => b.label === "person") ? "person" : "empty";
+  exitBoxMode();
+  await submitLabel({name: current.name, verdict: v, boxes},
+                    "Boxes saved · " + VERDICT_WORDS[v]);
 }
 
 // -- zoom (head-blobs are small; tap to look closer, tap again to reset) ----
 function toggleZoom(e){
+  if (boxMode) return;
   const stage = document.getElementById("stage");
   const img = document.getElementById("frame");
   const boxes = document.getElementById("boxes");
@@ -261,23 +501,26 @@ function exitZoom(){
 
 // -- verdicts ---------------------------------------------------------------
 let busy = false;
-async function verdict(v){
-  if (!current || busy) return;
+async function submitLabel(body, word){
+  if (busy) return;
   busy = true;
-  const name = current.name;
   try {
     await fetch("/api/dataset/label", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({name, verdict: v})});
+      body: JSON.stringify(body)});
   } finally { busy = false; }
   session++;
-  undoStack.push({name});
+  undoStack.push({name: body.name});
   document.getElementById("undo_btn").disabled = false;
   document.getElementById("tally").textContent = session + " this session";
-  flash(VERDICT_WORDS[v] || v);
+  flash(word);
   refreshHistory();
   if (mode === "edit") exitEdit(false);
   loadNext();
+}
+function verdict(v){
+  if (!current) return;
+  submitLabel({name: current.name, verdict: v}, VERDICT_WORDS[v] || v);
 }
 
 async function undo(){
@@ -313,6 +556,7 @@ async function refreshHistory(){
   document.getElementById("rail").innerHTML = d.labeled.map(r =>
     '<div class="cell v-' + esc(r.verdict) + '" data-name="' + esc(r.name) + '">'
     + '<img loading="lazy" src="' + esc(r.image) + '" alt="">'
+    + (Array.isArray(r.human_boxes) ? '<div class="hb" title="hand boxes"></div>' : '')
     + '<div class="v">' + esc(VERDICT_WORDS[r.verdict] || r.verdict) + '</div></div>'
   ).join("");
   window._labeledByName = Object.fromEntries(d.labeled.map(r => [r.name, r]));
@@ -344,6 +588,16 @@ function exitEdit(reload = true){
 }
 
 document.addEventListener("keydown", e => {
+  if (boxMode){
+    if (e.key === "Escape") exitBoxMode();
+    else if (e.key === "Enter") saveBoxes();
+    else if (e.key === "1") setCls("dog");
+    else if (e.key === "2") setCls("person");
+    else if (e.key === "Backspace" || e.key === "Delete"){
+      e.preventDefault(); deleteSel();
+    }
+    return;  // verdict keys must never fire mid-annotation
+  }
   if (e.key === "Escape" && mode === "edit") { exitEdit(); return; }
   const k = e.key.toLowerCase();
   if (k === "d") verdict("dog");
@@ -352,6 +606,7 @@ document.addEventListener("keydown", e => {
   else if (k === "b") verdict("empty");
   else if (k === "s") verdict("skip");
   else if (k === "u") undo();
+  else if (k === "f") enterBoxMode();
 });
 window.addEventListener("resize", drawBoxes);
 loadNext(); refreshHistory();

@@ -63,7 +63,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
                 "sample": {"name": stem, "image": f"/dataset/{stem}.jpg",
                            "reasons": meta.get("reasons", []),
                            "suggested": meta.get("suggested_label"),
-                           "detections": meta.get("detections", {})}}
+                           "detections": meta.get("detections", {}),
+                           "human_boxes": meta.get("human_boxes")}}
 
     @router.get("/api/dataset/labeled")
     def api_labeled() -> dict:
@@ -81,7 +82,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
                          "verdict": meta["human_label"],
                          "labeled_at": meta.get("labeled_at", 0),
                          "reasons": meta.get("reasons", []),
-                         "detections": meta.get("detections", {})})
+                         "detections": meta.get("detections", {}),
+                         "human_boxes": meta.get("human_boxes")})
         rows.sort(key=lambda r: -r["labeled_at"])
         return {"labeled": rows[:200]}
 
@@ -100,11 +102,31 @@ def build_router(settings: Settings, capture: DatasetCapture,
         meta = json.loads(side.read_text())
         if verdict == "clear":
             # Undo: the frame returns to the review queue as if never judged.
+            # Hand-drawn boxes survive an undo -- that work stays done.
             meta.pop("human_label", None)
             meta.pop("labeled_at", None)
         else:
             meta["human_label"] = verdict
             meta["labeled_at"] = time.time()
+            if "boxes" in body:
+                # Hand-drawn boxes: the COMPLETE annotation for this frame
+                # (every dog and person). Training trusts them over any model.
+                boxes = body["boxes"]
+                if not isinstance(boxes, list):
+                    raise HTTPException(status_code=422, detail="boxes must be a list")
+                clean = []
+                for b in boxes:
+                    label, box = b.get("label"), b.get("box")
+                    if (label not in ("dog", "person") or not isinstance(box, list)
+                            or len(box) != 4
+                            or not all(isinstance(v, (int, float)) for v in box)
+                            or box[2] <= box[0] or box[3] <= box[1]):
+                        raise HTTPException(status_code=422,
+                                            detail="each box needs label dog|person "
+                                                   "and box [x1,y1,x2,y2]")
+                    clean.append({"label": label,
+                                  "box": [round(float(v), 1) for v in box]})
+                meta["human_boxes"] = clean
         side.write_text(json.dumps(meta))
         return {"ok": True}
 
