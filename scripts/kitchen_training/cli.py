@@ -10,7 +10,8 @@ import kitchen_training
 from kitchen_training.build import build
 from kitchen_training.config import BASE_MODEL, RUNS, log
 from kitchen_training.dataset import prelabel_push, pull
-from kitchen_training.evaluation import evaluate, ncnn_truth, pick_winner
+from kitchen_training.evaluation import (evaluate, ncnn_truth, pick_winner,
+                                         robustness)
 from kitchen_training.export import export
 from kitchen_training.report import report
 from kitchen_training.training import sweep, train
@@ -60,6 +61,7 @@ def _export_winner(run_dir: Path, best: Path, metrics: dict) -> Path | None:
     try:
         ncnn_bundle = export(run_dir, best)
         metrics["ncnn_truth"] = ncnn_truth(run_dir, ncnn_bundle)
+        metrics["robustness"] = robustness(run_dir, ncnn_bundle)
         return ncnn_bundle
     except Exception as exc:
         log(f"WARNING: NCNN export failed ({exc}); report continues without it")

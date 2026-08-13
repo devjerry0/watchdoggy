@@ -35,10 +35,11 @@ the dataset never moves old frames across the split (no quiet contamination).
 """
 from kitchen_training.build import build
 from kitchen_training.cli import main
-from kitchen_training.evaluation import evaluate, ncnn_truth, pick_winner, rank_key
+from kitchen_training.evaluation import (evaluate, ncnn_truth, pick_winner,
+                                         rank_key, robustness)
 from kitchen_training.export import export
 from kitchen_training.report import report
 from kitchen_training.training import sweep, train
 
 __all__ = ["build", "evaluate", "export", "main", "ncnn_truth", "pick_winner",
-           "rank_key", "report", "sweep", "train"]
+           "rank_key", "report", "robustness", "sweep", "train"]

@@ -28,19 +28,21 @@ def eval_frames(run_dir: Path) -> list[Frame]:
     return frames
 
 
+def _max_dog_conf(model, source, run_device: str) -> float:
+    """Max dog confidence in one image (a path or a decoded array)."""
+    prediction = model.predict(source, conf=EVAL_CONF_FLOOR, imgsz=IMAGE_SIZE,
+                               device=run_device, verbose=False)[0]
+    return round(max(
+        (float(box.conf[0]) for box in prediction.boxes
+         if prediction.names[int(box.cls[0])] == "dog"), default=0.0),
+        CONF_DECIMALS)
+
+
 def dog_confs(model, frames: list[Frame], run_device: str) -> dict[str, float]:
     """Max dog confidence per frame: ONE prediction pass yields the whole
     threshold curve."""
-    confs = {}
-    for frame in frames:
-        prediction = model.predict(str(frame.jpg), conf=EVAL_CONF_FLOOR,
-                                   imgsz=IMAGE_SIZE, device=run_device,
-                                   verbose=False)[0]
-        confs[frame.stem] = round(max(
-            (float(box.conf[0]) for box in prediction.boxes
-             if prediction.names[int(box.cls[0])] == "dog"), default=0.0),
-            CONF_DECIMALS)
-    return confs
+    return {frame.stem: _max_dog_conf(model, str(frame.jpg), run_device)
+            for frame in frames}
 
 
 def score(frames: list[Frame], confs: dict, threshold: float,
@@ -112,6 +114,34 @@ def pick_winner(metrics: dict) -> str:
     candidates = {name: m for name, m in metrics["models"].items()
                   if name != "baseline"}
     return min(candidates, key=lambda name: rank_key(candidates[name]))
+
+
+def robustness(run_dir: Path, ncnn_dir: Path) -> dict:
+    """Stress the deployable bundle on held-out frames: reliability is what
+    survives blur, bad light, compression, and a bumped camera mount."""
+    import cv2
+    from ultralytics import YOLO
+    from kitchen_training.perturb import stress_variants
+    log("stress-testing the NCNN bundle on held-out frames ...")
+    model = YOLO(str(ncnn_dir), task="detect")
+    heldout = [f for f in eval_frames(run_dir) if f.heldout]
+    scores: dict[str, dict] = {}
+    for frame in heldout:
+        image = cv2.imread(str(frame.jpg))
+        for name, variant in {"original": image, **stress_variants(image)}.items():
+            fired = _max_dog_conf(model, variant, "cpu") >= FIRE_CONF
+            tally = scores.setdefault(name, {"caught": 0, "dogs": 0,
+                                             "false_fires": 0, "nondogs": 0})
+            if frame.is_dog:
+                tally["dogs"] += 1
+                tally["caught"] += fired
+                continue
+            tally["nondogs"] += 1
+            tally["false_fires"] += fired
+    for name, tally in scores.items():
+        log(f"  {name:>8}: catches {tally['caught']}/{tally['dogs']}, "
+            f"false fires {tally['false_fires']}/{tally['nondogs']}")
+    return scores
 
 
 def ncnn_truth(run_dir: Path, ncnn_dir: Path) -> dict:

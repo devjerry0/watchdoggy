@@ -9,10 +9,7 @@ from kitchen_training.config import (CLASS_IDS, DATASET_MIRROR,
                                      VAL_FRACTION_MOD, log)
 from kitchen_training.dataset import labeled_sidecars, prelabel
 from kitchen_training.fusion import fuse
-
-MOTION_BLUR_KERNEL = 9   # horizontal streak: a trotting dog at 2fps exposure
-DEFOCUS_KERNEL = 5
-DARKEN_FACTOR = 0.5      # dusk-dark kitchen
+from kitchen_training.perturb import train_variants
 
 
 def split_for(stem: str) -> str:
@@ -23,24 +20,12 @@ def split_for(stem: str) -> str:
     return "train"
 
 
-def _augment_variants(image):
-    """Photometric variants that keep every box valid: motion blur (a dog
-    trotting through a 2fps exposure), defocus, and a dusk-dark kitchen."""
-    import cv2
-    import numpy as np
-    streak = np.zeros((MOTION_BLUR_KERNEL, MOTION_BLUR_KERNEL), np.float32)
-    streak[MOTION_BLUR_KERNEL // 2, :] = 1.0 / MOTION_BLUR_KERNEL
-    return {"mblur": cv2.filter2D(image, -1, streak),
-            "gblur": cv2.GaussianBlur(image, (DEFOCUS_KERNEL, DEFOCUS_KERNEL), 0),
-            "dark": (image * DARKEN_FACTOR).astype(np.uint8)}
-
-
 def _write_augmented(dataset_dir: Path, stem: str, label_text: str,
                      stats: dict) -> None:
     """Train-split only -- the held-out exam stays pristine originals."""
     import cv2
     image = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
-    for tag, variant in _augment_variants(image).items():
+    for tag, variant in train_variants(image).items():
         cv2.imwrite(str(dataset_dir / f"images/train/{stem}_{tag}.jpg"), variant)
         (dataset_dir / f"labels/train/{stem}_{tag}.txt").write_text(label_text)
         stats["augmented"] += 1

@@ -90,6 +90,18 @@ def _ncnn_md(metrics: dict, winner: str) -> list[str]:
     return lines
 
 
+def _robustness_md(metrics: dict) -> list[str]:
+    scores = metrics.get("robustness")
+    if not scores:
+        return []
+    lines = ["", "## Robustness: held-out frames under stress (NCNN bundle)",
+             "", "| variant | catches | false fires |", "|---|---|---|"]
+    for name, tally in scores.items():
+        lines.append(f"| {name} | {tally['caught']}/{tally['dogs']} | "
+                     f"{tally['false_fires']}/{tally['nondogs']} |")
+    return lines
+
+
 def _deploy_md(ncnn_bundle: Path | None) -> list[str]:
     if not ncnn_bundle:
         return []
@@ -119,6 +131,7 @@ def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
     lines += _changed_md(metrics, winner)
     lines += _dropped_md(dataset_stats)
     lines += _ncnn_md(metrics, winner)
+    lines += _robustness_md(metrics)
     lines += _deploy_md(ncnn_bundle)
     (run_dir / "report.md").write_text("\n".join(lines) + "\n")
     log(f"report: {run_dir / 'report.md'}")
