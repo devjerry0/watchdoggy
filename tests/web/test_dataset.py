@@ -150,3 +150,35 @@ def test_dog_mixed_verdict_flags_frame_for_box_surgery(tmp_path):
     assert c.post("/api/dataset/label",
                   json={"name": "sample_1", "verdict": "dog_mixed"}).json() == {"ok": True}
     assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "dog_mixed"
+
+
+def test_labeled_listing_newest_first_with_verdicts(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    _seed_sample(ddir, "sample_2", ["fire"], 90)
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
+    c.post("/api/dataset/label", json={"name": "sample_2", "verdict": "person"})
+    d = c.get("/api/dataset/labeled").json()["labeled"]
+    assert [r["name"] for r in d] == ["sample_2", "sample_1"]  # newest labeled first
+    assert d[0]["verdict"] == "person" and d[1]["verdict"] == "dog"
+    assert d[0]["image"] == "/dataset/sample_2.jpg"
+
+
+def test_clear_verdict_returns_frame_to_queue(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
+    assert c.get("/api/dataset/next").json()["sample"] is None
+    assert c.post("/api/dataset/label",
+                  json={"name": "sample_1", "verdict": "clear"}).json() == {"ok": True}
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert "human_label" not in meta and "labeled_at" not in meta
+    assert c.get("/api/dataset/next").json()["sample"]["name"] == "sample_1"
+
+
+def test_relabel_overwrites(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_sample(ddir, "sample_1", ["fire"], 100)
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "person"})
+    assert json.loads((ddir / "sample_1.json").read_text())["human_label"] == "person"

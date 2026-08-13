@@ -8,3 +8,11 @@ __pycache__/
 *.mp4
 .pytest_cache/
 /dataset/
+# analysis scratch (contact sheets, cross-check outputs, pulled data)
+/contact_sheet*.png
+/disagree*.png
+/frame_geometry.json
+/xlarge_verdicts.json
+/events-pull/
+/dataset-pull/
+/dataset-import/

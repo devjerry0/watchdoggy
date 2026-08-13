@@ -62,22 +62,49 @@ def build_router(settings: Settings, capture: DatasetCapture,
         return {"remaining": len(pending), "labeled": labeled,
                 "sample": {"name": stem, "image": f"/dataset/{stem}.jpg",
                            "reasons": meta.get("reasons", []),
+                           "suggested": meta.get("suggested_label"),
                            "detections": meta.get("detections", {})}}
+
+    @router.get("/api/dataset/labeled")
+    def api_labeled() -> dict:
+        """Already-judged frames, most recently labeled first, so verdicts can
+        be reviewed and corrected (mislabels happen -- ours included)."""
+        rows = []
+        for side in _sidecars():
+            try:
+                meta = json.loads(side.read_text())
+            except (OSError, ValueError):
+                continue
+            if not meta.get("human_label"):
+                continue
+            rows.append({"name": side.stem, "image": f"/dataset/{side.stem}.jpg",
+                         "verdict": meta["human_label"],
+                         "labeled_at": meta.get("labeled_at", 0),
+                         "reasons": meta.get("reasons", []),
+                         "detections": meta.get("detections", {})})
+        rows.sort(key=lambda r: -r["labeled_at"])
+        return {"labeled": rows[:200]}
 
     @router.post("/api/dataset/label")
     def api_label(body: dict) -> dict:
         name = Path(str(body.get("name", ""))).name  # traversal guard
         verdict = body.get("verdict")
-        if verdict not in _VERDICTS:
+        if verdict != "clear" and verdict not in _VERDICTS:
             raise HTTPException(status_code=422,
-                                detail="verdict must be dog, dog_mixed, person, empty, or skip")
+                                detail="verdict must be dog, dog_mixed, person, empty, "
+                                       "skip, or clear")
         side = Path(settings.dataset_dir) / f"{name}.json"
         if not name.startswith("sample_") or not side.is_file():
             raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
                                 detail="not found")
         meta = json.loads(side.read_text())
-        meta["human_label"] = verdict
-        meta["labeled_at"] = time.time()
+        if verdict == "clear":
+            # Undo: the frame returns to the review queue as if never judged.
+            meta.pop("human_label", None)
+            meta.pop("labeled_at", None)
+        else:
+            meta["human_label"] = verdict
+            meta["labeled_at"] = time.time()
         side.write_text(json.dumps(meta))
         return {"ok": True}
 
