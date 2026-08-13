@@ -117,7 +117,7 @@ def test_dataset_image_served_and_guarded(tmp_path):
 def test_review_page_served(tmp_path):
     c, _, _ = _client(tmp_path)
     html = c.get("/review").text
-    assert "Not a dog" in html and "Skip" in html
+    assert "Person, no dog" in html and "Nothing here" in html and "Skip" in html
 
 
 def test_mark_fp_is_prelabeled_no_dog(tmp_path):
