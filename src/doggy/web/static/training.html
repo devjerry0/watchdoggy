@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#171310" />
-<title>watchdoggy · review</title>
+<title>watchdoggy · training</title>
 <style>
   :root{
     --night:#171310; --walnut:#211b15; --panel2:#2a2219; --seam:#372e23;
@@ -128,6 +128,32 @@
   .cell .hb{position:absolute;top:.28rem;right:.28rem;width:.55rem;height:.55rem;
        border:1.5px solid var(--lamp);border-radius:2px;background:rgba(23,19,16,.65)}
 
+  /* Trainer panel */
+  #trainer{margin-top:1.6rem}
+  #trainer h2{font-family:var(--mono);font-size:.66rem;font-weight:600;
+       text-transform:uppercase;letter-spacing:.24em;color:var(--stone);
+       margin:0 0 .7rem;padding-bottom:.5rem;border-bottom:1px solid var(--seam)}
+  #trainer_counts,#trainer_last{font-family:var(--mono);font-size:.7rem;
+       letter-spacing:.08em;color:var(--stone);margin-bottom:.45rem}
+  #trainer_last b{color:var(--lamp);font-weight:600}
+  .trainer-row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+  .trainer-row button{font:inherit;font-size:.8rem;padding:.45rem .85rem;
+       border-radius:8px;border:1px solid var(--seam);background:transparent;
+       color:var(--stone);cursor:pointer}
+  .trainer-row button:hover{color:var(--lamp);border-color:var(--lamp)}
+  #trainer_msg{font-family:var(--mono);font-size:.66rem;color:var(--moss)}
+  #trainer_jobs{margin-top:.8rem}
+  .jobrow{display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap;
+       font-family:var(--mono);font-size:.68rem;letter-spacing:.05em;
+       color:var(--stone);padding:.3rem 0;border-top:1px dashed var(--seam)}
+  .jobrow .k-train{color:var(--lamp)} .jobrow .k-prelabel{color:var(--sky)}
+  .jobrow .s-done{color:var(--moss)} .jobrow .s-failed{color:var(--ember)}
+  .jobrow .s-running{color:var(--lamp-soft)}
+  .jobrow a{color:var(--lamp);cursor:pointer;text-decoration:underline}
+  #report_pre{font-family:var(--mono);font-size:.68rem;line-height:1.5;
+       color:var(--linen);background:var(--walnut);border:1px solid var(--seam);
+       border-radius:8px;padding:.9rem;overflow-x:auto;white-space:pre-wrap}
+
   @media(max-width:560px){
     .btns{grid-template-columns:1fr 1fr}
     .btns button .k{display:none}
@@ -140,7 +166,7 @@
 <div class="wrap">
   <header>
     <div class="head-row">
-      <span class="mark"><a href="/">watchdoggy</a> · review</span>
+      <span class="mark"><a href="/">watchdoggy</a> · training</span>
       <span id="progress">–</span>
     </div>
     <div id="bar"><div></div></div>
@@ -199,6 +225,25 @@
   <div id="history">
     <h2>Labeled so far — tap any to change</h2>
     <div id="rail"></div>
+  </div>
+
+  <div id="trainer">
+    <h2>Training runs</h2>
+    <div id="trainer_counts">–</div>
+    <div id="trainer_last">–</div>
+    <div class="trainer-row">
+      <button onclick="requestJob('prelabel')">Fetch ·x boxes now</button>
+      <button onclick="requestJob('train')">Run training now</button>
+      <span id="trainer_msg"></span>
+    </div>
+    <div id="trainer_jobs"></div>
+    <div id="report_view" hidden>
+      <div class="trainer-row" style="margin:.6rem 0 .4rem">
+        <button onclick="document.getElementById('report_view').hidden=true">
+          Close report</button>
+      </div>
+      <pre id="report_pre"></pre>
+    </div>
   </div>
 </div>
 
@@ -628,8 +673,62 @@ document.addEventListener("keydown", e => {
   else if (k === "u") undo();
   else if (k === "f") enterBoxMode();
 });
+// -- trainer panel ----------------------------------------------------------
+// The Pi trains itself: a trainer daemon sends cloud jobs on its own schedule.
+// This panel shows the state and lets a human jump the queue.
+function _ago(ts){
+  const mins = Math.round((Date.now()/1000 - ts) / 60);
+  if (mins < 60) return mins + "m ago";
+  if (mins < 2880) return Math.round(mins/60) + "h ago";
+  return Math.round(mins/1440) + "d ago";
+}
+async function loadTraining(){
+  let d;
+  try { d = await (await fetch("/api/training/status")).json(); } catch(e){ return; }
+  document.getElementById("trainer_counts").textContent =
+    d.unlabeled + " unlabeled · " + d.missing_prelabels + " frames lack ·x boxes";
+  const active = (d.jobs || []).find(j => j.status === "queued" || j.status === "running");
+  const parts = [];
+  if (active) parts.push("<b>" + esc(active.kind) + " " + esc(active.status) + "</b>");
+  if (d.last_train) parts.push("last training " + _ago(d.last_train.updated_at)
+    + (d.last_train.detail ? " — " + esc(d.last_train.detail) : ""));
+  if (!active && d.next_auto_train) parts.push("next auto run "
+    + (d.next_auto_train < Date.now()/1000 ? "when the trainer wakes"
+       : "in " + Math.max(1, Math.round((d.next_auto_train - Date.now()/1000)/3600)) + "h"));
+  document.getElementById("trainer_last").innerHTML = parts.join(" · ") || "no runs yet";
+  document.getElementById("trainer_jobs").innerHTML = (d.jobs || []).map(j =>
+    '<div class="jobrow"><span>' + _ago(j.updated_at) + '</span>'
+    + '<span class="k-' + esc(j.kind) + '">' + esc(j.kind) + '</span>'
+    + '<span class="s-' + esc(j.status) + '">' + esc(j.status) + '</span>'
+    + (j.detail ? '<span>' + esc(j.detail) + '</span>' : '')
+    + (j.kind === "train" && j.status === "done"
+       ? '<a onclick="showReport(\'' + esc(j.id) + '\')">report</a>' : '')
+    + '</div>').join("");
+}
+async function showReport(jobId){
+  let text;
+  try { text = await (await fetch("/api/training/report/" + jobId)).text(); }
+  catch(e){ return; }
+  document.getElementById("report_pre").textContent = text;
+  document.getElementById("report_view").hidden = false;
+  document.getElementById("report_view").scrollIntoView({behavior: "smooth"});
+}
+async function requestJob(kind){
+  let d;
+  try {
+    d = await (await fetch("/api/training/request", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({kind})})).json();
+  } catch(e){ return; }
+  document.getElementById("trainer_msg").textContent =
+    d.already_pending ? "already queued — the trainer picks it up on its next pass"
+                      : "queued — the trainer picks it up on its next pass";
+  loadTraining();
+}
+setInterval(loadTraining, 30000);
+
 window.addEventListener("resize", drawBoxes);
-loadNext(); refreshHistory();
+loadNext(); refreshHistory(); loadTraining();
 </script>
 </body>
 </html>

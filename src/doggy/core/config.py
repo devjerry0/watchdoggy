@@ -210,6 +210,9 @@ class Settings(TunableSettings, BaseSettings):
     # past the cap (2 GiB).
     dataset_dir: Path = Path("dataset")
     dataset_cap_bytes: int = 2_147_483_648
+    # Training job queue: the web UI writes job requests here; the trainer
+    # daemon (separate user, the one with cloud egress) consumes them.
+    jobs_dir: Path = Path("jobs")
     web_enabled: bool = True
     web_host: str = "127.0.0.1"
     web_port: int = 8000

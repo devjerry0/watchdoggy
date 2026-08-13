@@ -19,6 +19,7 @@ from doggy.web.routers import dataset as dataset_router
 from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk
 from doggy.web.routers import settings as settings_router
 from doggy.web.routers import status as status_router
+from doggy.web.routers import training as training_router
 
 
 def create_app(settings: Settings, runtime: RuntimeSettings,
@@ -37,11 +38,12 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     def index() -> FileResponse:
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
-    @app.get("/review")
-    def review() -> FileResponse:
-        # The labeling page: classify captured frames (dog / not a dog) so the
-        # fine-tune learns from human verdicts, not just model guesses.
-        return FileResponse(Path(__file__).parent / "static" / "review.html")
+    @app.get("/training")
+    @app.get("/review")  # legacy alias: old bookmarks keep working
+    def training_page() -> FileResponse:
+        # Labeling + training in one place: classify captured frames, draw
+        # boxes, watch the trainer's cloud runs, read their reports.
+        return FileResponse(Path(__file__).parent / "static" / "training.html")
 
     @app.get("/ca.pem")
     def ca_cert() -> FileResponse:
@@ -69,6 +71,7 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     app.include_router(talk.build_router(runtime))
     app.include_router(speaker.build_router())
     app.include_router(dataset_router.build_router(settings, dataset, event_store))
+    app.include_router(training_router.build_router(settings))
 
     return app
 

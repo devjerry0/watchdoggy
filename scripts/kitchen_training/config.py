@@ -1,17 +1,27 @@
-"""Every path, threshold, and tunable of the training pipeline, in one place."""
+"""Every path, threshold, and tunable of the training pipeline, in one place.
+
+Paths honor KT_* environment overrides so the same package runs on the Mac
+(defaults) and inside a Modal container (paths pointed at the Volume).
+"""
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+
+def _path_from_env(name: str, default: Path) -> Path:
+    return Path(os.environ.get(name, default))
+
+
 REPO = Path(__file__).resolve().parents[2]
-DATASET_MIRROR = REPO / "dataset-pull"
-RUNS = REPO / "training-runs"
+DATASET_MIRROR = _path_from_env("KT_DATASET_DIR", REPO / "dataset-pull")
+RUNS = _path_from_env("KT_RUNS_DIR", REPO / "training-runs")
 PRELABEL_CACHE = RUNS / "prelabel-cache.json"
 
-BASE_MODEL = REPO / "models/yolo26n.pt"
-PRELABEL_MODEL = REPO / "models/yolo26x.pt"
+BASE_MODEL = _path_from_env("KT_BASE_MODEL", REPO / "models/yolo26n.pt")
+PRELABEL_MODEL = _path_from_env("KT_PRELABEL_MODEL", REPO / "models/yolo26x.pt")
 
 PRELABEL_CONF = 0.45      # big-model boxes below this aren't trusted as labels
 FIRE_CONF = 0.7           # the appliance's default alarm threshold
@@ -65,6 +75,8 @@ def sh(command: list[str], env: dict | None = None) -> None:
 def device() -> str:
     try:
         import torch
+        if torch.cuda.is_available():
+            return "0"
         if torch.backends.mps.is_available():
             return "mps"
     except Exception:
