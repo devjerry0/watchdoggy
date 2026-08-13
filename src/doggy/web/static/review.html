@@ -63,6 +63,8 @@
   .btns button:active{transform:scale(.97)}
   .btns button .k{display:block;font-family:var(--mono);font-weight:500;font-size:.62rem;
        letter-spacing:.12em;color:var(--stone);margin-top:.25rem}
+  .btns button .sub{display:block;font-weight:400;font-size:.68rem;
+       color:var(--stone);margin-top:.3rem;line-height:1.3}
   #btn_dog{border-color:var(--moss);color:var(--moss)}
   #btn_mixed{border-color:var(--lamp);color:var(--lamp)}
   #btn_person{border-color:var(--ember);color:var(--ember)}
@@ -131,10 +133,14 @@
     </div>
     <div id="why"><span id="why_text"></span><span id="hint_sug"></span></div>
     <div class="btns">
-      <button id="btn_dog" onclick="verdict('dog')">Dog<span class="k">D</span></button>
-      <button id="btn_mixed" onclick="verdict('dog_mixed')">Dog + wrong box<span class="k">M</span></button>
-      <button id="btn_person" onclick="verdict('person')">Person, no dog<span class="k">P</span></button>
-      <button id="btn_empty" onclick="verdict('empty')">Nothing here<span class="k">B</span></button>
+      <button id="btn_dog" onclick="verdict('dog')">Dog in frame
+        <span class="sub">person there too? still this one</span><span class="k">D</span></button>
+      <button id="btn_mixed" onclick="verdict('dog_mixed')">Dog + bad box
+        <span class="sub">real dog, but a “dog” box sits on a person</span><span class="k">M</span></button>
+      <button id="btn_person" onclick="verdict('person')">Person only
+        <span class="sub">no dog anywhere in frame</span><span class="k">P</span></button>
+      <button id="btn_empty" onclick="verdict('empty')">Nothing
+        <span class="sub">no dog, no person</span><span class="k">B</span></button>
     </div>
     <div class="underrow">
       <button onclick="verdict('skip')">Skip (S)</button>
@@ -161,8 +167,8 @@ let undoStack = [];       // [{name}] most recent verdicts this session
 let session = 0;          // verdicts this session
 let zoomed = false;
 
-const VERDICT_WORDS = {dog:"Dog", dog_mixed:"Dog + wrong box", person:"Person, no dog",
-                       empty:"Nothing here", no_dog:"Not a dog", skip:"Skipped"};
+const VERDICT_WORDS = {dog:"Dog", dog_mixed:"Dog + bad box", person:"Person only",
+                       empty:"Nothing", no_dog:"Not a dog", skip:"Skipped"};
 const REASON_WORDS = {fire:"fired the alarm", suppressed:"a dog box was suppressed",
   borderline:"the model was unsure", person_activity:"someone was in the kitchen",
   periodic:"background frame", user_marked_fp:"marked from the catch log"};
