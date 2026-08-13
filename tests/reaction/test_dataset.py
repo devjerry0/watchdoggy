@@ -127,6 +127,33 @@ def test_prune_deletes_oldest_past_cap(tmp_path):
         assert s.with_suffix(".jpg").is_file() or not jpgs
 
 
+def test_person_activity_sampling_during_and_after_person(tmp_path):
+    # A cooking session: person visible, then bent out of sight (no boxes).
+    # Samples flow every PERSON_ACTIVITY_SECONDS while a person is in frame or
+    # was seen within the last minute -- including the head-only frames where
+    # the model sees nothing at all (prime hard negatives).
+    c = _capture(tmp_path)
+    person = Detection("person", 0.9, (0, 0, 4, 6))
+    c.on_frame(_img(), _analysis(people=[person]), 100.0, _cfg())    # session start
+    sides = _samples(tmp_path)
+    assert any("person_activity" in json.loads(x.read_text())["reasons"] for x in sides)
+    n0 = len(sides)
+    c.on_frame(_img(), _analysis(people=[person]), 110.0, _cfg())    # cooldown holds
+    assert len(_samples(tmp_path)) == n0
+    c.on_frame(_img(), _analysis(people=[person]), 180.0, _cfg())    # still cooking
+    # Person bends out of sight; 45s after last sighting (still "recent") and
+    # past the 120s cooldown -> the head-only-phase sample is due.
+    c.on_frame(_img(), _analysis(), 225.0, _cfg())
+    tail = [x for x in _samples(tmp_path)
+            if "person_activity" in json.loads(x.read_text())["reasons"]]
+    assert len(tail) == 2
+    # Long after the person left (>60s since last sighting): no more sampling.
+    c.on_frame(_img(), _analysis(), 500.0, _cfg())
+    tail = [x for x in _samples(tmp_path)
+            if "person_activity" in json.loads(x.read_text())["reasons"]]
+    assert len(tail) == 2
+
+
 def test_stats_counts_and_reasons(tmp_path):
     c = _capture(tmp_path)
     c.on_frame(_img(), _analysis(suppressed=[Detection("dog", 0.9, (0, 0, 4, 4))]),

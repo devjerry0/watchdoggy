@@ -26,6 +26,11 @@ BORDERLINE_HIGH = 0.75
 SAMPLE_COOLDOWN_SECONDS = 10.0
 # Background negatives (empty counter, cooking, lighting changes) once an hour.
 PERIODIC_SECONDS = 3600.0
+# While a person is (or was recently) in frame, sample every couple of minutes:
+# cooking / dishwasher sessions are where the head-only misclassifications live,
+# including the frames where the model sees nothing (prime hard negatives).
+PERSON_ACTIVITY_SECONDS = 120.0
+PERSON_RECENT_SECONDS = 60.0
 
 
 def _det(d: Detection) -> dict:
@@ -59,6 +64,7 @@ class DatasetCapture:
         self._clock = clock
         self._wall = wall_clock
         self._last_by_reason: dict[str, float] = {}
+        self._last_person_seen: float | None = None
 
     # -- per-frame stage ----------------------------------------------------
 
@@ -67,6 +73,8 @@ class DatasetCapture:
         if not cfg.dataset_enabled:
             return
         reasons = []
+        if analysis.people:
+            self._last_person_seen = now
         if analysis.suppressed and self._due("suppressed", now):
             reasons.append("suppressed")
         if self._due("borderline", now) and any(
@@ -76,6 +84,12 @@ class DatasetCapture:
             reasons.append("borderline")
         if self._due("periodic", now, PERIODIC_SECONDS):
             reasons.append("periodic")
+        if (self._last_person_seen is not None
+                and now - self._last_person_seen <= PERSON_RECENT_SECONDS
+                and self._due("person_activity", now, PERSON_ACTIVITY_SECONDS)):
+            # The person may be bent out of the model's sight right now (the
+            # head-only phase) -- that is exactly the frame we want.
+            reasons.append("person_activity")
         if reasons:
             for r in reasons:
                 self._last_by_reason[r] = now
