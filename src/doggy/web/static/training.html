@@ -150,6 +150,13 @@
       <div class="fine" id="ds_fine"></div>
     </div>
 
+    <div class="card wide">
+      <h2>Cloud budget</h2>
+      <div class="hero" id="cost_hero">–</div>
+      <div class="bar" id="cost_bar"></div>
+      <div class="fine" id="cost_fine">the trainer refreshes this on every pass</div>
+    </div>
+
     <div class="card wide" id="active_card" style="display:none">
       <h2>Run in progress</h2>
       <div class="stages" id="stages"></div>
@@ -182,6 +189,8 @@
           <input id="f_minlabels" type="number" min="1" max="100"></div>
         <div class="field"><label for="f_nightly">nightly ·x at (h)</label>
           <input id="f_nightly" type="number" min="0" max="23"></div>
+        <div class="field"><label for="f_credits">monthly credits ($)</label>
+          <input id="f_credits" type="number" min="0" max="100000"></div>
       </div>
       <div class="row">
         <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
@@ -386,7 +395,8 @@ function renderRuns(){
       if (s.robustness) rows.push(["stress", Object.entries(s.robustness).map(
         ([n, v]) => n + " " + v.caught + "/" + v.dogs
         + (v.false_fires ? "(" + v.false_fires + "FP)" : "")).join("  ")]);
-      if (s.duration_s) rows.push(["duration", _dur(s.duration_s)]);
+      if (s.duration_s) rows.push(["duration", _dur(s.duration_s)
+        + (s.cost_usd != null ? " · $" + s.cost_usd.toFixed(2) : "")]);
       detail = '<table class="mini">' + rows.map(r =>
         "<tr><th>" + r[0] + "</th><td>" + r[1] + "</td></tr>").join("") + "</table>";
     }
@@ -421,7 +431,7 @@ async function showReport(jobId){
 // -- settings + actions -----------------------------------------------------
 const FIELDS = {epochs:"f_epochs", batch:"f_batch", freeze:"f_freeze",
                 train_interval_hours:"f_interval", min_new_labels:"f_minlabels",
-                nightly_prelabel_hour:"f_nightly"};
+                nightly_prelabel_hour:"f_nightly", monthly_credits:"f_credits"};
 function fillSettings(s){
   for (const [key, id] of Object.entries(FIELDS))
     document.getElementById(id).value = s[key];
@@ -457,11 +467,43 @@ async function runJob(kind){
   refresh();
 }
 
+function renderBudget(d){
+  const b = d.billing;
+  const hero = document.getElementById("cost_hero");
+  const fine = document.getElementById("cost_fine");
+  const bar = document.getElementById("cost_bar");
+  if (!b){
+    hero.textContent = "–";
+    fine.textContent = "spend appears after the trainer's next pass";
+    return;
+  }
+  const allowance = (d.settings && d.settings.monthly_credits) || 0;
+  const used = b.metered_cost;
+  hero.innerHTML = "$" + used.toFixed(2)
+    + ' <span style="font-size:1rem;color:var(--stone)">this month</span>';
+  const frac = allowance ? Math.min(1, used / allowance) : 0;
+  bar.innerHTML = '<div style="background:'
+    + (frac > 0.85 ? "var(--ember)" : "var(--lamp)") + ';width:'
+    + (100 * frac) + '%"></div>'
+    + '<div style="background:var(--seam);width:' + (100 - 100 * frac) + '%"></div>';
+  const bits = [];
+  if (allowance) bits.push("$" + Math.max(0, allowance - used).toFixed(2)
+    + " of $" + allowance + " credits left");
+  bits.push(b.billed_cost > 0
+    ? '<span class="bad">$' + b.billed_cost.toFixed(2) + " billed beyond credits</span>"
+    : '<span class="good">$0.00 billed — fully covered by credits</span>');
+  const costed = lastJobs.filter(j => j.summary && j.summary.cost_usd != null);
+  if (costed.length) bits.push("last run $" + costed[0].summary.cost_usd.toFixed(2));
+  bits.push("as of " + _ago(b.fetched_at));
+  fine.innerHTML = bits.join(" · ");
+}
+
 async function refresh(){
   let d;
   try { d = await (await fetch("/api/training/status")).json(); } catch(e){ return; }
   if (!settingsLoaded && d.settings) fillSettings(d.settings);
   lastJobs = d.jobs || [];
+  renderBudget(d);
   renderModel(d);
   renderChart();
   renderRuns();

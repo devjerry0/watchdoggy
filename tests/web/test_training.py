@@ -164,3 +164,17 @@ def test_log_endpoint_tails_and_guards(tmp_path):
     assert "line299" in r.text and "line50" not in r.text  # last 200 only
     assert c.get("/api/training/log/job_none").status_code == 404
     assert c.get("/api/training/log/..%2F.env").status_code == 404
+
+
+def test_status_includes_billing_when_daemon_wrote_it(tmp_path):
+    c, root = _client(tmp_path)
+    jobs = root / "jobs"
+    jobs.mkdir()
+    (jobs / "billing.json").write_text(json.dumps(
+        {"metered_cost": 2.72, "billed_cost": 0.0, "credits_used": 2.72,
+         "fetched_at": 1000.0}))
+    d = c.get("/api/training/status").json()
+    assert d["billing"]["metered_cost"] == 2.72
+    assert d["settings"]["monthly_credits"] == 30
+    assert c.post("/api/training/settings",
+                  json={"monthly_credits": 100}).json()["settings"]["monthly_credits"] == 100

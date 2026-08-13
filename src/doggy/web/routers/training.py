@@ -22,10 +22,11 @@ _HISTORY_SHOWN = 10
 # fat-fingered form from queueing a 10-hour GPU burn.
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
                      "train_interval_hours": 48, "min_new_labels": 5,
-                     "nightly_prelabel_hour": 2}
+                     "nightly_prelabel_hour": 2,
+                     "monthly_credits": 30}  # Modal starter free tier
 _INT_BOUNDS = {"epochs": (10, 500), "batch": (4, 64), "freeze": (0, 23),
                "train_interval_hours": (6, 336), "min_new_labels": (1, 100),
-               "nightly_prelabel_hour": (0, 23)}
+               "nightly_prelabel_hour": (0, 23), "monthly_credits": (0, 100000)}
 
 
 def build_router(settings: Settings) -> APIRouter:
@@ -114,12 +115,20 @@ def build_router(settings: Settings) -> APIRouter:
                          + trainer["train_interval_hours"] * 3600.0)
         model_path = Path(settings.model_path)
         deployed_at = (model_path.stat().st_mtime if model_path.exists() else None)
+        billing = None
+        billing_path = Path(settings.jobs_dir) / "billing.json"
+        if billing_path.is_file():
+            try:
+                billing = json.loads(billing_path.read_text())
+            except (OSError, ValueError):
+                pass
         return {"unlabeled": unlabeled,
                 "missing_prelabels": missing_prelabels,
                 "jobs": jobs[:_HISTORY_SHOWN],
                 "last_train": last_train,
                 "next_auto_train": next_auto,
                 "settings": trainer,
+                "billing": billing,
                 "model": {"path": str(settings.model_path),
                           "deployed_at": deployed_at,
                           "rollback_available":

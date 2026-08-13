@@ -186,6 +186,30 @@ def _merge_prelabels(prelabels_file: Path) -> int:
     return merged
 
 
+def _billing_summary() -> dict | None:
+    """Workspace spend this month, straight from Modal. The workspace runs
+    only this appliance, so before/after deltas attribute cost per run."""
+    try:
+        proc = subprocess.run([str(MODAL), "billing", "summary", "--json"],
+                              capture_output=True, timeout=60, check=True)
+        summary = json.loads(proc.stdout)
+        return {"metered_cost": float(summary.get("metered_cost", 0)),
+                "billed_cost": float(summary.get("billed_cost", 0)),
+                "credits_used": -float(summary.get("adjustments", {})
+                                       .get("credits", 0)),
+                "fetched_at": time.time()}
+    except Exception as exc:
+        log(f"WARNING: billing summary unavailable: {exc}")
+        return None
+
+
+def _write_billing() -> dict | None:
+    summary = _billing_summary()
+    if summary:
+        (JOBS_DIR / "billing.json").write_text(json.dumps(summary))
+    return summary
+
+
 def _modal(entrypoint: str, arguments: list[str], job_id: str) -> None:
     # The full cloud-run output streams into the job's log file, which the
     # training page tails live via /api/training/log/{job_id}.
@@ -204,11 +228,21 @@ def _install_bundle(bundle_dir: Path) -> None:
     subprocess.run(["sudo", "/usr/bin/systemctl", "restart", "doggy"], check=True)
 
 
+def _run_cost(before: dict | None) -> float | None:
+    after = _write_billing()
+    if not (before and after):
+        return None
+    return round(max(0.0, after["metered_cost"] - before["metered_cost"]), 2)
+
+
 def _run_prelabel_job(job: dict) -> str:
+    before = _billing_summary()
     with tempfile.TemporaryDirectory() as tmp:
         _modal("kickoff_prelabels", ["--out-dir", tmp], job["id"])
         merged = _merge_prelabels(Path(tmp) / "prelabels.json")
-    return f"{merged} frames prelabeled"
+    cost = _run_cost(before)
+    return (f"{merged} frames prelabeled"
+            + (f" (${cost:.2f})" if cost is not None else ""))
 
 
 def _recipe_arguments(job: dict) -> list[str]:
@@ -220,6 +254,7 @@ def _recipe_arguments(job: dict) -> list[str]:
 
 def _run_train_job(job: dict) -> str:
     started = time.time()
+    before = _billing_summary()
     with tempfile.TemporaryDirectory() as tmp:
         arguments = ["--out-dir", tmp] + _recipe_arguments(job)
         if DEPLOYED_BUNDLE.is_dir():
@@ -236,6 +271,7 @@ def _run_train_job(job: dict) -> str:
                            ("gate", "dataset", "recipe", "ncnn_truth",
                             "robustness")}
         job["_summary"]["duration_s"] = round(time.time() - started)
+        job["_summary"]["cost_usd"] = _run_cost(before)
         gate = summary["gate"]
         heldout = summary["ncnn_heldout"]
         verdict = (f"held-out {heldout['caught']}/"
@@ -254,6 +290,7 @@ _RUNNERS = {"prelabel": _run_prelabel_job, "train": _run_train_job}
 
 def main() -> int:
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    _write_billing()  # keep the training page's budget card fresh
     jobs = _jobs()
     for job in jobs:
         if job.get("status") != "running":
