@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -59,15 +60,6 @@ VAL_FRACTION_MOD = 4     # stem-hash % 4 == 0 -> val (~25%)
 MIXED_IOU_DROP = 0.6     # dog box overlapping a person this much is the person
 
 CLS = {"person": 0, "dog": 1}
-
-
-def log(msg: str) -> None:
-    print(f"[train] {msg}", flush=True)
-
-
-def sh(cmd: list[str], env: dict | None = None) -> None:
-    subprocess.run(cmd, check=True, env=env)
-
 
 # Hyperparameter sweep, dispatched to Modal in parallel (<=10 concurrent).
 # Base recipe (the proven anchor): epochs 80, patience 20, imgsz 640,
@@ -88,6 +80,62 @@ SWEEP_CONFIGS = {
 }
 
 
+@dataclass(frozen=True)
+class Frame:
+    """One labeled frame as the eval sees it."""
+    stem: str
+    is_dog: bool      # human verdict says a real dog is present
+    heldout: bool     # in the val split: never trained on
+    jpg: Path
+
+
+def log(msg: str) -> None:
+    print(f"[train] {msg}", flush=True)
+
+
+def sh(cmd: list[str], env: dict | None = None) -> None:
+    subprocess.run(cmd, check=True, env=env)
+
+
+def _device() -> str:
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _iou(a, b) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter == 0:
+        return 0.0
+    area = lambda r: max(0.0, r[2] - r[0]) * max(0.0, r[3] - r[1])  # noqa: E731
+    union = area(a) + area(b) - inter
+    if not union:
+        return 0.0
+    return inter / union
+
+
+def labeled_sidecars() -> list[tuple[str, str, dict]]:
+    """(stem, verdict, meta) for every judged frame whose image exists."""
+    out = []
+    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
+        meta = json.loads(side.read_text())
+        verdict = meta.get("human_label")
+        if not verdict:
+            continue
+        if verdict == "skip":
+            continue
+        if not side.with_suffix(".jpg").is_file():
+            continue
+        out.append((side.stem, verdict, meta))
+    return out
+
+
 # -- stage: pull ------------------------------------------------------------
 
 def pull(host: str) -> None:
@@ -101,9 +149,22 @@ def pull(host: str) -> None:
 # -- prelabels (cached: the big model runs once per frame, ever) ------------
 
 def _load_cache() -> dict:
-    if PRELABEL_CACHE.is_file():
-        return json.loads(PRELABEL_CACHE.read_text())
-    return {}
+    if not PRELABEL_CACHE.is_file():
+        return {}
+    return json.loads(PRELABEL_CACHE.read_text())
+
+
+def _prelabel_one(model, jpg: Path) -> dict:
+    res = model.predict(str(jpg), conf=PRELABEL_CONF, imgsz=640,
+                        device=_device(), verbose=False)[0]
+    dogs, people = [], []
+    buckets = {"dog": dogs, "person": people}
+    for b in res.boxes:
+        label = res.names[int(b.cls[0])]
+        if label not in buckets:
+            continue
+        buckets[label].append([round(float(v), 1) for v in b.xyxy[0].tolist()])
+    return {"dogs": dogs, "people": people, "shape": list(res.orig_shape)}
 
 
 def prelabel(stems: list[str]) -> dict:
@@ -114,19 +175,7 @@ def prelabel(stems: list[str]) -> dict:
         log(f"prelabeling {len(todo)} new frames with {PRELABEL_MODEL.name} ...")
         model = YOLO(str(PRELABEL_MODEL))
         for stem in todo:
-            jpg = DATASET_MIRROR / f"{stem}.jpg"
-            res = model.predict(str(jpg), conf=PRELABEL_CONF, imgsz=640,
-                                device=_device(), verbose=False)[0]
-            dogs, people = [], []
-            for b in res.boxes:
-                label = res.names[int(b.cls[0])]
-                box = [round(float(v), 1) for v in b.xyxy[0].tolist()]
-                if label == "dog":
-                    dogs.append(box)
-                elif label == "person":
-                    people.append(box)
-            cache[stem] = {"dogs": dogs, "people": people,
-                           "shape": list(res.orig_shape)}
+            cache[stem] = _prelabel_one(model, DATASET_MIRROR / f"{stem}.jpg")
         RUNS.mkdir(exist_ok=True)
         PRELABEL_CACHE.write_text(json.dumps(cache))
     log(f"prelabels ready ({len(stems)} frames, {len(todo)} newly computed)")
@@ -167,28 +216,72 @@ def prelabel_push(pi_url: str) -> None:
         + (f" ({failed} failed)" if failed else ""))
 
 
-def _device() -> str:
-    try:
-        import torch
-        if torch.backends.mps.is_available():
-            return "mps"
-    except Exception:
-        pass
-    return "cpu"
+# -- label fusion (pure: frame facts in, YOLO label lines out) --------------
+
+def yolo_line(cls: int, box, w: int, h: int) -> str:
+    x1, y1, x2, y2 = box
+    return (f"{cls} {(x1+x2)/2/w:.6f} {(y1+y2)/2/h:.6f} "
+            f"{(x2-x1)/w:.6f} {(y2-y1)/h:.6f}")
 
 
-def _iou(a, b) -> float:
-    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
-    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
-    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    if inter == 0:
-        return 0.0
-    area = lambda r: max(0.0, r[2] - r[0]) * max(0.0, r[3] - r[1])  # noqa: E731
-    union = area(a) + area(b) - inter
-    return inter / union if union else 0.0
+def _person_lines(people, w: int, h: int) -> list[str]:
+    return [yolo_line(CLS["person"], b, w, h) for b in people]
+
+
+def _dog_lines(dogs, w: int, h: int) -> list[str]:
+    return [yolo_line(CLS["dog"], b, w, h) for b in dogs]
+
+
+def _real_dogs(dogs, people, verdict) -> list:
+    """dog_mixed: the human says one of the dog boxes is a person in
+    disguise -- drop dog boxes that sit on a person box."""
+    if verdict != "dog_mixed":
+        return dogs
+    return [d for d in dogs
+            if not any(_iou(d, p) >= MIXED_IOU_DROP for p in people)]
+
+
+def _fallback_dogs(meta: dict) -> list:
+    """The big model missed the dog: fall back to the nano's sidecar box."""
+    boxes = [d["box"] for d in meta.get("detections", {}).get("targets", [])
+             if d.get("label") == "dog"
+             and d.get("confidence", 0) >= PRELABEL_CONF]
+    return [list(map(float, b)) for b in boxes]
+
+
+def fuse(stem: str, verdict: str, meta: dict, pre: dict) -> tuple[list[str] | None, str]:
+    """Label lines for one frame plus their provenance:
+    'hand' | 'fused' | 'fallback' | 'drop' (lines=None means drop)."""
+    h, w = pre["shape"]
+    hand = meta.get("human_boxes")
+    if isinstance(hand, list):
+        # Hand-drawn boxes are the complete truth for this frame; no model,
+        # fallback, or overlap heuristic gets a say.
+        return [yolo_line(CLS[b["label"]], b["box"], w, h) for b in hand], "hand"
+    if verdict in ("person", "no_dog"):
+        return _person_lines(pre["people"], w, h), "fused"
+    if verdict == "empty":
+        return [], "fused"
+    # dog / dog_mixed
+    dogs = _real_dogs(list(pre["dogs"]), pre["people"], verdict)
+    source = "fused"
+    if not dogs:
+        dogs = _fallback_dogs(meta)
+        source = "fallback"
+    if not dogs:
+        return None, "drop"
+    return _dog_lines(dogs, w, h) + _person_lines(pre["people"], w, h), source
 
 
 # -- stage: build -----------------------------------------------------------
+
+def split_for(stem: str) -> str:
+    """Stable split: the stem's hash decides, forever."""
+    digest = int(hashlib.sha1(stem.encode()).hexdigest(), 16)
+    if digest % VAL_FRACTION_MOD == 0:
+        return "val"
+    return "train"
+
 
 def _augment_variants(img):
     """Photometric variants that keep every box valid: motion blur (a dog
@@ -202,94 +295,44 @@ def _augment_variants(img):
             "dark": (img * 0.5).astype(np.uint8)}
 
 
-def build(run_dir: Path, augment: bool = False) -> dict:
-    samples = []
-    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
-        meta = json.loads(side.read_text())
-        verdict = meta.get("human_label")
-        if not verdict or verdict == "skip":
-            continue
-        if not side.with_suffix(".jpg").is_file():
-            continue
-        samples.append((side.stem, verdict, meta))
-    log(f"building dataset from {len(samples)} verdicted frames")
-    cache = prelabel([s for s, _, _ in samples])
+def _write_augmented(ds: Path, stem: str, label_text: str, stats: dict) -> None:
+    """Train-split only -- the held-out exam stays pristine originals."""
+    import cv2
+    img = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
+    for tag, aug in _augment_variants(img).items():
+        cv2.imwrite(str(ds / f"images/train/{stem}_{tag}.jpg"), aug)
+        (ds / f"labels/train/{stem}_{tag}.txt").write_text(label_text)
+        stats["augmented"] += 1
 
-    ds = run_dir / "dataset"
-    for sub in ("images/train", "images/val", "labels/train", "labels/val"):
-        (ds / sub).mkdir(parents=True)
 
-    stats = {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
-             "augmented": 0,
-             "boxes": {"train": {"person": 0, "dog": 0},
-                       "val": {"person": 0, "dog": 0}},
-             "verdicts": {}}
+def _count_boxes(lines: list[str], into: dict) -> None:
+    person_prefix = f"{CLS['person']} "
+    for ln in lines:
+        key = "person" if ln.startswith(person_prefix) else "dog"
+        into[key] += 1
 
-    def yolo_line(cls: int, box, w, h) -> str:
-        x1, y1, x2, y2 = box
-        return (f"{cls} {(x1+x2)/2/w:.6f} {(y1+y2)/2/h:.6f} "
-                f"{(x2-x1)/w:.6f} {(y2-y1)/h:.6f}")
 
-    for stem, verdict, meta in samples:
-        pre = cache[stem]
-        h, w = pre["shape"]
-        dogs, people = list(pre["dogs"]), list(pre["people"])
-        stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
+def _write_frame(ds: Path, stem: str, lines: list[str], augment: bool,
+                 stats: dict) -> None:
+    split = split_for(stem)
+    label_text = "\n".join(lines) + ("\n" if lines else "")
+    shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg", ds / f"images/{split}/{stem}.jpg")
+    (ds / f"labels/{split}/{stem}.txt").write_text(label_text)
+    stats[split] += 1
+    _count_boxes(lines, stats["boxes"][split])
+    if augment and split == "train":
+        _write_augmented(ds, stem, label_text, stats)
 
-        lines: list[str] = []
-        hand = meta.get("human_boxes")
-        if isinstance(hand, list):
-            # Hand-drawn boxes are the complete truth for this frame; no
-            # model, fallback, or overlap heuristic gets a say.
-            lines = [yolo_line(CLS[b["label"]], b["box"], w, h) for b in hand]
-            stats["hand_boxed"] += 1
-        elif verdict in ("dog", "dog_mixed"):
-            if verdict == "dog_mixed":
-                # The human says one of the dog boxes is a person in disguise.
-                dogs = [d for d in dogs
-                        if not any(_iou(d, p) >= MIXED_IOU_DROP for p in people)]
-            if not dogs:
-                fallback = [d["box"] for d in
-                            meta.get("detections", {}).get("targets", [])
-                            if d.get("label") == "dog"
-                            and d.get("confidence", 0) >= PRELABEL_CONF]
-                dogs = [list(map(float, b)) for b in fallback]
-                if dogs:
-                    stats["fallback"] += 1
-            if not dogs:
-                stats["dropped"].append(
-                    (stem, "dog verdict but no model drew a box -- "
-                           "draw one by hand on /review"))
-                continue
-            lines += [yolo_line(CLS["dog"], b, w, h) for b in dogs]
-            lines += [yolo_line(CLS["person"], b, w, h) for b in people]
-        elif verdict in ("person", "no_dog"):
-            lines += [yolo_line(CLS["person"], b, w, h) for b in people]
-        elif verdict == "empty":
-            pass
 
-        # Stable split: the stem's hash decides, forever.
-        digest = int(hashlib.sha1(stem.encode()).hexdigest(), 16)
-        split = "val" if digest % VAL_FRACTION_MOD == 0 else "train"
-        label_text = "\n".join(lines) + ("\n" if lines else "")
-        shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg", ds / f"images/{split}/{stem}.jpg")
-        (ds / f"labels/{split}/{stem}.txt").write_text(label_text)
-        stats[split] += 1
-        if augment and split == "train":
-            # Train-split only -- the held-out exam stays pristine originals.
-            import cv2
-            img = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
-            for tag, aug in _augment_variants(img).items():
-                cv2.imwrite(str(ds / f"images/train/{stem}_{tag}.jpg"), aug)
-                (ds / f"labels/train/{stem}_{tag}.txt").write_text(label_text)
-                stats["augmented"] += 1
-        for ln in lines:
-            key = "person" if ln.startswith(f"{CLS['person']} ") else "dog"
-            stats["boxes"][split][key] += 1
+def _new_stats() -> dict:
+    return {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
+            "augmented": 0,
+            "boxes": {"train": {"person": 0, "dog": 0},
+                      "val": {"person": 0, "dog": 0}},
+            "verdicts": {}}
 
-    (ds / "data.yaml").write_text(
-        f"path: {ds.resolve()}\ntrain: images/train\nval: images/val\n"
-        "names:\n  0: person\n  1: dog\n")
+
+def _log_build(stats: dict) -> None:
     log(f"train {stats['train']} imgs (+{stats['augmented']} augmented) "
         f"{stats['boxes']['train']} | "
         f"val {stats['val']} imgs {stats['boxes']['val']} | "
@@ -297,39 +340,77 @@ def build(run_dir: Path, augment: bool = False) -> dict:
         f"nano-fallback {stats['fallback']}")
     for stem, why in stats["dropped"]:
         log(f"  NEEDS BOXES: {stem} ({why})")
+
+
+def build(run_dir: Path, augment: bool = False) -> dict:
+    samples = labeled_sidecars()
+    log(f"building dataset from {len(samples)} verdicted frames")
+    cache = prelabel([s for s, _, _ in samples])
+
+    ds = run_dir / "dataset"
+    for sub in ("images/train", "images/val", "labels/train", "labels/val"):
+        (ds / sub).mkdir(parents=True)
+
+    stats = _new_stats()
+    counters = {"hand": "hand_boxed", "fallback": "fallback"}
+    for stem, verdict, meta in samples:
+        stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
+        lines, source = fuse(stem, verdict, meta, cache[stem])
+        if lines is None:
+            stats["dropped"].append(
+                (stem, "dog verdict but no model drew a box -- "
+                       "draw one by hand on /review"))
+            continue
+        if source in counters:
+            stats[counters[source]] += 1
+        _write_frame(ds, stem, lines, augment, stats)
+
+    (ds / "data.yaml").write_text(
+        f"path: {ds.resolve()}\ntrain: images/train\nval: images/val\n"
+        "names:\n  0: person\n  1: dog\n")
+    _log_build(stats)
     return stats
 
 
 # -- stage: train -----------------------------------------------------------
 
+def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
+    from ultralytics import YOLO
+    log(f"training {BASE_MODEL.name} locally: epochs<={epochs}, "
+        f"freeze={freeze}, device={_device()}")
+    model = YOLO(str(BASE_MODEL))
+    model.train(data=str(run_dir / "dataset/data.yaml"),
+                epochs=epochs, patience=max(10, epochs // 4), imgsz=640,
+                batch=batch, freeze=freeze, device=_device(),
+                project=str(run_dir), name="train", exist_ok=True,
+                verbose=False, plots=True)
+    # Ultralytics decides the save dir (its settings can reroute project
+    # paths); ask the trainer where it actually wrote instead of guessing.
+    produced = Path(model.trainer.save_dir) / "weights/best.pt"
+    if not produced.is_file():
+        return
+    shutil.copyfile(produced, run_dir / "best.pt")
+
+
+def _train_modal(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
+    log(f"dispatching training job to Modal: epochs<={epochs}, freeze={freeze}")
+    try:
+        sh(["uv", "run", "modal", "run", str(REPO / "scripts/modal_train.py"),
+            "--run-dir", str(run_dir), "--weights", str(BASE_MODEL),
+            "--epochs", str(epochs), "--batch", str(batch),
+            "--freeze", str(freeze)])
+    except subprocess.CalledProcessError:
+        sys.exit("[train] Modal job failed. First time? Run: uv run modal setup")
+
+
+_TRAIN_BACKENDS = {"local": _train_local, "modal": _train_modal}
+
+
 def train(run_dir: Path, backend: str, epochs: int, batch: int, freeze: int) -> Path:
     # Both backends land the weights at run_dir/best.pt -- the one contract
     # eval/export rely on, wherever the GPU actually was.
+    _TRAIN_BACKENDS[backend](run_dir, epochs, batch, freeze)
     best = run_dir / "best.pt"
-    if backend == "modal":
-        log(f"dispatching training job to Modal: epochs<={epochs}, freeze={freeze}")
-        try:
-            sh(["uv", "run", "modal", "run", str(REPO / "scripts/modal_train.py"),
-                "--run-dir", str(run_dir), "--weights", str(BASE_MODEL),
-                "--epochs", str(epochs), "--batch", str(batch),
-                "--freeze", str(freeze)])
-        except subprocess.CalledProcessError:
-            sys.exit("[train] Modal job failed. First time? Run: uv run modal setup")
-    else:
-        from ultralytics import YOLO
-        log(f"training {BASE_MODEL.name} locally: epochs<={epochs}, "
-            f"freeze={freeze}, device={_device()}")
-        model = YOLO(str(BASE_MODEL))
-        model.train(data=str(run_dir / "dataset/data.yaml"),
-                    epochs=epochs, patience=max(10, epochs // 4), imgsz=640,
-                    batch=batch, freeze=freeze, device=_device(),
-                    project=str(run_dir), name="train", exist_ok=True,
-                    verbose=False, plots=True)
-        # Ultralytics decides the save dir (its settings can reroute project
-        # paths); ask the trainer where it actually wrote instead of guessing.
-        produced = Path(model.trainer.save_dir) / "weights/best.pt"
-        if produced.is_file():
-            shutil.copyfile(produced, best)
     if not best.is_file():
         sys.exit("[train] FAILED: no best.pt produced")
     log(f"best weights: {best}")
@@ -350,16 +431,64 @@ def sweep(run_dir: Path, gpu: str) -> dict[str, Path]:
     out = {}
     for name in SWEEP_CONFIGS:
         p = run_dir / "sweep" / f"{name}.pt"
-        if p.is_file():
-            out[name] = p
-        else:
+        if not p.is_file():
             log(f"WARNING: sweep job {name} returned no weights")
+            continue
+        out[name] = p
     if not out:
         sys.exit("[train] FAILED: sweep produced no weights at all")
     return out
 
 
 # -- stage: evaluate --------------------------------------------------------
+
+def eval_frames(run_dir: Path) -> list[Frame]:
+    val_stems = {p.stem for p in (run_dir / "dataset/images/val").glob("*.jpg")}
+    frames = [Frame(stem, verdict in ("dog", "dog_mixed"), stem in val_stems,
+                    DATASET_MIRROR / f"{stem}.jpg")
+              for stem, verdict, _ in labeled_sidecars()]
+    if not frames:
+        sys.exit("[train] FAILED: no labeled frames to evaluate")
+    return frames
+
+
+def dog_confs(model, frames: list[Frame], device: str) -> dict[str, float]:
+    """Max dog confidence per frame: ONE prediction pass yields the whole
+    threshold curve."""
+    confs = {}
+    for f in frames:
+        res = model.predict(str(f.jpg), conf=0.25, imgsz=640,
+                            device=device, verbose=False)[0]
+        confs[f.stem] = round(max(
+            (float(b.conf[0]) for b in res.boxes
+             if res.names[int(b.cls[0])] == "dog"), default=0.0), 3)
+    return confs
+
+
+def score(frames: list[Frame], confs: dict, thr: float,
+          heldout_only: bool) -> dict:
+    rs = [(f.is_dog, confs[f.stem] >= thr) for f in frames
+          if f.heldout or not heldout_only]
+    return {"caught": sum(1 for t, fired in rs if t and fired),
+            "missed": sum(1 for t, fired in rs if t and not fired),
+            "false_fires": sum(1 for t, fired in rs if not t and fired),
+            "quiet": sum(1 for t, fired in rs if not t and not fired)}
+
+
+def curve(frames: list[Frame], confs: dict) -> dict:
+    return {f"{t:.1f}": {"all": score(frames, confs, t, False),
+                         "heldout": score(frames, confs, t, True)}
+            for t in THRESHOLDS}
+
+
+def _val_map50(model, run_dir: Path) -> float | None:
+    try:
+        return round(float(model.val(
+            data=str(run_dir / "dataset/data.yaml"), device=_device(),
+            verbose=False, plots=False).box.map50), 3)
+    except Exception:
+        return None  # the 80-class baseline can't val on 2-class data
+
 
 def evaluate(run_dir: Path, weights_by_name: dict[str, Path]) -> dict:
     """Score every model on every labeled frame, the way the appliance fires.
@@ -372,61 +501,25 @@ def evaluate(run_dir: Path, weights_by_name: dict[str, Path]) -> dict:
     """
     from ultralytics import YOLO
 
-    val_stems = {p.stem for p in (run_dir / "dataset/images/val").glob("*.jpg")}
-    frames = []
-    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
-        meta = json.loads(side.read_text())
-        verdict = meta.get("human_label")
-        if verdict in (None, "skip"):
-            continue
-        jpg = side.with_suffix(".jpg")
-        if not jpg.is_file():
-            continue
-        frames.append((side.stem, verdict in ("dog", "dog_mixed"),
-                       side.stem in val_stems, jpg))
-    if not frames:
-        sys.exit("[train] FAILED: no labeled frames to evaluate")
-
+    frames = eval_frames(run_dir)
     result = {"n_frames": len(frames),
-              "heldout_dogs": sum(1 for _, t, v, _ in frames if v and t),
-              "heldout_nondogs": sum(1 for _, t, v, _ in frames if v and not t),
+              "heldout_dogs": sum(1 for f in frames if f.heldout and f.is_dog),
+              "heldout_nondogs": sum(1 for f in frames if f.heldout and not f.is_dog),
               "models": {}}
     log(f"evaluating {len(weights_by_name)} models on {len(frames)} frames "
         f"({result['heldout_dogs']}+{result['heldout_nondogs']} held out)")
 
     for name, w in weights_by_name.items():
         model = YOLO(str(w))
-        confs = {}
-        for stem, _, _, jpg in frames:
-            res = model.predict(str(jpg), conf=0.25, imgsz=640,
-                                device=_device(), verbose=False)[0]
-            confs[stem] = round(max(
-                (float(b.conf[0]) for b in res.boxes
-                 if res.names[int(b.cls[0])] == "dog"), default=0.0), 3)
-        try:
-            map50 = round(float(model.val(
-                data=str(run_dir / "dataset/data.yaml"), device=_device(),
-                verbose=False, plots=False).box.map50), 3)
-        except Exception:
-            map50 = None  # the 80-class baseline can't val on 2-class data
-
-        def score(thr: float, heldout_only: bool) -> dict:
-            rs = [(truth, confs[stem] >= thr) for stem, truth, isval, _ in frames
-                  if isval or not heldout_only]
-            return {"caught": sum(1 for t, f in rs if t and f),
-                    "missed": sum(1 for t, f in rs if t and not f),
-                    "false_fires": sum(1 for t, f in rs if not t and f),
-                    "quiet": sum(1 for t, f in rs if not t and not f)}
-
-        result["models"][name] = {
-            "map50_val": map50, "confs": confs,
-            "curve": {f"{t:.1f}": {"all": score(t, False),
-                                   "heldout": score(t, True)}
-                      for t in THRESHOLDS}}
+        confs = dog_confs(model, frames, _device())
+        result["models"][name] = {"map50_val": _val_map50(model, run_dir),
+                                  "confs": confs,
+                                  "curve": curve(frames, confs)}
         h = result["models"][name]["curve"][f"{FIRE_CONF:.1f}"]["heldout"]
         log(f"  {name}: held-out @{FIRE_CONF} catches "
             f"{h['caught']}/{h['caught'] + h['missed']}, "
-            f"false-fires {h['false_fires']} | val mAP50 {map50}")
+            f"false-fires {h['false_fires']} | val mAP50 "
+            f"{result['models'][name]['map50_val']}")
     return result
 
 
@@ -439,6 +532,12 @@ def rank_key(m: dict):
             -(m["map50_val"] or 0.0))
 
 
+def pick_winner(metrics: dict) -> str:
+    """Best non-baseline model by rank_key."""
+    candidates = {n: m for n, m in metrics["models"].items() if n != "baseline"}
+    return min(candidates, key=lambda n: rank_key(candidates[n]))
+
+
 def ncnn_truth(run_dir: Path, ncnn_dir: Path) -> dict:
     """Deploy-truth: score the exported NCNN bundle itself. The NCNN export
     silently swaps YOLO26's end2end head for the classic NMS head, so its
@@ -446,30 +545,11 @@ def ncnn_truth(run_dir: Path, ncnn_dir: Path) -> dict:
     and the Pi runs THIS, not the .pt."""
     from ultralytics import YOLO
     log("scoring the NCNN bundle (deploy-truth) ...")
-    model = YOLO(str(ncnn_dir), task="detect")
-    val_stems = {p.stem for p in (run_dir / "dataset/images/val").glob("*.jpg")}
-    rows = []
-    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
-        meta = json.loads(side.read_text())
-        v = meta.get("human_label")
-        jpg = side.with_suffix(".jpg")
-        if v in (None, "skip") or not jpg.is_file():
-            continue
-        res = model.predict(str(jpg), conf=0.25, imgsz=640, device="cpu",
-                            verbose=False)[0]
-        c = max((float(b.conf[0]) for b in res.boxes
-                 if res.names[int(b.cls[0])] == "dog"), default=0.0)
-        rows.append((v in ("dog", "dog_mixed"), side.stem in val_stems, c))
-    out = {}
-    for thr in THRESHOLDS:
-        for scope, rs in (("all", rows), ("heldout", [r for r in rows if r[1]])):
-            s = out.setdefault(f"{thr:.1f}", {})[scope] = {}
-            s["caught"] = sum(1 for t, _, c in rs if t and c >= thr)
-            s["missed"] = sum(1 for t, _, c in rs if t and c < thr)
-            s["false_fires"] = sum(1 for t, _, c in rs if not t and c >= thr)
-            s["quiet"] = sum(1 for t, _, c in rs if not t and c < thr)
-    out["max_nondog_conf"] = round(max((c for t, _, c in rows if not t),
-                                      default=0.0), 3)
+    frames = eval_frames(run_dir)
+    confs = dog_confs(YOLO(str(ncnn_dir), task="detect"), frames, "cpu")
+    out = curve(frames, confs)
+    out["max_nondog_conf"] = round(max(
+        (confs[f.stem] for f in frames if not f.is_dog), default=0.0), 3)
     h = out[f"{FIRE_CONF:.1f}"]["heldout"]
     log(f"  NCNN held-out @{FIRE_CONF}: catches "
         f"{h['caught']}/{h['caught'] + h['missed']}, "
@@ -496,10 +576,90 @@ def export(run_dir: Path, best: Path) -> Path:
 
 # -- stage: report ----------------------------------------------------------
 
-def pick_winner(metrics: dict) -> str:
-    """Best non-baseline model by rank_key."""
-    candidates = {n: m for n, m in metrics["models"].items() if n != "baseline"}
-    return min(candidates, key=lambda n: rank_key(candidates[n]))
+def _leaderboard_md(metrics: dict, winner: str) -> list[str]:
+    def cell(m, thr, scope):
+        s = m["curve"][thr][scope]
+        return f"{s['caught']}/{s['caught'] + s['missed']} · {s['false_fires']} FP"
+
+    def tag(name):
+        if name == winner:
+            return " **(winner)**"
+        if name == "baseline":
+            return " (baseline)"
+        return ""
+
+    ranked = sorted(metrics["models"], key=lambda n: rank_key(metrics["models"][n]))
+    md = ["| model | held-out @0.6 | held-out @0.7 | held-out @0.8 | "
+          "all frames @0.7 (most seen in training) | val mAP50 |",
+          "|---|---|---|---|---|---|"]
+    for n in ranked:
+        m = metrics["models"][n]
+        map50 = m["map50_val"] if m["map50_val"] is not None else "--"
+        md.append(f"| {n}{tag(n)} | {cell(m, '0.6', 'heldout')} | "
+                  f"{cell(m, '0.7', 'heldout')} | {cell(m, '0.8', 'heldout')} | "
+                  f"{cell(m, '0.7', 'all')} | {map50} |")
+    return md
+
+
+def _truth_by_stem(known_stems: dict) -> dict[str, bool]:
+    truth = {}
+    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
+        if side.stem not in known_stems:
+            continue
+        v = json.loads(side.read_text()).get("human_label")
+        truth[side.stem] = v in ("dog", "dog_mixed")
+    return truth
+
+
+def _changed_md(metrics: dict, winner: str) -> list[str]:
+    base_confs = metrics["models"]["baseline"]["confs"]
+    win = metrics["models"][winner]["confs"]
+    md = ["", f"Frames where {winner} changed the verdict vs baseline (@{FIRE_CONF}):"]
+    changed = []
+    for stem, truth in _truth_by_stem(win).items():
+        b, t = base_confs[stem] >= FIRE_CONF, win[stem] >= FIRE_CONF
+        if b == t:
+            continue
+        changed.append(f"- {stem}: truth={'dog' if truth else 'no-dog'}, now "
+                       f"{'fires' if t else 'quiet'} "
+                       f"({'improvement' if t == truth else 'REGRESSION'})")
+    return md + (changed or ["- none"])
+
+
+def _dropped_md(dataset_stats: dict) -> list[str]:
+    if not dataset_stats.get("dropped"):
+        return []
+    return (["", "Frames excluded from training -- open /review, tap them in "
+                 "the history rail, and draw their boxes:"]
+            + [f"- {stem}" for stem, _ in dataset_stats["dropped"]])
+
+
+def _ncnn_md(metrics: dict, winner: str) -> list[str]:
+    nt = metrics.get("ncnn_truth")
+    if not nt:
+        return []
+    md = ["", f"## Deploy-truth: the NCNN bundle itself ({winner})",
+          "The Pi runs this bundle, whose NMS head scores differently "
+          "than the .pt above.", "",
+          "| threshold | all frames | held-out |", "|---|---|---|"]
+    for thr in (f"{t:.1f}" for t in THRESHOLDS):
+        a, h = nt[thr]["all"], nt[thr]["heldout"]
+        md.append(f"| {thr} | {a['caught']}/{a['caught']+a['missed']} · "
+                  f"{a['false_fires']} FP | {h['caught']}/{h['caught']+h['missed']} · "
+                  f"{h['false_fires']} FP |")
+    md.append(f"\nHighest dog-confidence on any non-dog frame: "
+              f"{nt['max_nondog_conf']}")
+    return md
+
+
+def _deploy_md(ncnn: Path | None) -> list[str]:
+    if not ncnn:
+        return []
+    return ["", "## Deploy", "```",
+            f"rsync -az {ncnn}/ doggy@doggypi.local:doggy/models/kitchen_ncnn_model/",
+            "ssh doggy@doggypi.local \"sed -i "
+            "'s|DOGGY_MODEL_PATH=.*|DOGGY_MODEL_PATH=models/kitchen_ncnn_model|' "
+            "~/doggy/.env && sudo systemctl restart doggy\"", "```"]
 
 
 def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
@@ -510,77 +670,24 @@ def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
 
     n_dog = metrics["heldout_dogs"]
     n_non = metrics["heldout_nondogs"]
-
-    def cell(m, thr, scope):
-        s = m["curve"][thr][scope]
-        return f"{s['caught']}/{s['caught'] + s['missed']} · {s['false_fires']} FP"
-
-    ranked = sorted(metrics["models"], key=lambda n: rank_key(metrics["models"][n]))
     md = [f"# Training run {run_dir.name}", "",
           f"Dataset: {dataset_stats['train']} train / {dataset_stats['val']} val frames "
           f"({dataset_stats['verdicts']})", "",
           f"Held-out = {n_dog} dog + {n_non} non-dog frames the models never "
           f"trained on. One frame there is worth ~{100 // max(n_dog, 1)} points -- "
-          "treat single-frame gaps as noise, not signal.", "",
-          "| model | held-out @0.6 | held-out @0.7 | held-out @0.8 | "
-          "all frames @0.7 (most seen in training) | val mAP50 |",
-          "|---|---|---|---|---|---|"]
-    for n in ranked:
-        m = metrics["models"][n]
-        tag = " **(winner)**" if n == winner else (" (baseline)" if n == "baseline" else "")
-        md.append(f"| {n}{tag} | {cell(m, '0.6', 'heldout')} | "
-                  f"{cell(m, '0.7', 'heldout')} | {cell(m, '0.8', 'heldout')} | "
-                  f"{cell(m, '0.7', 'all')} | {m['map50_val'] if m['map50_val'] is not None else '--'} |")
-
-    base_confs = metrics["models"]["baseline"]["confs"]
-    win = metrics["models"][winner]["confs"]
-    truth_by_stem = {}  # rebuild truth from confs' keys via sidecars
-    for side in sorted(DATASET_MIRROR.glob("sample_*.json")):
-        if side.stem in win:
-            v = json.loads(side.read_text()).get("human_label")
-            truth_by_stem[side.stem] = v in ("dog", "dog_mixed")
-    md += ["", f"Frames where {winner} changed the verdict vs baseline (@{FIRE_CONF}):"]
-    changed = []
-    for stem, truth in truth_by_stem.items():
-        b, t = base_confs[stem] >= FIRE_CONF, win[stem] >= FIRE_CONF
-        if b != t:
-            changed.append(f"- {stem}: truth={'dog' if truth else 'no-dog'}, now "
-                           f"{'fires' if t else 'quiet'} "
-                           f"({'improvement' if t == truth else 'REGRESSION'})")
-    md += changed or ["- none"]
-
-    if dataset_stats.get("dropped"):
-        md += ["", "Frames excluded from training -- open /review, tap them in "
-                   "the history rail, and draw their boxes:"]
-        md += [f"- {stem}" for stem, _ in dataset_stats["dropped"]]
-
-    nt = metrics.get("ncnn_truth")
-    if nt:
-        md += ["", f"## Deploy-truth: the NCNN bundle itself ({winner})",
-               "The Pi runs this bundle, whose NMS head scores differently "
-               "than the .pt above.", "",
-               "| threshold | all frames | held-out |", "|---|---|---|"]
-        for thr in (f"{t:.1f}" for t in THRESHOLDS):
-            a, h = nt[thr]["all"], nt[thr]["heldout"]
-            md.append(f"| {thr} | {a['caught']}/{a['caught']+a['missed']} · "
-                      f"{a['false_fires']} FP | {h['caught']}/{h['caught']+h['missed']} · "
-                      f"{h['false_fires']} FP |")
-        md.append(f"\nHighest dog-confidence on any non-dog frame: "
-                  f"{nt['max_nondog_conf']}")
-
-    if ncnn:
-        md += ["", "## Deploy", "```",
-               f"rsync -az {ncnn}/ doggy@doggypi.local:doggy/models/kitchen_ncnn_model/",
-               "ssh doggy@doggypi.local \"sed -i "
-               "'s|DOGGY_MODEL_PATH=.*|DOGGY_MODEL_PATH=models/kitchen_ncnn_model|' "
-               "~/doggy/.env && sudo systemctl restart doggy\"", "```"]
+          "treat single-frame gaps as noise, not signal.", ""]
+    md += _leaderboard_md(metrics, winner)
+    md += _changed_md(metrics, winner)
+    md += _dropped_md(dataset_stats)
+    md += _ncnn_md(metrics, winner)
+    md += _deploy_md(ncnn)
     (run_dir / "report.md").write_text("\n".join(md) + "\n")
     log(f"report: {run_dir / 'report.md'}")
 
 
 # -- main -------------------------------------------------------------------
 
-def main() -> None:
+def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="doggy@doggypi.local")
@@ -606,7 +713,29 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--freeze", type=int, default=10,
                     help="backbone layers to freeze (small datasets need this)")
-    args = ap.parse_args()
+    return ap.parse_args()
+
+
+def _candidate_weights(args, run_dir: Path) -> dict[str, Path]:
+    if args.sweep:
+        return sweep(run_dir, args.gpu)
+    best = train(run_dir, args.backend, args.epochs, args.batch, args.freeze)
+    return {"fine-tune": best}
+
+
+def _export_winner(run_dir: Path, best: Path, metrics: dict) -> Path | None:
+    # A broken exporter must never cost us the training + eval results.
+    try:
+        ncnn = export(run_dir, best)
+        metrics["ncnn_truth"] = ncnn_truth(run_dir, ncnn)
+        return ncnn
+    except Exception as exc:
+        log(f"WARNING: NCNN export failed ({exc}); report continues without it")
+        return None
+
+
+def main() -> None:
+    args = _parse_args()
     os.environ["DOGGY_TRAIN_GPU"] = args.gpu  # read by scripts/modal_train.py
 
     if args.push_prelabels:
@@ -622,23 +751,14 @@ def main() -> None:
     if not args.skip_pull:
         pull(args.host)
     dataset_stats = build(run_dir, augment=args.augment)
-    if args.sweep:
-        weights_by_name = sweep(run_dir, args.gpu)
-    else:
-        best = train(run_dir, args.backend, args.epochs, args.batch, args.freeze)
-        weights_by_name = {"fine-tune": best}
+    weights_by_name = _candidate_weights(args, run_dir)
     weights_by_name["baseline"] = BASE_MODEL
     metrics = evaluate(run_dir, weights_by_name)
     winner = pick_winner(metrics)
     log(f"winner: {winner}")
     ncnn = None
     if not args.skip_export:
-        # A broken exporter must never cost us the training + eval results.
-        try:
-            ncnn = export(run_dir, weights_by_name[winner])
-            metrics["ncnn_truth"] = ncnn_truth(run_dir, ncnn)
-        except Exception as exc:
-            log(f"WARNING: NCNN export failed ({exc}); report continues without it")
+        ncnn = _export_winner(run_dir, weights_by_name[winner], metrics)
     report(run_dir, dataset_stats, metrics, winner, ncnn)
     log("done.")
 
