@@ -377,7 +377,8 @@ function renderRuns(){
     if (j.summary){
       const g = s.gate || {};
       const rows = [];
-      if (g.deployed) rows.push(["vs deployed",
+      if (g.deployed) rows.push(["vs deployed"
+        + (g.fire_conf ? " @" + g.fire_conf : ""),
         g.new.caught + "/" + (g.new.caught + g.new.missed) + " vs "
         + g.deployed.caught + "/" + (g.deployed.caught + g.deployed.missed)
         + " — " + esc(g.reason || "")]);

@@ -84,28 +84,29 @@ def _fresh_prelabels(cache_before: set[str]) -> dict:
     return fresh
 
 
-def _deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path) -> dict:
+def _deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
+                 fire_conf: float) -> dict:
     """Ship only a strict non-regression: zero held-out false fires and at
     least as many held-out catches as the currently-deployed bundle, scored
-    on the SAME current exam."""
+    on the SAME current exam AT THE APPLIANCE'S RUNTIME THRESHOLD -- judging
+    at any other operating point can hide a regression that fires."""
     from ultralytics import YOLO
-    from kitchen_training.config import FIRE_CONF
     from kitchen_training.evaluation import dog_confs, eval_frames, score
 
     frames = eval_frames(run_dir)
     new_score = score(frames, dog_confs(
-        YOLO(str(new_bundle), task="detect"), frames, "cpu"), FIRE_CONF, True)
+        YOLO(str(new_bundle), task="detect"), frames, "cpu"), fire_conf, True)
+    gate = {"fire_conf": fire_conf, "new": new_score}
     if not deployed_dir.is_dir():
-        return {"deploy": new_score["false_fires"] == 0, "new": new_score,
+        return {**gate, "deploy": new_score["false_fires"] == 0,
                 "deployed": None, "reason": "no deployed bundle uploaded"}
     old_score = score(frames, dog_confs(
-        YOLO(str(deployed_dir), task="detect"), frames, "cpu"), FIRE_CONF, True)
+        YOLO(str(deployed_dir), task="detect"), frames, "cpu"), fire_conf, True)
     passes = (new_score["false_fires"] == 0
               and new_score["caught"] >= old_score["caught"])
-    reason = ("beats-or-ties deployed with zero false fires" if passes
-              else "does not beat deployed bundle")
-    return {"deploy": passes, "new": new_score, "deployed": old_score,
-            "reason": reason}
+    reason = (f"beats-or-ties deployed at {fire_conf} with zero false fires"
+              if passes else f"does not beat deployed bundle at {fire_conf}")
+    return {**gate, "deploy": passes, "deployed": old_score, "reason": reason}
 
 
 def _prune_old_runs(runs_dir: Path) -> None:
@@ -117,7 +118,8 @@ def _prune_old_runs(runs_dir: Path) -> None:
 
 @app.function(image=image, gpu=GPU, volumes={str(VOL): volume},
               timeout=120 * MINUTES)
-def run_pipeline(run_name: str, recipe: dict) -> tuple[dict, bytes | None]:
+def run_pipeline(run_name: str, recipe: dict,
+                 fire_conf: float = 0.7) -> tuple[dict, bytes | None]:
     """The whole training day in one container. Returns (results, bundle_tar)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
@@ -143,7 +145,8 @@ def run_pipeline(run_name: str, recipe: dict) -> tuple[dict, bytes | None]:
     bundle = export(run_dir, best)
     metrics["ncnn_truth"] = ncnn_truth(run_dir, bundle)
     metrics["robustness"] = robustness(run_dir, bundle)
-    gate = _deploy_gate(run_dir, bundle, run_root / "deployed_ncnn_model")
+    gate = _deploy_gate(run_dir, bundle, run_root / "deployed_ncnn_model",
+                        fire_conf)
     report(run_dir, dataset_stats, metrics, "fine-tune", bundle)
 
     results = {
@@ -157,9 +160,12 @@ def run_pipeline(run_name: str, recipe: dict) -> tuple[dict, bytes | None]:
                     "hand_boxed": dataset_stats["hand_boxed"],
                     "dropped": [stem for stem, _ in dataset_stats["dropped"]]},
         "recipe": recipe,
+        "fire_conf": fire_conf,
         "ncnn_truth": metrics["ncnn_truth"],
         "robustness": metrics["robustness"],
-        "ncnn_heldout": metrics["ncnn_truth"]["0.7"]["heldout"],
+        # The headline score IS the gate's new-model score: measured at the
+        # appliance's runtime threshold, not a fixed default.
+        "ncnn_heldout": gate["new"],
     }
     bundle_tar = _tar_bytes(bundle) if gate["deploy"] else None
     _prune_old_runs(RUNS)
@@ -218,16 +224,19 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
 @app.local_entrypoint()
 def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
             seed_models: str = "", epochs: int = 200, batch: int = 16,
-            freeze: int = 10, augment: bool = True) -> None:
+            freeze: int = 10, augment: bool = True,
+            fire_conf: float = 0.7) -> None:
     """Full pipeline run. --seed-models <dir> uploads yolo26n/x.pt first
-    (one-time, from a machine that has them)."""
+    (one-time, from a machine that has them). --fire-conf is the appliance's
+    runtime alarm threshold: the gate judges at that operating point."""
     run_name = _upload(Path(dataset_dir),
                        Path(deployed_dir) if deployed_dir else None,
                        Path(seed_models) if seed_models else None)
     recipe = {"epochs": epochs, "batch": batch, "freeze": freeze,
               "augment": augment}
-    print("[pipeline] running the full pipeline in the cloud ...")
-    results, bundle_tar = run_pipeline.remote(run_name, recipe)
+    print(f"[pipeline] running the full pipeline in the cloud "
+          f"(gate @ {fire_conf}) ...")
+    results, bundle_tar = run_pipeline.remote(run_name, recipe, fire_conf)
     _write_results(Path(out_dir), results, bundle_tar)
 
 

@@ -245,10 +245,24 @@ def _run_prelabel_job(job: dict) -> str:
             + (f" (${cost:.2f})" if cost is not None else ""))
 
 
+def _runtime_confidence() -> float:
+    """The appliance's live alarm threshold: the gate must judge there."""
+    env = DOGGY_ROOT / ".env"
+    if env.is_file():
+        for line in env.read_text().splitlines():
+            if line.startswith("DOGGY_CONFIDENCE="):
+                try:
+                    return float(line.split("=", 1)[1].strip())
+                except ValueError:
+                    break
+    return 0.7
+
+
 def _recipe_arguments(job: dict) -> list[str]:
     recipe = {**_settings(), **(job.get("params") or {})}
     return ["--epochs", str(recipe["epochs"]), "--batch", str(recipe["batch"]),
             "--freeze", str(recipe["freeze"]),
+            "--fire-conf", str(_runtime_confidence()),
             "--augment" if recipe["augment"] else "--no-augment"]
 
 
@@ -268,8 +282,8 @@ def _run_train_job(job: dict) -> str:
         # The scorecard the training page renders: gate compare, threshold
         # curve, robustness, dataset shape, recipe, duration.
         job["_summary"] = {key: summary.get(key) for key in
-                           ("gate", "dataset", "recipe", "ncnn_truth",
-                            "robustness")}
+                           ("gate", "dataset", "recipe", "fire_conf",
+                            "ncnn_truth", "robustness")}
         job["_summary"]["duration_s"] = round(time.time() - started)
         job["_summary"]["cost_usd"] = _run_cost(before)
         gate = summary["gate"]
