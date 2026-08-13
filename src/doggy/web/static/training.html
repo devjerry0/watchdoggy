@@ -140,6 +140,7 @@
 <script>
 let settingsLoaded = false;
 let logJob = null;       // job id whose log is shown
+let lastJobs = [];       // latest history, for log-message context
 
 function esc(s){ return String(s).replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -193,6 +194,7 @@ async function refresh(){
   let d;
   try { d = await (await fetch("/api/training/status")).json(); } catch(e){ return; }
   if (!settingsLoaded && d.settings) fillSettings(d.settings);
+  lastJobs = d.jobs || [];
 
   document.getElementById("st_counts").innerHTML =
     "<b>" + d.unlabeled + "</b> unlabeled frames · <b>" + d.missing_prelabels
@@ -238,7 +240,15 @@ async function pollLog(){
   if (!logJob) return;
   const r = await fetch("/api/training/log/" + logJob);
   const pre = document.getElementById("log_pre");
-  if (!r.ok){ pre.hidden = false; pre.textContent = "(no log yet)"; return; }
+  if (!r.ok){
+    const job = lastJobs.find(j => j.id === logJob);
+    const finished = job && (job.status === "done" || job.status === "failed");
+    pre.hidden = false;
+    pre.textContent = finished
+      ? "(no log recorded — this run predates log capture)"
+      : "(no log yet — appears once the trainer starts the run)";
+    return;
+  }
   const text = await r.text();
   const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
   pre.hidden = false;
