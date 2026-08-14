@@ -206,9 +206,11 @@ def build_router(settings: Settings, capture: DatasetCapture,
             meta["human_label"] = verdict
             meta["labeled_at"] = time.time()
             # A human verdict supersedes any machine auto-label, and
-            # re-judging a frame settles its dispute.
+            # re-judging a frame settles its dispute PERMANENTLY -- the
+            # nightly audit must never ask the same question twice.
             meta.pop("auto_label", None)
-            meta.pop("disputed", None)
+            if meta.pop("disputed", None) is not None:
+                meta["dispute_settled_at"] = time.time()
             if "boxes" in body:
                 # Hand-drawn boxes: the COMPLETE annotation for this frame
                 # (every dog and person). Training trusts them over any model.
@@ -298,6 +300,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
         if not model_says:
             raise HTTPException(status_code=422, detail="model_says required")
         meta = json.loads(side.read_text())
+        if meta.get("dispute_settled_at"):
+            return {"ok": True, "skipped": "human already arbitrated"}
         meta["disputed"] = {"model_says": model_says,
                             "nano_conf": float(body.get("nano_conf", 0)),
                             "flagged_at": time.time()}

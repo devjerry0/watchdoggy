@@ -118,17 +118,22 @@ SUSPECT_QUIET_CONF = 0.1  # candidate sees nothing in a "dog" frame
 
 
 def _exam_suspects(run_dir: Path, bundle: Path) -> dict:
+    import json as _json
     from ultralytics import YOLO
+    from kitchen_training.config import DATASET_MIRROR
     from kitchen_training.evaluation import dog_confs, eval_frames
     frames = [f for f in eval_frames(run_dir) if f.heldout]
     confs = dog_confs(YOLO(str(bundle), task="detect"), frames, "cpu")
     suspects = {}
     for frame in frames:
+        meta = _json.loads((DATASET_MIRROR / f"{frame.stem}.json").read_text())
+        if meta.get("dispute_settled_at"):
+            continue  # a human already arbitrated this one
         conf = confs[frame.stem]
+        # One direction only: confident dog sightings on non-dog labels.
+        # (Models doubting hard dog frames is expected, not suspicious.)
         if not frame.is_dog and conf >= SUSPECT_FIRE_CONF:
             suspects[frame.stem] = {"model_says": "dog", "nano_conf": conf}
-        if frame.is_dog and conf <= SUSPECT_QUIET_CONF:
-            suspects[frame.stem] = {"model_says": "no dog", "nano_conf": conf}
     print(f"[pipeline] candidate disputes {len(suspects)} held-out labels",
           flush=True)
     return suspects
@@ -274,13 +279,14 @@ def run_prelabels(run_name: str) -> dict:
                 if verdict:
                     auto_verdicts[stem] = verdict
                 continue
-            # Label audit: when BOTH jurors strongly contradict a human
-            # verdict, flag it. Blind-testing found real mislabels this way
-            # (a 0.9-confident "non-dog" frame usually contains a dog).
-            if human in ("dog", "dog_mixed"):
-                if nano_dog <= AUTO_CLEAR_NANO_CONF and not cache[stem]["dogs"]:
-                    disputes[stem] = {"model_says": "no dog",
-                                      "nano_conf": round(nano_dog, 3)}
+            # Label audit, ONE direction only: a confident dog sighting on a
+            # non-dog label usually means a real dog the human missed. The
+            # reverse direction ("dog-labeled but we see nothing") was removed:
+            # the jury misses ~26% of hard borderline dogs, so it mostly
+            # second-guessed labels the human had right. A human who already
+            # arbitrated a dispute is not asked twice (dispute_settled_at).
+            if meta.get("dispute_settled_at"):
+                continue
             if human in ("person", "empty", "no_dog"):
                 if nano_dog >= AUTO_DOG_NANO_CONF and cache[stem]["dogs"]:
                     disputes[stem] = {"model_says": "dog",

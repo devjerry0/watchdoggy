@@ -378,3 +378,18 @@ def test_dispute_lifecycle(tmp_path):
                   json={"name": "sample_404", "model_says": "dog"}).status_code == 404
     assert c.post("/api/dataset/dispute",
                   json={"name": "sample_1"}).status_code == 422
+
+
+def test_settled_disputes_are_never_reopened(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1", verdict="person", prelabel_dogs=1)
+    c.post("/api/dataset/dispute",
+           json={"name": "sample_1", "model_says": "dog", "nano_conf": 0.9})
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "person"})
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert "disputed" not in meta and meta["dispute_settled_at"] > 0
+    # the machine may not ask the same question twice
+    r = c.post("/api/dataset/dispute",
+               json={"name": "sample_1", "model_says": "dog", "nano_conf": 0.95})
+    assert r.json()["skipped"] == "human already arbitrated"
+    assert "disputed" not in json.loads((ddir / "sample_1.json").read_text())
