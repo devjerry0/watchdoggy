@@ -110,6 +110,20 @@ fi
 
 [ -f "$STAGE/pyproject.toml" ] || { echo "no staged code" >&2; exit 1; }
 grep -q 'name = "doggy"' "$STAGE/pyproject.toml" || { echo "staged tree is not doggy" >&2; exit 1; }
+# State snapshot BEFORE any new code runs: the update never touches state,
+# but the new code runs against it the moment the service restarts -- a bug
+# there must not be able to take the only copy of the labeled dataset with
+# it. Real copies (not hardlinks: an in-place write would corrupt a
+# hardlinked "backup" too); the newest SNAP_KEEP snapshots are kept.
+SNAPS=/home/doggy/doggy-state-backup
+SNAP_KEEP=2
+snap="$SNAPS/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$snap"
+for p in dataset jobs models .env; do
+  [ -e "$APP/$p" ] && cp -a "$APP/$p" "$snap/$p"
+done
+chown -R doggy:doggy "$SNAPS"
+ls -1d "$SNAPS"/*/ 2>/dev/null | sort | head -n -$SNAP_KEEP | xargs -r rm -rf
 # Copy-first: snapshot the current code BEFORE anything is removed.
 rm -rf "$PREV"
 mkdir -p "$PREV"
