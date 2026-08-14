@@ -39,6 +39,20 @@ def test_request_rejects_unknown_kind(tmp_path):
                   json={"kind": "mine-bitcoin"}).status_code == 422
 
 
+def test_status_reports_software_and_update_check(tmp_path):
+    c, root = _client(tmp_path)
+    # Nothing installed / never checked: the keys exist but are empty.
+    d = c.get("/api/training/status").json()
+    assert d["software"] == {"installed": None, "check": None}
+    # The trainer's daily check leaves a stamp beside the jobs.
+    jobs = root / "jobs"
+    jobs.mkdir(exist_ok=True)
+    (jobs / "update-check.json").write_text(json.dumps(
+        {"checked_at": 1700000000.0, "latest": "v1.1.0", "installed": "v1.0.0"}))
+    d = c.get("/api/training/status").json()
+    assert d["software"]["check"]["latest"] == "v1.1.0"
+
+
 def test_status_reports_last_done_train_and_next_auto(tmp_path):
     c, root = _client(tmp_path)
     jobs = root / "jobs"

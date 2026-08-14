@@ -19,7 +19,8 @@ SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
                      "train_interval_hours": 48, "min_new_labels": 5,
                      "nightly_prelabel_hour": 2,
                      "monthly_credits": 30,  # Modal starter free tier
-                     "gpu": "auto"}  # auto = tier by dataset size (daemon)
+                     "gpu": "auto",  # auto = tier by dataset size (daemon)
+                     "auto_update": True}  # daily GitHub release check
 _GPU_CHOICES = {"auto", "T4", "L4", "A10G", "A100"}
 _BATCH_CHOICES = {"auto", 8, 16, 32, 64}
 _INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),
@@ -84,10 +85,12 @@ def validated(body: dict) -> dict:
             raise HTTPException(status_code=422,
                                 detail=f"{key} must be {low}..{high}")
         clean[key] = value
-    if "augment" in body:
-        if not isinstance(body["augment"], bool):
-            raise HTTPException(status_code=422, detail="augment must be bool")
-        clean["augment"] = body["augment"]
+    for flag in ("augment", "auto_update"):
+        if flag not in body:
+            continue
+        if not isinstance(body[flag], bool):
+            raise HTTPException(status_code=422, detail=f"{flag} must be bool")
+        clean[flag] = body[flag]
     if "gpu" in body:
         if body["gpu"] not in _GPU_CHOICES:
             raise HTTPException(status_code=422,

@@ -36,6 +36,27 @@ def test_gpu_setting_validated(tmp_path):
                   json={"gpu": "H9000"}).status_code == 422
 
 
+def test_auto_update_toggle_defaults_on_and_validates(tmp_path):
+    c, _ = _client(tmp_path)
+    assert c.get("/api/training/settings").json()["auto_update"] is True
+    r = c.post("/api/training/settings", json={"auto_update": False})
+    assert r.json()["settings"]["auto_update"] is False
+    assert c.get("/api/training/settings").json()["auto_update"] is False
+    assert c.post("/api/training/settings",
+                  json={"auto_update": "yes"}).status_code == 422
+
+
+def test_update_job_kind_accepted(tmp_path):
+    c, root = _client(tmp_path)
+    d = c.post("/api/training/request", json={"kind": "update"}).json()
+    assert d["ok"] and d["job"]["kind"] == "update"
+    # A second request while one is pending reuses it, like other kinds.
+    again = c.post("/api/training/request", json={"kind": "update"}).json()
+    assert again["already_pending"] and again["job"]["id"] == d["job"]["id"]
+    assert c.post("/api/training/request",
+                  json={"kind": "reboot"}).status_code == 422
+
+
 def test_batch_setting_accepts_auto_and_tiers_only(tmp_path):
     c, _ = _client(tmp_path)
     assert c.post("/api/training/settings",

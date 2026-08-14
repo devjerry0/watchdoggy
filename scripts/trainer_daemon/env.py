@@ -27,7 +27,7 @@ MODAL_SUBPROCESS_TIMEOUT = int(3.5 * 3600)
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
                      "augment": True, "train_interval_hours": 48,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
-                     "gpu": "auto"}
+                     "gpu": "auto", "auto_update": True}
 # auto tiers by labeled-frame count. The nano model is dataloader-bound on
 # small sets -- a bigger GPU only pays once epochs are long enough; batch
 # grows with data but stays small enough for ~30+ optimizer steps/epoch.

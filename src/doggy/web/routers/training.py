@@ -12,8 +12,9 @@ from doggy.web import jobqueue
 # Job kinds the training page can request. "train" = full cloud pipeline run
 # (prelabel + build + fine-tune + eval + gated deploy); "prelabel" = fresh
 # big-model boxes only, so the label page is stocked before a labeling
-# session.
-_KINDS = {"train", "prelabel"}
+# session; "update" = self-update from the latest GitHub release (health-
+# gated install with rollback, run by the trainer daemon).
+_KINDS = {"train", "prelabel", "update"}
 _HISTORY_SHOWN = 10
 _LOG_TAIL_LINES = 200
 SECONDS_PER_HOUR = 3600.0
@@ -52,6 +53,23 @@ def _billing(jobs_dir: Path) -> dict | None:
         return None
 
 
+def _software(jobs_dir: Path) -> dict:
+    """Installed release + the trainer's last GitHub check (both optional:
+    the release file appears with the first self-update install)."""
+    release_file = Path(".release")
+    installed = None
+    if release_file.is_file():
+        installed = release_file.read_text().strip() or None
+    check = None
+    check_path = jobs_dir / "update-check.json"
+    if check_path.is_file():
+        try:
+            check = json.loads(check_path.read_text())
+        except (OSError, ValueError):
+            check = None
+    return {"installed": installed, "check": check}
+
+
 def build_router(settings: Settings) -> APIRouter:
     router = APIRouter()
 
@@ -74,7 +92,8 @@ def build_router(settings: Settings) -> APIRouter:
                 "next_auto_train": next_auto,
                 "settings": trainer,
                 "billing": _billing(Path(settings.jobs_dir)),
-                "model": _model_summary(Path(settings.model_path))}
+                "model": _model_summary(Path(settings.model_path)),
+                "software": _software(Path(settings.jobs_dir))}
 
     @router.get("/api/training/settings")
     def api_get_settings() -> dict:

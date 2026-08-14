@@ -6,6 +6,7 @@ import json
 import time
 
 from trainer_daemon.env import DATASET_DIR, JOBS_DIR, log, settings
+from trainer_daemon.update import update_due
 
 AUTO_PRELABEL_MIN = 10
 PRELABEL_COOLDOWN = 6 * 3600.0
@@ -98,7 +99,16 @@ def synthesize_job(existing: list[dict]) -> dict | None:
                           f"nightly: {missing} new frames to prelabel")
     if missing >= AUTO_PRELABEL_MIN and now - last_prelabel >= PRELABEL_COOLDOWN:
         return queue_auto("prelabel", f"auto: {missing} frames lack prelabels")
-    return None
+    return _update_job(now)
+
+
+def _update_job(now: float) -> dict | None:
+    # Lowest priority: only checked when no training/prelabeling is due.
+    versions = update_due(now)
+    if versions is None:
+        return None
+    current, latest = versions
+    return queue_auto("update", f"auto: {latest} released (installed {current})")
 
 
 def queue_auto(kind: str, why: str) -> dict:

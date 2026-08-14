@@ -201,14 +201,19 @@
             <option>T4</option><option>L4</option>
             <option>A10G</option><option>A100</option>
           </select></div>
+        <div class="field check">
+          <input id="f_autoupdate" type="checkbox">
+          <label for="f_autoupdate">auto-update (daily GitHub check)</label></div>
       </div>
       <div class="row">
         <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
         <button class="primary" onclick="runJob('train')">Run training now</button>
         <button onclick="runJob('prelabel')">Fetch ·x boxes now</button>
+        <button onclick="runJob('update')">Update software now</button>
         <span id="msg"></span>
       </div>
       <div class="fine" id="sched_fine"></div>
+      <div class="fine" id="software_fine"></div>
     </div>
 
     <div class="card wide">
@@ -455,6 +460,7 @@ function fillSettings(s){
   for (const [key, id] of Object.entries(FIELDS))
     document.getElementById(id).value = s[key];
   document.getElementById("f_augment").checked = !!s.augment;
+  document.getElementById("f_autoupdate").checked = s.auto_update !== false;
   document.getElementById("f_gpu").value = s.gpu || "auto";
   document.getElementById("f_batch").value = String(s.batch ?? "auto");
   settingsLoaded = true;
@@ -462,6 +468,7 @@ function fillSettings(s){
 function readSettings(){
   const rawBatch = document.getElementById("f_batch").value;
   const out = {augment: document.getElementById("f_augment").checked,
+               auto_update: document.getElementById("f_autoupdate").checked,
                gpu: document.getElementById("f_gpu").value,
                batch: rawBatch === "auto" ? "auto" : parseInt(rawBatch, 10)};
   for (const [key, id] of Object.entries(FIELDS))
@@ -543,6 +550,26 @@ async function refresh(){
             + Math.max(1, Math.round((d.next_auto_train - Date.now()/1000)/3600))
             + "h if " + d.settings.min_new_labels + "+ new labels exist")
        : "first training run hasn't happened yet");
+  renderSoftware(d);
+}
+
+function renderSoftware(d){
+  const sw = d.software || {};
+  const parts = [];
+  parts.push(sw.installed ? "software " + sw.installed : "software: pre-release install");
+  if (sw.check && sw.check.checked_at){
+    const ago = Math.max(0, Math.round((Date.now()/1000 - sw.check.checked_at)/3600));
+    const latest = sw.check.latest;
+    if (latest && sw.installed && latest !== sw.installed)
+      parts.push(latest + " is available — updates run as jobs above");
+    else if (latest)
+      parts.push("up to date (GitHub checked " + (ago < 1 ? "just now" : "~" + ago + "h ago") + ")");
+    else
+      parts.push("last GitHub check couldn't reach the API");
+  } else if (d.settings && d.settings.auto_update !== false){
+    parts.push("first daily GitHub check runs on the trainer's next quiet pass");
+  }
+  document.getElementById("software_fine").textContent = parts.join(" · ");
 }
 
 renderDataset();

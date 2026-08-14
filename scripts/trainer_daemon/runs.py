@@ -15,6 +15,7 @@ from trainer_daemon.apply import (
 )
 from trainer_daemon.cloud import batch, billing_summary, modal_run, run_cost
 from trainer_daemon.env import DEPLOYED_BUNDLE, DOGGY_ROOT, JOBS_DIR, log, settings
+from trainer_daemon.update import run_update_job
 
 FALLBACK_FIRE_CONF = 0.7
 
@@ -95,4 +96,5 @@ def run_train_job(job: dict) -> str:
     return f"DEPLOYED new model ({verdict})"
 
 
-RUNNERS = {"prelabel": run_prelabel_job, "train": run_train_job}
+RUNNERS = {"prelabel": run_prelabel_job, "train": run_train_job,
+           "update": run_update_job}

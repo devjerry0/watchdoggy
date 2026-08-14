@@ -85,9 +85,52 @@ chown -R doggy:doggy "$LIVE"
 HELPER
 sudo chmod 755 /usr/local/bin/doggy-install-model
 
-echo "==> sudoers: trainer may install the staged model + restart the service"
+echo "==> root helper: install staged code from a GitHub release (self-update)"
+sudo tee /usr/local/bin/doggy-install-code >/dev/null <<'HELPER'
+#!/usr/bin/env bash
+# Installs /home/trainer/staging_code as the appliance's code, then restarts
+# the detector. Fixed paths on purpose. Replaces ONLY code paths -- state
+# (dataset, jobs, events, models, sounds, soothing, .env) is never touched.
+# --rollback restores the previous code snapshot.
+set -euo pipefail
+APP=/home/doggy/doggy
+STAGE=/home/trainer/staging_code
+PREV="$APP/.code.prev"
+PATHS="src scripts tests pyproject.toml uv.lock README.md ARCHITECTURE.md .release"
+
+if [ "${1:-}" = "--rollback" ]; then
+  [ -d "$PREV" ] || { echo "no previous code snapshot" >&2; exit 1; }
+  for p in $PATHS; do
+    rm -rf "$APP/${p:?}"
+    [ -e "$PREV/$p" ] && cp -a "$PREV/$p" "$APP/$p"
+  done
+  systemctl restart doggy
+  exit 0
+fi
+
+[ -f "$STAGE/pyproject.toml" ] || { echo "no staged code" >&2; exit 1; }
+grep -q 'name = "doggy"' "$STAGE/pyproject.toml" || { echo "staged tree is not doggy" >&2; exit 1; }
+# Copy-first: snapshot the current code BEFORE anything is removed.
+rm -rf "$PREV"
+mkdir -p "$PREV"
+for p in $PATHS; do
+  [ -e "$APP/$p" ] && cp -a "$APP/$p" "$PREV/$p"
+done
+for p in $PATHS; do
+  [ -e "$STAGE/$p" ] || continue
+  rm -rf "$APP/${p:?}"
+  cp -a "$STAGE/$p" "$APP/$p"
+  chown -R doggy:doggy "$APP/$p"
+done
+systemctl restart doggy
+HELPER
+sudo chmod 755 /usr/local/bin/doggy-install-code
+
+echo "==> sudoers: trainer may install the staged model/code + restart the service"
 sudo tee /etc/sudoers.d/doggy-trainer >/dev/null <<'SUDO'
 trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-model
+trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-code
+trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-code --rollback
 trainer ALL=(root) NOPASSWD: /usr/bin/systemctl restart doggy
 SUDO
 sudo chmod 440 /etc/sudoers.d/doggy-trainer
