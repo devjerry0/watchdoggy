@@ -213,3 +213,19 @@ def test_no_ring_growth_when_disabled(tmp_path):
     for i in range(5):
         c.on_frame(_img(), _analysis(), 100.0 + i, cfg)
     assert c._ring.slice_timed(0, 1000) == []
+
+
+def test_dark_frames_are_not_harvested(tmp_path):
+    # Lights off: harvest triggers must skip pitch-black frames (they once
+    # flooded the queue), but a bright frame with the same trigger saves.
+    cap, runtime = _capture(tmp_path)
+    dark = np.full((48, 64, 3), 6, np.uint8)
+    bright = np.full((48, 64, 3), 120, np.uint8)
+    analysis = FrameAnalysis(frame=dark)
+    analysis.lowconf.append(Detection("dog", 0.5, (0, 0, 8, 8)))
+    cap.on_frame(dark, analysis, 100.0, runtime.get())
+    assert cap.stats()["samples"] == 0
+    analysis2 = FrameAnalysis(frame=bright)
+    analysis2.lowconf.append(Detection("dog", 0.5, (0, 0, 8, 8)))
+    cap.on_frame(bright, analysis2, 200.0, runtime.get())
+    assert cap.stats()["samples"] == 1

@@ -38,6 +38,10 @@ CONTEXT_MAX_FRAMES = 6
 # cooking / dishwasher sessions are where the head-only misclassifications live,
 # including the frames where the model sees nothing (prime hard negatives).
 PERSON_ACTIVITY_SECONDS = 120.0
+# Lights-off failsafe: a pitch-dark frame teaches nothing and the model's
+# night-time person hallucinations once flooded the queue with hundreds of
+# black frames. Harvest triggers skip frames this dark; fires still archive.
+DARK_MEAN_FLOOR = 15.0
 PERSON_RECENT_SECONDS = 60.0
 
 
@@ -106,6 +110,10 @@ class DatasetCapture:
             # head-only phase) -- that is exactly the frame we want.
             reasons.append("person_activity")
         if reasons:
+            # Subsampled mean is plenty to recognize a lights-off frame, and
+            # only runs when a trigger actually wants to save.
+            if float(frame[::8, ::8].mean()) < DARK_MEAN_FLOOR:
+                return
             for r in reasons:
                 self._last_by_reason[r] = now
             self._save(frame, analysis, reasons)
