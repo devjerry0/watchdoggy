@@ -291,7 +291,8 @@ async function renderDataset(){
   if (c.unlabeled) warn.push('<a href="/label"><b>' + c.unlabeled + "</b> to label</a>");
   if (c.needs_boxes) warn.push('<a href="/label?filter=needs_boxes" class="bad"><b>'
     + c.needs_boxes + "</b> need hand boxes</a>");
-  if (c.no_prelabels) warn.push(c.no_prelabels + " await tonight's ·x pass");
+  if (c.no_prelabels) warn.push(c.no_prelabels
+    + " get ·x boxes on the next cloud pass (any training run, or 2am)");
   document.getElementById("ds_fine").innerHTML =
     warn.join(" · ") || "everything labeled and boxed";
 }
