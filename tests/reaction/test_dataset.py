@@ -12,7 +12,8 @@ from doggy.vision.detection import Detection
 
 
 def _img():
-    return np.zeros((8, 8, 3), np.uint8)
+    # Mid-gray, not black: harvest triggers skip lights-off frames.
+    return np.full((8, 8, 3), 120, np.uint8)
 
 
 def _analysis(targets=(), people=(), suppressed=(), lowconf=()):
@@ -218,14 +219,13 @@ def test_no_ring_growth_when_disabled(tmp_path):
 def test_dark_frames_are_not_harvested(tmp_path):
     # Lights off: harvest triggers must skip pitch-black frames (they once
     # flooded the queue), but a bright frame with the same trigger saves.
-    cap, runtime = _capture(tmp_path)
+    cap = _capture(tmp_path)
+    cfg = TunableSettings(dataset_enabled=True)
     dark = np.full((48, 64, 3), 6, np.uint8)
     bright = np.full((48, 64, 3), 120, np.uint8)
-    analysis = FrameAnalysis(frame=dark)
-    analysis.lowconf.append(Detection("dog", 0.5, (0, 0, 8, 8)))
-    cap.on_frame(dark, analysis, 100.0, runtime.get())
+    analysis = _analysis(lowconf=[Detection("dog", 0.5, (0, 0, 8, 8))])
+    cap.on_frame(dark, analysis, 100.0, cfg)
     assert cap.stats()["samples"] == 0
-    analysis2 = FrameAnalysis(frame=bright)
-    analysis2.lowconf.append(Detection("dog", 0.5, (0, 0, 8, 8)))
-    cap.on_frame(bright, analysis2, 200.0, runtime.get())
+    analysis2 = _analysis(lowconf=[Detection("dog", 0.5, (0, 0, 8, 8))])
+    cap.on_frame(bright, analysis2, 200.0, cfg)
     assert cap.stats()["samples"] == 1
