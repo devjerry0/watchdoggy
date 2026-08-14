@@ -106,12 +106,10 @@ def _player(tmp_path, spawn, rt=None, status=None, clock=time.monotonic, poll=0.
     # Default set_volume is a no-op returning False (no live apply, no real
     # subprocess to pw-dump/wpctl): keeps tests fast and host-independent, and
     # exercises the re-spawn fallback. Live-volume tests pass their own.
-    p = SoothingPlayer(rt or _runtime(enabled=True), tmp_path,
-                       status or StatusStore(), clock=clock, spawn=spawn,
-                       set_volume=set_volume or (lambda proc, v: False),
-                       wall_clock=wall_clock)
-    p._poll = poll
-    return p
+    return SoothingPlayer(rt or _runtime(enabled=True), tmp_path,
+                          status or StatusStore(), clock=clock, spawn=spawn,
+                          set_volume=set_volume or (lambda proc, v: False),
+                          wall_clock=wall_clock, poll=poll)
 
 
 def _tracks(tmp_path, *names):
@@ -393,8 +391,8 @@ def test_await_exit_cuts_track_when_hold_armed_mid_flight(tmp_path):
     with running(player):
         _wait_for(lambda: spawn.names[:1] == ["a.mp3"])  # registered, in _await_exit
         proc_a = spawn.procs[0]
-        with player._lock:
-            player._hold_until = 45.0  # armed after registration; proc untouched
+        with player._state._lock:
+            player._state._hold_until = 45.0  # armed after registration; proc untouched
         _wait_for(lambda: proc_a.terminated)  # only the hold re-check can do this
         clk.t = 50.0
         _wait_for(lambda: len(spawn.calls) == 2)
@@ -439,53 +437,55 @@ def test_empty_library_idles_then_picks_up_new_file(tmp_path):
 # -- default _spawn_player backend selection -------------------------------
 
 
+def _backend():
+    from doggy.reaction.soothing.audio import AudioBackend
+    return AudioBackend(threading.Event().wait)
+
+
 def test_spawn_player_prefers_pw_play_with_volume(monkeypatch, tmp_path):
-    import doggy.reaction.soothing as mod
+    import doggy.reaction.soothing.audio as mod
 
     cmds = []
     monkeypatch.setattr(mod.shutil, "which",
                         lambda n: "/usr/bin/pw-play" if n == "pw-play" else None)
     monkeypatch.setattr(mod.subprocess, "Popen", lambda cmd: cmds.append(cmd) or object())
-    player = SoothingPlayer(_runtime(), tmp_path, StatusStore())
-    proc = player._spawn_player(tmp_path / "calm.mp3", 0.3)
+    proc = _backend().spawn(tmp_path / "calm.mp3", 0.3)
     assert proc is not None
     assert cmds[0] == ["/usr/bin/pw-play", "--volume", "0.3", str(tmp_path / "calm.mp3")]
 
 
 def test_spawn_player_falls_back_to_pw_cat(monkeypatch, tmp_path):
-    import doggy.reaction.soothing as mod
+    import doggy.reaction.soothing.audio as mod
 
     cmds = []
     monkeypatch.setattr(mod.shutil, "which",
                         lambda n: "/usr/bin/pw-cat" if n == "pw-cat" else None)
     monkeypatch.setattr(mod.subprocess, "Popen", lambda cmd: cmds.append(cmd) or object())
-    player = SoothingPlayer(_runtime(), tmp_path, StatusStore())
-    player._spawn_player(tmp_path / "calm.wav", 0.5)
+    _backend().spawn(tmp_path / "calm.wav", 0.5)
     # Bare pw-cat needs an explicit --playback; pw-play (above) defaults to it.
     assert cmds[0] == [
         "/usr/bin/pw-cat", "--volume", "0.5", "--playback", str(tmp_path / "calm.wav")]
 
 
 def test_spawn_player_darwin_uses_afplay(monkeypatch, tmp_path):
-    import doggy.reaction.soothing as mod
+    import doggy.reaction.soothing.audio as mod
 
     cmds = []
     monkeypatch.setattr(mod.shutil, "which", lambda n: None)
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     monkeypatch.setattr(mod.subprocess, "Popen", lambda cmd: cmds.append(cmd) or object())
-    player = SoothingPlayer(_runtime(), tmp_path, StatusStore())
-    player._spawn_player(tmp_path / "calm.mp3", 0.5)
+    _backend().spawn(tmp_path / "calm.mp3", 0.5)
     assert cmds[0] == ["afplay", "-v", "0.5", str(tmp_path / "calm.mp3")]
 
 
 def test_spawn_player_none_when_no_player_and_logs_once(monkeypatch, tmp_path, caplog):
-    import doggy.reaction.soothing as mod
+    import doggy.reaction.soothing.audio as mod
 
     monkeypatch.setattr(mod.shutil, "which", lambda n: None)
     monkeypatch.setattr(mod.sys, "platform", "linux")
-    player = SoothingPlayer(_runtime(), tmp_path, StatusStore())
+    backend = _backend()
     with caplog.at_level(logging.INFO):
-        assert player._spawn_player(tmp_path / "x.mp3", 0.4) is None
-        assert player._spawn_player(tmp_path / "y.mp3", 0.4) is None
+        assert backend.spawn(tmp_path / "x.mp3", 0.4) is None
+        assert backend.spawn(tmp_path / "y.mp3", 0.4) is None
     logged = [r for r in caplog.records if "no audio player" in r.message]
     assert len(logged) == 1  # logged once, then idles quietly
