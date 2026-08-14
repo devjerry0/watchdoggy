@@ -29,8 +29,8 @@ _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
 # dog-verdict frames where NO model produced a dog box (training would drop
 # them without hand boxes); "no_prelabels" finds frames the big model hasn't
 # scored yet.
-_FRAME_FILTERS = {"unlabeled", "dog", "dog_mixed", "person", "empty", "skip",
-                  "needs_boxes", "no_prelabels", "all"}
+_FRAME_FILTERS = {"unlabeled", "auto", "dog", "dog_mixed", "person", "empty",
+                  "skip", "needs_boxes", "no_prelabels", "all"}
 _NANO_FALLBACK_CONF = 0.45  # mirrors training's PRELABEL_CONF fallback rule
 
 
@@ -64,7 +64,10 @@ def build_router(settings: Settings, capture: DatasetCapture,
         if name == "all":
             return True
         if name == "unlabeled":
-            return not verdict
+            # Auto-labeled frames are off the human's queue.
+            return not verdict and not meta.get("auto_label")
+        if name == "auto":
+            return not verdict and bool(meta.get("auto_label"))
         if name == "no_prelabels":
             return "prelabels" not in meta
         if name == "needs_boxes":
@@ -93,9 +96,11 @@ def build_router(settings: Settings, capture: DatasetCapture,
                 continue
             prio = min((_REASON_PRIORITY.get(r, 9)
                         for r in meta.get("reasons", [])), default=9)
+            auto = meta.get("auto_label") or {}
             rows.append({"name": side.stem,
                          "image": f"/dataset/{side.stem}.jpg",
-                         "verdict": verdict,
+                         "verdict": verdict or auto.get("verdict"),
+                         "auto": not verdict and bool(auto),
                          "hand_boxes": isinstance(meta.get("human_boxes"), list),
                          "_sort": ((prio, -meta.get("wall_time", 0))
                                    if filter == "unlabeled"
@@ -116,6 +121,7 @@ def build_router(settings: Settings, capture: DatasetCapture,
                                 detail="not found")
         meta = json.loads(side.read_text())
         return {"name": safe, "image": f"/dataset/{safe}.jpg",
+                "auto_label": meta.get("auto_label"),
                 "verdict": meta.get("human_label"),
                 "reasons": meta.get("reasons", []),
                 "suggested": meta.get("suggested_label"),
@@ -194,6 +200,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
         else:
             meta["human_label"] = verdict
             meta["labeled_at"] = time.time()
+            # A human verdict supersedes any machine auto-label.
+            meta.pop("auto_label", None)
             if "boxes" in body:
                 # Hand-drawn boxes: the COMPLETE annotation for this frame
                 # (every dog and person). Training trusts them over any model.
@@ -244,6 +252,29 @@ def build_router(settings: Settings, capture: DatasetCapture,
         meta = json.loads(side.read_text())
         meta["prelabels"] = {"model": str(body.get("model", "?"))[:40],
                              "boxes": clean}
+        side.write_text(json.dumps(meta))
+        return {"ok": True}
+
+    @router.post("/api/dataset/autolabel")
+    def api_autolabel(body: dict) -> dict:
+        """Machine consensus verdict (deployed nano + big model agreeing),
+        written by the trainer's nightly pass. Never touches a frame a human
+        has judged, and trains only in the train split -- the held-out exam
+        stays human-verified."""
+        name = Path(str(body.get("name", ""))).name  # traversal guard
+        verdict = body.get("verdict")
+        if verdict not in ("dog", "person", "empty"):
+            raise HTTPException(status_code=422,
+                                detail="verdict must be dog, person, or empty")
+        side = Path(settings.dataset_dir) / f"{name}.json"
+        if not name.startswith("sample_") or not side.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        meta = json.loads(side.read_text())
+        if meta.get("human_label"):
+            return {"ok": True, "skipped": "human label wins"}
+        meta["auto_label"] = {"verdict": verdict, "labeled_at": time.time(),
+                              "source": "nano+x consensus"}
         side.write_text(json.dumps(meta))
         return {"ok": True}
 

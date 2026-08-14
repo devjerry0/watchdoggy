@@ -327,3 +327,34 @@ def test_thumbnail_generated_cached_and_guarded(tmp_path):
     (ddir / "sample_1.jpg").unlink()
     assert c.get("/dataset/thumb/sample_1.jpg").status_code == 404
     assert not thumb.is_file()
+
+
+def test_autolabel_lifecycle(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1")                       # unlabeled
+    _seed_full(ddir, "sample_2", verdict="dog", prelabel_dogs=1)
+    r = c.post("/api/dataset/autolabel",
+               json={"name": "sample_1", "verdict": "dog"})
+    assert r.json() == {"ok": True}
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert meta["auto_label"]["verdict"] == "dog"
+    assert "human_label" not in meta
+    # off the human queue, visible under the auto chip, counted as dog
+    d = c.get("/api/dataset/frames?filter=unlabeled").json()
+    assert d["counts"]["unlabeled"] == 0 and d["counts"]["auto"] == 1
+    auto = c.get("/api/dataset/frames?filter=auto").json()["frames"]
+    assert auto[0]["name"] == "sample_1" and auto[0]["auto"] is True
+    assert auto[0]["verdict"] == "dog"
+    # human verdict overrules and clears the auto label
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "person"})
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert meta["human_label"] == "person" and "auto_label" not in meta
+    # autolabel never touches a human-labeled frame
+    r = c.post("/api/dataset/autolabel",
+               json={"name": "sample_2", "verdict": "empty"})
+    assert r.json()["skipped"] == "human label wins"
+    # validation
+    assert c.post("/api/dataset/autolabel",
+                  json={"name": "sample_1", "verdict": "dog_mixed"}).status_code == 422
+    assert c.post("/api/dataset/autolabel",
+                  json={"name": "sample_404", "verdict": "dog"}).status_code == 404

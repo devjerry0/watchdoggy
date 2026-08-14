@@ -20,12 +20,19 @@ def pull(host: str) -> None:
     log(f"dataset mirror: {count} samples")
 
 
-def labeled_sidecars() -> list[tuple[str, str, dict]]:
-    """(stem, verdict, meta) for every judged frame whose image exists."""
+def labeled_sidecars(include_auto: bool = False) -> list[tuple[str, str, dict]]:
+    """(stem, verdict, meta) for every judged frame whose image exists.
+
+    By default HUMAN verdicts only -- the evaluation exam must never be
+    machine-graded. include_auto adds machine-consensus auto labels (build
+    uses them for extra training data; they are confined to the train split).
+    """
     out = []
     for sidecar in sorted(DATASET_MIRROR.glob("sample_*.json")):
         meta = json.loads(sidecar.read_text())
         verdict = meta.get("human_label")
+        if not verdict and include_auto:
+            verdict = (meta.get("auto_label") or {}).get("verdict")
         if not verdict:
             continue
         if verdict == "skip":

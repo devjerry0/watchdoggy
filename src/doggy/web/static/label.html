@@ -83,6 +83,10 @@
   .thumb.on{border-color:var(--linen);box-shadow:0 0 0 1.5px var(--linen)}
   .thumb .hb{position:absolute;top:.2rem;right:.2rem;width:.5rem;height:.5rem;
         border:1.5px solid var(--lamp);border-radius:2px;background:rgba(23,19,16,.65)}
+  .thumb.is-auto{border-style:dashed}
+  .thumb .ab{position:absolute;top:.15rem;left:.2rem;font-family:var(--mono);
+        font-size:.55rem;font-weight:700;color:var(--sky);
+        background:rgba(23,19,16,.75);padding:0 .2rem;border-radius:3px}
 
   #why{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;color:var(--stone);
        margin:.55rem 0 .9rem;text-transform:uppercase;display:flex;justify-content:space-between;
@@ -265,7 +269,7 @@ let zoomed = false;
 let busy = false;
 
 const CHIP_DEFS = [
-  ["unlabeled", "Queue"], ["needs_boxes", "Needs boxes"],
+  ["unlabeled", "Queue"], ["auto", "Auto"], ["needs_boxes", "Needs boxes"],
   ["no_prelabels", "No ·x"], ["dog", "Dog"], ["dog_mixed", "Dog+bad box"],
   ["person", "Person"], ["empty", "Nothing"], ["skip", "Skipped"], ["all", "All"],
 ];
@@ -296,9 +300,10 @@ function buildStrip(){
   // the full frames -- a 400-frame strip stays a sane download.
   document.getElementById("strip").innerHTML = frames.map((f, i) =>
     '<div class="thumb' + (f.verdict ? " v-" + esc(f.verdict) : "")
-    + '" data-i="' + i + '">'
+    + (f.auto ? " is-auto" : "") + '" data-i="' + i + '">'
     + '<img loading="lazy" src="/dataset/thumb/' + esc(f.name) + '.jpg" alt="">'
-    + (f.hand_boxes ? '<div class="hb"></div>' : '') + '</div>').join("");
+    + (f.hand_boxes ? '<div class="hb"></div>' : '')
+    + (f.auto ? '<div class="ab">A</div>' : '') + '</div>').join("");
 }
 function markActive(){
   const current = document.querySelector("#strip .thumb.on");
@@ -373,6 +378,9 @@ async function select(i){
   let why = (d.reasons || []).map(r => REASON_WORDS[r] || r).join(" · ");
   if (Array.isArray(d.human_boxes)) why += " · hand boxes saved";
   if (d.verdict) why += " · labeled: " + (VERDICT_WORDS[d.verdict] || d.verdict);
+  if (!d.verdict && d.auto_label) why += " · auto-labeled: "
+    + (VERDICT_WORDS[d.auto_label.verdict] || d.auto_label.verdict)
+    + " (tap a button to overrule)";
   document.getElementById("why_text").textContent = "Saved because: " + (why || "unknown");
   const sugKey = d.suggested === "no_dog" ? "person" : d.suggested;
   document.getElementById("hint_sug").textContent =

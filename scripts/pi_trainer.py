@@ -261,13 +261,30 @@ def _run_cost(before: dict | None) -> float | None:
     return round(max(0.0, after["metered_cost"] - before["metered_cost"]), 2)
 
 
+def _apply_auto_verdicts(verdicts_file: Path) -> int:
+    if not verdicts_file.is_file():
+        return 0
+    applied = 0
+    for stem, verdict in json.loads(verdicts_file.read_text()).items():
+        try:
+            _api("/api/dataset/autolabel", {"name": stem, "verdict": verdict})
+            applied += 1
+        except Exception as exc:
+            log(f"WARNING: auto-label failed for {stem}: {exc}")
+    return applied
+
+
 def _run_prelabel_job(job: dict) -> str:
     before = _billing_summary()
     with tempfile.TemporaryDirectory() as tmp:
-        _modal("kickoff_prelabels", ["--out-dir", tmp], job["id"])
+        arguments = ["--out-dir", tmp]
+        if DEPLOYED_BUNDLE.is_dir():
+            arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
+        _modal("kickoff_prelabels", arguments, job["id"])
         merged = _merge_prelabels(Path(tmp) / "prelabels.json")
+        autos = _apply_auto_verdicts(Path(tmp) / "auto_verdicts.json")
     cost = _run_cost(before)
-    return (f"{merged} frames prelabeled"
+    return (f"{merged} frames prelabeled, {autos} auto-labeled"
             + (f" (${cost:.2f})" if cost is not None else ""))
 
 

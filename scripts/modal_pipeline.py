@@ -175,22 +175,82 @@ def run_pipeline(run_name: str, recipe: dict,
     return results, bundle_tar
 
 
+# Consensus auto-labeling: both jurors must agree before a frame skips the
+# human queue. The nano is the DEPLOYED kitchen specialist; X is the generic
+# giant. Disagreement or hesitation = the frame stays for the human.
+AUTO_DOG_NANO_CONF = 0.6     # nano must be alarm-grade sure a dog is there
+AUTO_CLEAR_NANO_CONF = 0.2   # ...or this quiet for a confident "no dog"
+AUTO_PERSON_NANO_CONF = 0.5
+# Third juror: the capture reason. A frame tagged fire/borderline/suppressed
+# exists BECAUSE something dog-like triggered at capture time -- if both
+# models now say "no dog", that contradiction goes to the human, never to an
+# auto-label (blind-test showed this is exactly where poisonous
+# missed-dog-as-background labels come from).
+SAFE_NO_DOG_REASONS = {"person_activity", "periodic", "user_marked_fp"}
+
+
+def _consensus_verdict(x_entry: dict, nano_dog: float, nano_person: float,
+                       reasons: list) -> str | None:
+    x_dog = bool(x_entry["dogs"])
+    x_person = bool(x_entry["people"])
+    if x_dog and nano_dog >= AUTO_DOG_NANO_CONF:
+        return "dog"
+    innocent_capture = bool(reasons) and all(r in SAFE_NO_DOG_REASONS
+                                             for r in reasons)
+    if not x_dog and nano_dog <= AUTO_CLEAR_NANO_CONF and innocent_capture:
+        if x_person or nano_person >= AUTO_PERSON_NANO_CONF:
+            return "person"
+        return "empty"
+    return None  # jurors disagree or the capture itself smelled of dog
+
+
 @app.function(image=image, gpu=GPU, cpu=4, memory=8192,
               volumes={str(VOL): volume}, timeout=30 * MINUTES)
 def run_prelabels(run_name: str) -> dict:
-    """Prelabels only: big-model boxes for every uploaded frame that the
-    cache hasn't seen. Cheap; keeps the review page stocked with ·x boxes."""
+    """Nightly pass: big-model boxes for new frames, plus consensus
+    auto-verdicts for unlabeled frames where the deployed nano and the big
+    model agree -- those skip the human queue (train-split only)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
+    from ultralytics import YOLO
     from kitchen_training.config import DATASET_MIRROR, PRELABEL_CACHE
     from kitchen_training.dataset import prelabel
 
     cache_before = set(json.loads(PRELABEL_CACHE.read_text())
                        if PRELABEL_CACHE.is_file() else {})
     stems = [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
-    prelabel(stems)
+    cache = prelabel(stems)
+
+    auto_verdicts = {}
+    deployed_dir = run_root / "deployed_ncnn_model"
+    if deployed_dir.is_dir():
+        nano = YOLO(str(deployed_dir), task="detect")
+        for stem in stems:
+            sidecar = DATASET_MIRROR / f"{stem}.json"
+            meta = json.loads(sidecar.read_text()) if sidecar.is_file() else {}
+            if meta.get("human_label") or meta.get("auto_label"):
+                continue
+            prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
+                                      conf=0.1, imgsz=640, device="cpu",
+                                      verbose=False)[0]
+            nano_dog, nano_person = 0.0, 0.0
+            for box in prediction.boxes:
+                label = prediction.names[int(box.cls[0])]
+                conf = float(box.conf[0])
+                if label == "dog":
+                    nano_dog = max(nano_dog, conf)
+                if label == "person":
+                    nano_person = max(nano_person, conf)
+            verdict = _consensus_verdict(cache[stem], nano_dog, nano_person,
+                                         meta.get("reasons", []))
+            if verdict:
+                auto_verdicts[stem] = verdict
+        print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} of "
+              f"the unlabeled frames", flush=True)
+
     volume.commit()
-    return {"run_name": run_name, "prelabels": _fresh_prelabels(cache_before)}
+    return {"run_name": run_name, "prelabels": _fresh_prelabels(cache_before),
+            "auto_verdicts": auto_verdicts}
 
 
 def _upload(dataset_dir: Path, deployed_dir: Path | None,
@@ -243,13 +303,19 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
 
 
 @app.local_entrypoint()
-def kickoff_prelabels(dataset_dir: str, out_dir: str) -> None:
-    """Prelabels-only run (fast): fresh ·x boxes for the review page."""
-    run_name = _upload(Path(dataset_dir), None, None)
+def kickoff_prelabels(dataset_dir: str, out_dir: str,
+                      deployed_dir: str = "") -> None:
+    """Prelabels-only run (fast): fresh ·x boxes for the review page, plus
+    consensus auto-verdicts when --deployed-dir provides the second juror."""
+    run_name = _upload(Path(dataset_dir),
+                       Path(deployed_dir) if deployed_dir else None, None)
     print("[pipeline] prelabeling in the cloud ...")
     results = run_prelabels.remote(run_name)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
-    print(f"[pipeline] {len(results['prelabels'])} new frames prelabeled "
-          f"-> {out / 'prelabels.json'}")
+    (out / "auto_verdicts.json").write_text(
+        json.dumps(results.get("auto_verdicts", {})))
+    print(f"[pipeline] {len(results['prelabels'])} new frames prelabeled, "
+          f"{len(results.get('auto_verdicts', {}))} auto-labeled "
+          f"-> {out}")

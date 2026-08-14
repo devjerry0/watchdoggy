@@ -39,8 +39,10 @@ def _count_boxes(lines: list[str], into: dict) -> None:
 
 
 def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: bool,
-                 stats: dict) -> None:
-    split = split_for(stem)
+                 stats: dict, force_train: bool = False) -> None:
+    # Auto-labeled frames never enter the val split: the held-out exam is
+    # human-verified only, so machine error can't grade itself.
+    split = "train" if force_train else split_for(stem)
     label_text = "\n".join(lines) + ("\n" if lines else "")
     shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg",
                     dataset_dir / f"images/{split}/{stem}.jpg")
@@ -53,16 +55,16 @@ def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: bool,
 
 def _new_stats() -> dict:
     return {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
-            "augmented": 0,
+            "augmented": 0, "auto_labeled": 0,
             "boxes": {"train": {"person": 0, "dog": 0},
                       "val": {"person": 0, "dog": 0}},
             "verdicts": {}}
 
 
 def _log_build(stats: dict) -> None:
-    log(f"train {stats['train']} imgs (+{stats['augmented']} augmented) "
-        f"{stats['boxes']['train']} | "
-        f"val {stats['val']} imgs {stats['boxes']['val']} | "
+    log(f"train {stats['train']} imgs (+{stats['augmented']} augmented, "
+        f"{stats['auto_labeled']} auto-labeled) {stats['boxes']['train']} | "
+        f"val {stats['val']} imgs {stats['boxes']['val']} (human-verified) | "
         f"hand-boxed {stats['hand_boxed']} | dropped {len(stats['dropped'])} | "
         f"nano-fallback {stats['fallback']}")
     for stem, why in stats["dropped"]:
@@ -70,7 +72,7 @@ def _log_build(stats: dict) -> None:
 
 
 def build(run_dir: Path, augment: bool = False) -> dict:
-    samples = labeled_sidecars()
+    samples = labeled_sidecars(include_auto=True)
     log(f"building dataset from {len(samples)} verdicted frames")
     prelabels_by_stem = prelabel([stem for stem, _, _ in samples])
 
@@ -90,7 +92,10 @@ def build(run_dir: Path, augment: bool = False) -> dict:
             continue
         if source in source_counters:
             stats[source_counters[source]] += 1
-        _write_frame(dataset_dir, stem, lines, augment, stats)
+        is_auto = not meta.get("human_label")
+        stats["auto_labeled"] += is_auto
+        _write_frame(dataset_dir, stem, lines, augment, stats,
+                     force_train=is_auto)
 
     (dataset_dir / "data.yaml").write_text(
         f"path: {dataset_dir.resolve()}\ntrain: images/train\nval: images/val\n"
