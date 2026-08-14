@@ -7,9 +7,10 @@ The caller (the Pi's trainer daemon, or a Mac) uploads the raw labeled
 frames and the currently-deployed bundle; the cloud does EVERYTHING else:
 big-model prelabels (GPU, cached in the Volume), dataset build with blur
 augmentation, the proven "long" fine-tune recipe, the full evaluation
-(leaderboard scoring, NCNN deploy-truth, robustness stress), and the deploy
-gate -- ship only if the new bundle beats-or-ties the deployed one on the
-current held-out exam with zero false fires. Results land in --out-dir:
+(leaderboard scoring, NCNN deploy-truth, robustness stress), and the
+best-model-wins deploy gate. The actual pipeline logic lives in
+kitchen_training.pipeline (plus gate/consensus); this file only wraps it
+in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
 review page), and kitchen_ncnn_model/ when the gate passes.
 
@@ -35,12 +36,6 @@ MINUTES = 60
 GPU = os.environ.get("DOGGY_TRAIN_GPU", "L4")
 VOL = Path("/vol")
 PIPELINE_ROOT = VOL / "pipeline"
-KEEP_RUNS = 5
-
-# The proven recipe from the sweep: "long" (200 epochs) won on the full
-# dataset with augmentation. The training page can override per run; the
-# 10-config sweep stays available manually via train_kitchen_model.py --sweep.
-DEFAULT_RECIPE = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True}
 
 app = modal.App("watchdoggy-pipeline")
 
@@ -72,92 +67,6 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
 
 
-def _fresh_prelabels(cache_before: set[str]) -> dict:
-    from kitchen_training.config import PRELABEL_CACHE
-    cache = json.loads(PRELABEL_CACHE.read_text())
-    fresh = {}
-    for stem in set(cache) - cache_before:
-        entry = cache[stem]
-        fresh[stem] = ([{"label": "dog", "box": box} for box in entry["dogs"]]
-                       + [{"label": "person", "box": box}
-                          for box in entry["people"]])
-    return fresh
-
-
-def _deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
-                 fire_conf: float) -> dict:
-    """The best model wins, period. Both bundles sit the IDENTICAL current
-    exam at the appliance's runtime threshold; fewest total held-out errors
-    (missed dogs + false fires) deploys. False fires break ties and are
-    always displayed, but they are an indicator, not a veto -- the old
-    zero-FP hard rule kept vetoing models that caught 20+ more dogs over
-    noise-level FP differences on a growing exam. Freshness wins exact
-    ties: the challenger trained on newer data."""
-    from ultralytics import YOLO
-    from kitchen_training.evaluation import curve, dog_confs, eval_frames, score
-
-    frames = eval_frames(run_dir)
-    new_confs = dog_confs(YOLO(str(new_bundle), task="detect"), frames, "cpu")
-    new_score = score(frames, new_confs, fire_conf, True)
-    gate = {"fire_conf": fire_conf, "new": new_score,
-            "new_errors": new_score["missed"] + new_score["false_fires"]}
-    if not deployed_dir.is_dir():
-        return {**gate, "deploy": True, "deployed": None, "deployed_errors": None,
-                "reason": "no deployed bundle uploaded",
-                "deployed_curve": None}
-    old_confs = dog_confs(YOLO(str(deployed_dir), task="detect"), frames, "cpu")
-    old_score = score(frames, old_confs, fire_conf, True)
-    old_errors = old_score["missed"] + old_score["false_fires"]
-    passes = (gate["new_errors"] < old_errors
-              or (gate["new_errors"] == old_errors
-                  and new_score["false_fires"] <= old_score["false_fires"]))
-    reason = (f"{gate['new_errors']} errors vs deployed's {old_errors} "
-              f"at {fire_conf}"
-              + (" -- best model wins" if passes else " -- incumbent stands"))
-    return {**gate, "deploy": passes, "deployed": old_score,
-            "deployed_errors": old_errors, "reason": reason,
-            # The incumbent's full curve rides along so every report compares
-            # both models on the same grown exam, not just at one threshold.
-            "deployed_curve": curve(frames, old_confs)}
-
-
-# The exam's own audit: yesterday's jurors can't catch label errors that only
-# the newest model can see, so every candidate disputes the held-out frames it
-# confidently disagrees with -- proven necessity: a candidate's "false fires"
-# turned out to be sleeping/edge dogs the human and both old jurors missed.
-SUSPECT_FIRE_CONF = 0.7   # candidate very sure a "non-dog" frame has a dog
-SUSPECT_QUIET_CONF = 0.1  # candidate sees nothing in a "dog" frame
-
-
-def _exam_suspects(run_dir: Path, bundle: Path) -> dict:
-    import json as _json
-    from ultralytics import YOLO
-    from kitchen_training.config import DATASET_MIRROR
-    from kitchen_training.evaluation import dog_confs, eval_frames
-    frames = [f for f in eval_frames(run_dir) if f.heldout]
-    confs = dog_confs(YOLO(str(bundle), task="detect"), frames, "cpu")
-    suspects = {}
-    for frame in frames:
-        meta = _json.loads((DATASET_MIRROR / f"{frame.stem}.json").read_text())
-        if meta.get("dispute_settled_at"):
-            continue  # a human already arbitrated this one
-        conf = confs[frame.stem]
-        # One direction only: confident dog sightings on non-dog labels.
-        # (Models doubting hard dog frames is expected, not suspicious.)
-        if not frame.is_dog and conf >= SUSPECT_FIRE_CONF:
-            suspects[frame.stem] = {"model_says": "dog", "nano_conf": conf}
-    print(f"[pipeline] candidate disputes {len(suspects)} held-out labels",
-          flush=True)
-    return suspects
-
-
-def _prune_old_runs(runs_dir: Path) -> None:
-    import shutil
-    run_dirs = sorted(p for p in runs_dir.glob("*") if p.is_dir())
-    for stale in run_dirs[:-KEEP_RUNS]:
-        shutil.rmtree(stale, ignore_errors=True)
-
-
 # cpu/memory matter as much as the GPU here: the dataloader (decode +
 # augmentation) is pure CPU, and Modal's default allocation starves it.
 @app.function(image=image, gpu=GPU, cpu=8, memory=16384,
@@ -167,91 +76,12 @@ def run_pipeline(run_name: str, recipe: dict,
     """The whole training day in one container. Returns (results, bundle_tar)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
-    from kitchen_training.build import build
-    from kitchen_training.config import BASE_MODEL, PRELABEL_CACHE, RUNS
-    from kitchen_training.evaluation import evaluate, ncnn_truth, robustness
-    from kitchen_training.export import export
-    from kitchen_training.report import report
-    from kitchen_training.training import train
+    from kitchen_training.pipeline import full_run
 
-    recipe = {**DEFAULT_RECIPE, **recipe}
-    print(f"[pipeline] recipe: {recipe}", flush=True)
-    cache_before = set(json.loads(PRELABEL_CACHE.read_text())
-                       if PRELABEL_CACHE.is_file() else {})
-    run_dir = RUNS / run_name
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    dataset_stats = build(run_dir, augment=recipe["augment"])
-    best = train(run_dir, "local", epochs=recipe["epochs"],
-                 batch=recipe["batch"], freeze=recipe["freeze"])
-    weights_by_name = {"fine-tune": best, "baseline": BASE_MODEL}
-    metrics = evaluate(run_dir, weights_by_name)
-    bundle = export(run_dir, best)
-    metrics["ncnn_truth"] = ncnn_truth(run_dir, bundle)
-    metrics["robustness"] = robustness(run_dir, bundle)
-    gate = _deploy_gate(run_dir, bundle, run_root / "deployed_ncnn_model",
-                        fire_conf)
-    deployed_dir = run_root / "deployed_ncnn_model"
-    if deployed_dir.is_dir():
-        # The incumbent runs the same stress suite: comparisons stay
-        # apples-to-apples as the exam grows.
-        metrics["robustness_deployed"] = robustness(run_dir, deployed_dir)
-    exam_suspects = _exam_suspects(run_dir, bundle)
-    report(run_dir, dataset_stats, metrics, "fine-tune", bundle)
-
-    results = {
-        "run_name": run_name,
-        "gate": gate,
-        "prelabels": _fresh_prelabels(cache_before),
-        "report_md": (run_dir / "report.md").read_text(),
-        "dataset": {"train": dataset_stats["train"],
-                    "val": dataset_stats["val"],
-                    "augmented": dataset_stats["augmented"],
-                    "hand_boxed": dataset_stats["hand_boxed"],
-                    "dropped": [stem for stem, _ in dataset_stats["dropped"]]},
-        "recipe": recipe,
-        "fire_conf": fire_conf,
-        "ncnn_truth": metrics["ncnn_truth"],
-        "robustness": metrics["robustness"],
-        "robustness_deployed": metrics.get("robustness_deployed"),
-        # The headline score IS the gate's new-model score: measured at the
-        # appliance's runtime threshold, not a fixed default.
-        "ncnn_heldout": gate["new"],
-        "exam_suspects": exam_suspects,
-    }
-    bundle_tar = _tar_bytes(bundle) if gate["deploy"] else None
-    _prune_old_runs(RUNS)
+    results, bundle = full_run(run_name, recipe, fire_conf, run_root)
+    bundle_tar = _tar_bytes(bundle) if bundle else None
     volume.commit()
     return results, bundle_tar
-
-
-# Consensus auto-labeling: both jurors must agree before a frame skips the
-# human queue. The nano is the DEPLOYED kitchen specialist; X is the generic
-# giant. Disagreement or hesitation = the frame stays for the human.
-AUTO_DOG_NANO_CONF = 0.6     # nano must be alarm-grade sure a dog is there
-AUTO_CLEAR_NANO_CONF = 0.2   # ...or this quiet for a confident "no dog"
-AUTO_PERSON_NANO_CONF = 0.5
-# Third juror: the capture reason. A frame tagged fire/borderline/suppressed
-# exists BECAUSE something dog-like triggered at capture time -- if both
-# models now say "no dog", that contradiction goes to the human, never to an
-# auto-label (blind-test showed this is exactly where poisonous
-# missed-dog-as-background labels come from).
-SAFE_NO_DOG_REASONS = {"person_activity", "periodic", "user_marked_fp"}
-
-
-def _consensus_verdict(x_entry: dict, nano_dog: float, nano_person: float,
-                       reasons: list) -> str | None:
-    x_dog = bool(x_entry["dogs"])
-    x_person = bool(x_entry["people"])
-    if x_dog and nano_dog >= AUTO_DOG_NANO_CONF:
-        return "dog"
-    innocent_capture = bool(reasons) and all(r in SAFE_NO_DOG_REASONS
-                                             for r in reasons)
-    if not x_dog and nano_dog <= AUTO_CLEAR_NANO_CONF and innocent_capture:
-        if x_person or nano_person >= AUTO_PERSON_NANO_CONF:
-            return "person"
-        return "empty"
-    return None  # jurors disagree or the capture itself smelled of dog
 
 
 @app.function(image=image, gpu=GPU, cpu=4, memory=8192,
@@ -262,60 +92,11 @@ def run_prelabels(run_name: str) -> dict:
     model agree -- those skip the human queue (train-split only)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
-    from ultralytics import YOLO
-    from kitchen_training.config import DATASET_MIRROR, PRELABEL_CACHE
-    from kitchen_training.dataset import prelabel
+    from kitchen_training.pipeline import prelabel_run
 
-    cache_before = set(json.loads(PRELABEL_CACHE.read_text())
-                       if PRELABEL_CACHE.is_file() else {})
-    stems = [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
-    cache = prelabel(stems)
-
-    auto_verdicts = {}
-    disputes = {}
-    deployed_dir = run_root / "deployed_ncnn_model"
-    if deployed_dir.is_dir():
-        nano = YOLO(str(deployed_dir), task="detect")
-        for stem in stems:
-            sidecar = DATASET_MIRROR / f"{stem}.json"
-            meta = json.loads(sidecar.read_text()) if sidecar.is_file() else {}
-            prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
-                                      conf=0.1, imgsz=640, device="cpu",
-                                      verbose=False)[0]
-            nano_dog, nano_person = 0.0, 0.0
-            for box in prediction.boxes:
-                label = prediction.names[int(box.cls[0])]
-                conf = float(box.conf[0])
-                if label == "dog":
-                    nano_dog = max(nano_dog, conf)
-                if label == "person":
-                    nano_person = max(nano_person, conf)
-            human = meta.get("human_label")
-            if not human and not meta.get("auto_label"):
-                verdict = _consensus_verdict(cache[stem], nano_dog, nano_person,
-                                             meta.get("reasons", []))
-                if verdict:
-                    auto_verdicts[stem] = verdict
-                continue
-            # Label audit, ONE direction only: a confident dog sighting on a
-            # non-dog label usually means a real dog the human missed. The
-            # reverse direction ("dog-labeled but we see nothing") was removed:
-            # the jury misses ~26% of hard borderline dogs, so it mostly
-            # second-guessed labels the human had right. A human who already
-            # arbitrated a dispute is not asked twice (dispute_settled_at).
-            if meta.get("dispute_settled_at"):
-                continue
-            if human in ("person", "empty", "no_dog"):
-                if nano_dog >= AUTO_DOG_NANO_CONF and cache[stem]["dogs"]:
-                    disputes[stem] = {"model_says": "dog",
-                                      "nano_conf": round(nano_dog, 3)}
-        print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
-              f"unlabeled frames; disputed {len(disputes)} existing labels",
-              flush=True)
-
+    results = prelabel_run(run_name, run_root)
     volume.commit()
-    return {"run_name": run_name, "prelabels": _fresh_prelabels(cache_before),
-            "auto_verdicts": auto_verdicts, "disputes": disputes}
+    return results
 
 
 def _upload(dataset_dir: Path, deployed_dir: Path | None,
