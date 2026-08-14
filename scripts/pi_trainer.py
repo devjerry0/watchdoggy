@@ -353,7 +353,8 @@ def _run_train_job(job: dict) -> str:
         # curve, robustness, dataset shape, recipe, duration.
         job["_summary"] = {key: summary.get(key) for key in
                            ("gate", "dataset", "recipe", "fire_conf",
-                            "ncnn_truth", "robustness")}
+                            "ncnn_truth", "robustness",
+                            "robustness_deployed")}
         job["_summary"]["duration_s"] = round(time.time() - started)
         job["_summary"]["cost_usd"] = _run_cost(before)
         gate = summary["gate"]

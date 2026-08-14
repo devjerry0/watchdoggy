@@ -389,9 +389,14 @@ function renderRuns(){
       const rows = [];
       if (g.deployed) rows.push(["vs deployed"
         + (g.fire_conf ? " @" + g.fire_conf : ""),
-        g.new.caught + "/" + (g.new.caught + g.new.missed) + " vs "
+        g.new.caught + "/" + (g.new.caught + g.new.missed) + " · "
+        + g.new.false_fires + "FP vs "
         + g.deployed.caught + "/" + (g.deployed.caught + g.deployed.missed)
-        + " — " + esc(g.reason || "")]);
+        + " · " + g.deployed.false_fires + "FP — " + esc(g.reason || "")]);
+      if (s.robustness_deployed) rows.push(["stress (deployed)",
+        Object.entries(s.robustness_deployed).map(
+          ([n, v]) => n + " " + v.caught + "/" + v.dogs
+          + (v.false_fires ? "(" + v.false_fires + "FP)" : "")).join("  ")]);
       if (s.dataset) rows.push(["dataset", s.dataset.train + " train (+"
         + (s.dataset.augmented || 0) + " aug) / " + s.dataset.val + " held out"
         + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")]);

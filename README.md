@@ -28,7 +28,7 @@ The stock COCO-trained model has never seen *your* kitchen from *your* camera an
 
    ![Label page: filter chips, the big model's boxes, filmstrip navigation, one-tap verdicts](docs/label.png)
 4. **Train** — every couple of days (configurable), the trainer sends one job to a Modal cloud GPU: label fusion, blur/dark augmentation, training (GPU tier and batch size auto-scale with dataset size), frame-level evaluation scored the way the alarm actually fires, NCNN export, and a robustness stress test (blur, darkness, overexposure, compression, camera shift). Auto-labeled frames train but never enter the exam.
-5. **Gate** — the new model deploys **only if it beats or ties the currently-live model on a held-out, 100% human-verified exam — judged at the appliance's actual runtime threshold — with zero false fires**. No regression can ship. The previous model is kept on disk for instant rollback.
+5. **Gate** — challenger and incumbent sit the **identical, 100% human-verified held-out exam** — judged at the appliance's actual runtime threshold — and **the best model wins**: fewest total errors (missed dogs + false fires), with false fires as tie-breaker and always-visible indicator. Both models' full threshold curves and stress results land in every report, so comparisons stay honest as the dataset grows. The previous model is kept on disk for instant rollback.
 6. **Repeat** — every mistake it makes becomes training data against it, and the exam grows harder as the dataset grows.
 
 Your only job is a few minutes of arbitration on the Label page now and then. Everything else — nightly prelabels, consensus auto-labeling, label audits, scheduled training, evaluation, gated deployment — happens on its own.

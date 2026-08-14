@@ -86,27 +86,39 @@ def _fresh_prelabels(cache_before: set[str]) -> dict:
 
 def _deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
                  fire_conf: float) -> dict:
-    """Ship only a strict non-regression: zero held-out false fires and at
-    least as many held-out catches as the currently-deployed bundle, scored
-    on the SAME current exam AT THE APPLIANCE'S RUNTIME THRESHOLD -- judging
-    at any other operating point can hide a regression that fires."""
+    """The best model wins, period. Both bundles sit the IDENTICAL current
+    exam at the appliance's runtime threshold; fewest total held-out errors
+    (missed dogs + false fires) deploys. False fires break ties and are
+    always displayed, but they are an indicator, not a veto -- the old
+    zero-FP hard rule kept vetoing models that caught 20+ more dogs over
+    noise-level FP differences on a growing exam. Freshness wins exact
+    ties: the challenger trained on newer data."""
     from ultralytics import YOLO
-    from kitchen_training.evaluation import dog_confs, eval_frames, score
+    from kitchen_training.evaluation import curve, dog_confs, eval_frames, score
 
     frames = eval_frames(run_dir)
-    new_score = score(frames, dog_confs(
-        YOLO(str(new_bundle), task="detect"), frames, "cpu"), fire_conf, True)
-    gate = {"fire_conf": fire_conf, "new": new_score}
+    new_confs = dog_confs(YOLO(str(new_bundle), task="detect"), frames, "cpu")
+    new_score = score(frames, new_confs, fire_conf, True)
+    gate = {"fire_conf": fire_conf, "new": new_score,
+            "new_errors": new_score["missed"] + new_score["false_fires"]}
     if not deployed_dir.is_dir():
-        return {**gate, "deploy": new_score["false_fires"] == 0,
-                "deployed": None, "reason": "no deployed bundle uploaded"}
-    old_score = score(frames, dog_confs(
-        YOLO(str(deployed_dir), task="detect"), frames, "cpu"), fire_conf, True)
-    passes = (new_score["false_fires"] == 0
-              and new_score["caught"] >= old_score["caught"])
-    reason = (f"beats-or-ties deployed at {fire_conf} with zero false fires"
-              if passes else f"does not beat deployed bundle at {fire_conf}")
-    return {**gate, "deploy": passes, "deployed": old_score, "reason": reason}
+        return {**gate, "deploy": True, "deployed": None, "deployed_errors": None,
+                "reason": "no deployed bundle uploaded",
+                "deployed_curve": None}
+    old_confs = dog_confs(YOLO(str(deployed_dir), task="detect"), frames, "cpu")
+    old_score = score(frames, old_confs, fire_conf, True)
+    old_errors = old_score["missed"] + old_score["false_fires"]
+    passes = (gate["new_errors"] < old_errors
+              or (gate["new_errors"] == old_errors
+                  and new_score["false_fires"] <= old_score["false_fires"]))
+    reason = (f"{gate['new_errors']} errors vs deployed's {old_errors} "
+              f"at {fire_conf}"
+              + (" -- best model wins" if passes else " -- incumbent stands"))
+    return {**gate, "deploy": passes, "deployed": old_score,
+            "deployed_errors": old_errors, "reason": reason,
+            # The incumbent's full curve rides along so every report compares
+            # both models on the same grown exam, not just at one threshold.
+            "deployed_curve": curve(frames, old_confs)}
 
 
 # The exam's own audit: yesterday's jurors can't catch label errors that only
@@ -179,6 +191,11 @@ def run_pipeline(run_name: str, recipe: dict,
     metrics["robustness"] = robustness(run_dir, bundle)
     gate = _deploy_gate(run_dir, bundle, run_root / "deployed_ncnn_model",
                         fire_conf)
+    deployed_dir = run_root / "deployed_ncnn_model"
+    if deployed_dir.is_dir():
+        # The incumbent runs the same stress suite: comparisons stay
+        # apples-to-apples as the exam grows.
+        metrics["robustness_deployed"] = robustness(run_dir, deployed_dir)
     exam_suspects = _exam_suspects(run_dir, bundle)
     report(run_dir, dataset_stats, metrics, "fine-tune", bundle)
 
@@ -196,6 +213,7 @@ def run_pipeline(run_name: str, recipe: dict,
         "fire_conf": fire_conf,
         "ncnn_truth": metrics["ncnn_truth"],
         "robustness": metrics["robustness"],
+        "robustness_deployed": metrics.get("robustness_deployed"),
         # The headline score IS the gate's new-model score: measured at the
         # appliance's runtime threshold, not a fixed default.
         "ncnn_heldout": gate["new"],
@@ -320,7 +338,8 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
     (out_dir / "summary.json").write_text(json.dumps(
         {key: results[key] for key in
          ("run_name", "gate", "dataset", "recipe", "ncnn_truth",
-          "robustness", "ncnn_heldout", "exam_suspects")}, indent=1))
+          "robustness", "robustness_deployed", "ncnn_heldout",
+          "exam_suspects")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     if bundle_tar:
