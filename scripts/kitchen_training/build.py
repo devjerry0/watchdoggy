@@ -77,6 +77,10 @@ def build(run_dir: Path, augment: bool = False) -> dict:
     prelabels_by_stem = prelabel([stem for stem, _, _ in samples])
 
     dataset_dir = run_dir / "dataset"
+    # Idempotent for retried cloud runs: a crashed attempt leaves partial
+    # output in the Volume; rebuild from clean rather than trip over it.
+    if dataset_dir.exists():
+        shutil.rmtree(dataset_dir)
     for sub in ("images/train", "images/val", "labels/train", "labels/val"):
         (dataset_dir / sub).mkdir(parents=True)
 
