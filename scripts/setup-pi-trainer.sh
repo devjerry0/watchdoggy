@@ -5,7 +5,8 @@
 # apply the gated results. The doggy detector service stays provably offline.
 #
 # Idempotent. Run AFTER harden-pi.sh and a normal code deploy (the Pi needs
-# scripts/modal_pipeline.py, scripts/kitchen_training/, scripts/pi_trainer.py).
+# scripts/modal_pipeline.py, scripts/kitchen_training/, scripts/pi_trainer.py
+# and its scripts/trainer_daemon/ package).
 #
 # Usage: ./scripts/setup-pi-trainer.sh <user@host>   (copies your ~/.modal.toml)
 set -euo pipefail
