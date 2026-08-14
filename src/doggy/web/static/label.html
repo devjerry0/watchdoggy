@@ -272,7 +272,8 @@ const CHIP_DEFS = [
   ["unlabeled", "Queue"], ["disputed", "Disputed"], ["auto", "Auto"],
   ["needs_boxes", "Needs boxes"],
   ["no_prelabels", "No ·x"], ["dog", "Dog"], ["dog_mixed", "Dog+bad box"],
-  ["person", "Person"], ["empty", "Nothing"], ["skip", "Skipped"], ["all", "All"],
+  ["person", "Person"], ["empty", "Nothing"], ["skip", "Skipped"],
+  ["exam", "Exam"], ["all", "All"],
 ];
 const VERDICT_WORDS = {dog:"Dog", dog_mixed:"Dog + bad box", person:"Person only",
                        empty:"Nothing", no_dog:"Not a dog", skip:"Skipped"};
@@ -612,8 +613,11 @@ async function saveBoxes(){
   const v = boxes.some(b => b.label === "dog") ? "dog"
           : boxes.some(b => b.label === "person") ? "person" : "empty";
   exitBoxMode();
+  // Stay on the frame after a box save (in review filters) so the result
+  // can be inspected or re-judged; the Queue still advances naturally
+  // because a labeled frame leaves it.
   await submitLabel({name: current.name, verdict: v, boxes},
-                    "Boxes saved · " + VERDICT_WORDS[v]);
+                    "Boxes saved · " + VERDICT_WORDS[v], "name");
 }
 
 // -- zoom -------------------------------------------------------------------
@@ -639,7 +643,7 @@ function exitZoom(){
 }
 
 // -- verdicts ---------------------------------------------------------------
-async function submitLabel(body, word){
+async function submitLabel(body, word, keep = "index"){
   if (busy) return;
   busy = true;
   try {
@@ -653,8 +657,8 @@ async function submitLabel(body, word){
   document.getElementById("tally").textContent = session + " this session";
   flash(word);
   // In the queue the labeled frame leaves the filter, so keeping the index
-  // lands on the next frame; in verdict filters the frame may stay put.
-  loadFrames("index");
+  // lands on the next frame; box saves pass "name" to stay on the frame.
+  loadFrames(keep);
 }
 function verdict(v){
   if (!current) return;

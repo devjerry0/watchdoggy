@@ -31,7 +31,10 @@ _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
 # scored yet.
 _FRAME_FILTERS = {"unlabeled", "auto", "disputed", "dog", "dog_mixed",
                   "person", "empty", "skip", "needs_boxes", "no_prelabels",
-                  "all"}
+                  "exam", "all"}
+# Mirrors kitchen_training.config.VAL_FRACTION_MOD: a frame's stem hash
+# assigns it to the held-out exam forever. Keep the two in sync.
+_VAL_FRACTION_MOD = 4
 _NANO_FALLBACK_CONF = 0.45  # mirrors training's PRELABEL_CONF fallback rule
 
 
@@ -61,9 +64,21 @@ def build_router(settings: Settings, capture: DatasetCapture,
                    and d.get("confidence", 0) >= _NANO_FALLBACK_CONF
                    for d in targets)
 
-    def _matches(name: str, verdict: str | None, meta: dict) -> bool:
+    def _is_exam(stem: str, verdict: str | None) -> bool:
+        """Human-labeled frames whose stable hash lands in the val split --
+        exactly what every model is judged on. Auto labels never sit here."""
+        import hashlib
+        if not verdict or verdict == "skip":
+            return False
+        return int(hashlib.sha1(stem.encode()).hexdigest(),
+                   16) % _VAL_FRACTION_MOD == 0
+
+    def _matches(name: str, verdict: str | None, meta: dict,
+                 stem: str = "") -> bool:
         if name == "all":
             return True
+        if name == "exam":
+            return _is_exam(stem, verdict)
         if name == "unlabeled":
             # Auto-labeled frames are off the human's queue.
             return not verdict and not meta.get("auto_label")
@@ -94,8 +109,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
                 continue
             verdict = meta.get("human_label")
             for chip in _FRAME_FILTERS:
-                counts[chip] += _matches(chip, verdict, meta)
-            if not _matches(filter, verdict, meta):
+                counts[chip] += _matches(chip, verdict, meta, side.stem)
+            if not _matches(filter, verdict, meta, side.stem):
                 continue
             prio = min((_REASON_PRIORITY.get(r, 9)
                         for r in meta.get("reasons", [])), default=9)
@@ -211,6 +226,17 @@ def build_router(settings: Settings, capture: DatasetCapture,
             meta.pop("auto_label", None)
             if meta.pop("disputed", None) is not None:
                 meta["dispute_settled_at"] = time.time()
+            # A bare verdict that CONTRADICTS saved hand boxes wins: the
+            # boxes are cleared rather than silently outranking the human's
+            # newest judgment (boxes imply a verdict; a conflicting tap
+            # means the boxes were wrong).
+            if "boxes" not in body:
+                hand = meta.get("human_boxes")
+                if isinstance(hand, list):
+                    has_dog_box = any(b.get("label") == "dog" for b in hand)
+                    wants_dog = verdict in ("dog", "dog_mixed")
+                    if has_dog_box != wants_dog:
+                        meta.pop("human_boxes", None)
             if "boxes" in body:
                 # Hand-drawn boxes: the COMPLETE annotation for this frame
                 # (every dog and person). Training trusts them over any model.

@@ -293,6 +293,8 @@ async function renderDataset(){
     + c.needs_boxes + "</b> need hand boxes</a>");
   if (c.no_prelabels) warn.push(c.no_prelabels
     + " get ·x boxes on the next cloud pass (any training run, or 2am)");
+  if (c.exam) warn.push('<a href="/label?filter=exam">exam: <b>' + c.exam
+    + "</b> frames</a>");
   document.getElementById("ds_fine").innerHTML =
     warn.join(" · ") || "everything labeled and boxed";
 }

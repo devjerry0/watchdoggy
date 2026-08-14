@@ -393,3 +393,35 @@ def test_settled_disputes_are_never_reopened(tmp_path):
                json={"name": "sample_1", "model_says": "dog", "nano_conf": 0.95})
     assert r.json()["skipped"] == "human already arbitrated"
     assert "disputed" not in json.loads((ddir / "sample_1.json").read_text())
+
+
+def test_exam_filter_is_stable_hash_val_split(tmp_path):
+    import hashlib
+    c, _, ddir = _client(tmp_path)
+    val_stem = train_stem = None
+    for i in range(50):
+        stem = f"sample_{1000 + i}"
+        in_val = int(hashlib.sha1(stem.encode()).hexdigest(), 16) % 4 == 0
+        if in_val and not val_stem: val_stem = stem
+        if not in_val and not train_stem: train_stem = stem
+        if val_stem and train_stem: break
+    _seed_full(ddir, val_stem, verdict="dog", prelabel_dogs=1)
+    _seed_full(ddir, train_stem, verdict="dog", prelabel_dogs=1)
+    _seed_full(ddir, "sample_9999" if int(hashlib.sha1(b"sample_9999").hexdigest(), 16) % 4 == 0 else val_stem + "x")  # unlabeled, never exam
+    d = c.get("/api/dataset/frames?filter=exam").json()
+    assert d["counts"]["exam"] == 1
+    assert d["frames"][0]["name"] == val_stem
+
+
+def test_conflicting_verdict_clears_hand_boxes(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1", prelabel_dogs=1)
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog",
+           "boxes": [{"label": "dog", "box": [1, 1, 5, 5]}]})
+    # Compatible re-tap keeps the boxes.
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
+    assert json.loads((ddir / "sample_1.json").read_text())["human_boxes"]
+    # A contradicting tap (person on a dog-boxed frame) clears them.
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "person"})
+    meta = json.loads((ddir / "sample_1.json").read_text())
+    assert meta["human_label"] == "person" and "human_boxes" not in meta
