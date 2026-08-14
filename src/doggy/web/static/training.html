@@ -87,7 +87,7 @@
   .field label{display:block;font-family:var(--mono);font-size:.58rem;
         text-transform:uppercase;letter-spacing:.12em;color:var(--stone);
         margin-bottom:.25rem}
-  .field input[type=number]{width:100%;font:inherit;font-size:.92rem;
+  .field input[type=number],.field select{width:100%;font:inherit;font-size:.92rem;
         padding:.4rem .55rem;border-radius:8px;border:1px solid var(--seam);
         background:var(--night);color:var(--linen)}
   .field.check{display:flex;align-items:center;gap:.5rem;padding-top:.9rem}
@@ -191,6 +191,12 @@
           <input id="f_nightly" type="number" min="0" max="23"></div>
         <div class="field"><label for="f_credits">monthly credits ($)</label>
           <input id="f_credits" type="number" min="0" max="100000"></div>
+        <div class="field"><label for="f_gpu">cloud gpu</label>
+          <select id="f_gpu">
+            <option value="auto">auto (by dataset size)</option>
+            <option>T4</option><option>L4</option>
+            <option>A10G</option><option>A100</option>
+          </select></div>
       </div>
       <div class="row">
         <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
@@ -437,10 +443,12 @@ function fillSettings(s){
   for (const [key, id] of Object.entries(FIELDS))
     document.getElementById(id).value = s[key];
   document.getElementById("f_augment").checked = !!s.augment;
+  document.getElementById("f_gpu").value = s.gpu || "auto";
   settingsLoaded = true;
 }
 function readSettings(){
-  const out = {augment: document.getElementById("f_augment").checked};
+  const out = {augment: document.getElementById("f_augment").checked,
+               gpu: document.getElementById("f_gpu").value};
   for (const [key, id] of Object.entries(FIELDS))
     out[key] = parseInt(document.getElementById(id).value, 10);
   return out;

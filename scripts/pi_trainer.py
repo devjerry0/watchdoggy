@@ -21,6 +21,7 @@ edit each other's files).
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import ssl
 import subprocess
@@ -45,7 +46,10 @@ STALE_RUNNING = 3 * 3600.0
 # Recipe + schedule defaults; the training page's settings file overrides.
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
                      "train_interval_hours": 48, "min_new_labels": 5,
-                     "nightly_prelabel_hour": 2}
+                     "nightly_prelabel_hour": 2, "gpu": "auto"}
+# gpu=auto tiers by labeled-frame count. The nano model is dataloader-bound
+# on small sets -- a bigger GPU only pays once epochs are long enough.
+GPU_TIERS = ((2500, "A10G"), (0, "L4"))
 
 
 def _settings() -> dict:
@@ -210,14 +214,25 @@ def _write_billing() -> dict | None:
     return summary
 
 
+def _gpu() -> str:
+    chosen = _settings().get("gpu", "auto")
+    if chosen != "auto":
+        return chosen
+    _, labeled, _ = _sidecar_stats()
+    return next(tier for floor, tier in GPU_TIERS if labeled >= floor)
+
+
 def _modal(entrypoint: str, arguments: list[str], job_id: str) -> None:
     # The full cloud-run output streams into the job's log file, which the
     # training page tails live via /api/training/log/{job_id}.
+    gpu = _gpu()
+    log(f"cloud GPU: {gpu}")
     with open(JOBS_DIR / f"{job_id}.log", "ab") as log_file:
         subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
                         "--dataset-dir", str(DATASET_DIR)] + arguments,
                        check=True, cwd=DOGGY_ROOT, timeout=3 * 3600,
-                       stdout=log_file, stderr=subprocess.STDOUT)
+                       stdout=log_file, stderr=subprocess.STDOUT,
+                       env={**os.environ, "DOGGY_TRAIN_GPU": gpu})
 
 
 def _install_bundle(bundle_dir: Path) -> None:

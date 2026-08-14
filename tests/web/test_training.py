@@ -178,3 +178,12 @@ def test_status_includes_billing_when_daemon_wrote_it(tmp_path):
     assert d["settings"]["monthly_credits"] == 30
     assert c.post("/api/training/settings",
                   json={"monthly_credits": 100}).json()["settings"]["monthly_credits"] == 100
+
+
+def test_gpu_setting_validated(tmp_path):
+    c, _ = _client(tmp_path)
+    assert c.get("/api/training/settings").json()["gpu"] == "auto"
+    assert c.post("/api/training/settings",
+                  json={"gpu": "A10G"}).json()["settings"]["gpu"] == "A10G"
+    assert c.post("/api/training/settings",
+                  json={"gpu": "H9000"}).status_code == 422

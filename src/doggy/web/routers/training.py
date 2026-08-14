@@ -23,7 +23,9 @@ _HISTORY_SHOWN = 10
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
                      "train_interval_hours": 48, "min_new_labels": 5,
                      "nightly_prelabel_hour": 2,
-                     "monthly_credits": 30}  # Modal starter free tier
+                     "monthly_credits": 30,  # Modal starter free tier
+                     "gpu": "auto"}  # auto = tier by dataset size (daemon)
+_GPU_CHOICES = {"auto", "T4", "L4", "A10G", "A100"}
 _INT_BOUNDS = {"epochs": (10, 500), "batch": (4, 64), "freeze": (0, 23),
                "train_interval_hours": (6, 336), "min_new_labels": (1, 100),
                "nightly_prelabel_hour": (0, 23), "monthly_credits": (0, 100000)}
@@ -99,6 +101,11 @@ def build_router(settings: Settings) -> APIRouter:
             if not isinstance(body["augment"], bool):
                 raise HTTPException(status_code=422, detail="augment must be bool")
             clean["augment"] = body["augment"]
+        if "gpu" in body:
+            if body["gpu"] not in _GPU_CHOICES:
+                raise HTTPException(status_code=422,
+                                    detail=f"gpu must be one of {sorted(_GPU_CHOICES)}")
+            clean["gpu"] = body["gpu"]
         return clean
 
     @router.get("/api/training/status")
