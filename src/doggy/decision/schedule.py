@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from itertools import product
+from typing import Iterator
 
 from doggy.core.config import ArmedWindow, TunableSettings
 
@@ -37,20 +39,22 @@ def _seconds_to_flip(windows: tuple[ArmedWindow, ...], dt: datetime, armed: bool
     take the earliest one whose active-state differs from now.
     """
     midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    best: datetime | None = None
-    for day_offset in range(_LOOKAHEAD_DAYS + 1):
-        day = midnight + timedelta(days=day_offset)
-        for w in windows:
-            for boundary in (w.start, w.end):
-                cand = day + timedelta(minutes=_to_minutes(boundary))
-                if cand <= dt:
-                    continue
-                if any(_window_active(x, cand) for x in windows) != armed:
-                    if best is None or cand < best:
-                        best = cand
+    flips = (cand for cand in _boundaries(windows, midnight)
+             if cand > dt
+             and any(_window_active(x, cand) for x in windows) != armed)
+    best = min(flips, default=None)
     if best is None:
         return None
     return (best - dt).total_seconds()
+
+
+def _boundaries(windows: tuple[ArmedWindow, ...],
+                midnight: datetime) -> Iterator[datetime]:
+    """Every window start/end minute over the lookahead days."""
+    for day_offset, w in product(range(_LOOKAHEAD_DAYS + 1), windows):
+        day = midnight + timedelta(days=day_offset)
+        yield day + timedelta(minutes=_to_minutes(w.start))
+        yield day + timedelta(minutes=_to_minutes(w.end))
 
 
 def within_windows(windows: tuple[ArmedWindow, ...], wall_now: float) -> bool:

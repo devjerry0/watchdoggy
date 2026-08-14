@@ -116,6 +116,20 @@ def pick_winner(metrics: dict) -> str:
     return min(candidates, key=lambda name: rank_key(candidates[name]))
 
 
+def _tally_variants(model, frame: Frame, variants: dict, scores: dict) -> None:
+    """Score one frame's stress variants into the running per-variant tallies."""
+    for name, variant in variants.items():
+        fired = _max_dog_conf(model, variant, "cpu") >= FIRE_CONF
+        tally = scores.setdefault(name, {"caught": 0, "dogs": 0,
+                                         "false_fires": 0, "nondogs": 0})
+        if frame.is_dog:
+            tally["dogs"] += 1
+            tally["caught"] += fired
+            continue
+        tally["nondogs"] += 1
+        tally["false_fires"] += fired
+
+
 def robustness(run_dir: Path, ncnn_dir: Path) -> dict:
     """Stress the deployable bundle on held-out frames: reliability is what
     survives blur, bad light, compression, and a bumped camera mount."""
@@ -128,16 +142,8 @@ def robustness(run_dir: Path, ncnn_dir: Path) -> dict:
     scores: dict[str, dict] = {}
     for frame in heldout:
         image = cv2.imread(str(frame.jpg))
-        for name, variant in {"original": image, **stress_variants(image)}.items():
-            fired = _max_dog_conf(model, variant, "cpu") >= FIRE_CONF
-            tally = scores.setdefault(name, {"caught": 0, "dogs": 0,
-                                             "false_fires": 0, "nondogs": 0})
-            if frame.is_dog:
-                tally["dogs"] += 1
-                tally["caught"] += fired
-                continue
-            tally["nondogs"] += 1
-            tally["false_fires"] += fired
+        variants = {"original": image, **stress_variants(image)}
+        _tally_variants(model, frame, variants, scores)
     for name, tally in scores.items():
         log(f"  {name:>8}: catches {tally['caught']}/{tally['dogs']}, "
             f"false fires {tally['false_fires']}/{tally['nondogs']}")

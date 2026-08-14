@@ -117,12 +117,16 @@ class CommandAlerter(BaseAlerter):
     """
 
     def _play(self, clip: Path, volume: float) -> None:
+        player = self._pick_player()
+        if player is None:
+            return
+        subprocess.Popen([player, *self._volume_args(player, volume), str(clip)])
+
+    @staticmethod
+    def _pick_player() -> str | None:
         if sys.platform == "darwin":
-            player: str | None = "afplay"
-        else:
-            player = shutil.which("pw-play") or shutil.which("paplay") or shutil.which("aplay")
-        if player:
-            subprocess.Popen([player, *self._volume_args(player, volume), str(clip)])
+            return "afplay"
+        return shutil.which("pw-play") or shutil.which("paplay") or shutil.which("aplay")
 
     @staticmethod
     def _volume_args(player: str, volume: float) -> list[str]:

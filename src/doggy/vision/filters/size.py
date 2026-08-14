@@ -48,10 +48,8 @@ class OversizeFilter:
     def apply(self, analysis: "FrameAnalysis", cfg: "TunableSettings") -> None:
         if not cfg.oversize_suppression_enabled:
             return
-        keep: list[Detection] = []
-        for d in analysis.candidates:
-            if is_oversize(d.box, analysis.shape, cfg.oversize_area_ceiling):
-                analysis.suppressed.append(d)
-            else:
-                keep.append(d)
-        analysis.candidates = keep
+        judged: list[tuple[Detection, bool]] = [
+            (d, is_oversize(d.box, analysis.shape, cfg.oversize_area_ceiling))
+            for d in analysis.candidates]
+        analysis.suppressed.extend(d for d, oversize in judged if oversize)
+        analysis.candidates = [d for d, oversize in judged if not oversize]

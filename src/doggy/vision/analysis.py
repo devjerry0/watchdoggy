@@ -91,9 +91,8 @@ class InventoryTracker:
         seen: Counter = Counter()
         appearances: Counter = Counter()
         for frame_counts in self._recent:
-            for label, count in frame_counts.items():
-                appearances[label] += 1
-                seen[label] = max(seen[label], count)
+            appearances.update(frame_counts.keys())
+            seen |= frame_counts  # per-label max across the window
         return [{"label": label, "count": seen[label]}
                 for label in sorted(seen)
                 if appearances[label] >= self.NEEDED]

@@ -30,9 +30,8 @@ class ThermalGovernor:
         if temp_c <= cfg.thermal_target_c:
             return normal
         if temp_c >= cfg.thermal_max_c:
-            ramped = cfg.thermal_cooldown_interval_seconds
-        else:
-            span = cfg.thermal_max_c - cfg.thermal_target_c
-            frac = (temp_c - cfg.thermal_target_c) / span if span > 0 else 1.0
-            ramped = normal + frac * (cfg.thermal_cooldown_interval_seconds - normal)
+            return max(normal, cfg.thermal_cooldown_interval_seconds)
+        span = cfg.thermal_max_c - cfg.thermal_target_c
+        frac = (temp_c - cfg.thermal_target_c) / span if span > 0 else 1.0
+        ramped = normal + frac * (cfg.thermal_cooldown_interval_seconds - normal)
         return max(normal, ramped)

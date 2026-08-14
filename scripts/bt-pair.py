@@ -35,6 +35,24 @@ STEPS = [
     ("quit", 1),
 ]
 
+def _pump(fd: int, seconds: float) -> bytes:
+    """Collect whatever bluetoothctl prints for this long."""
+    got = b""
+    end = time.time() + seconds
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            d = os.read(fd, 4096)
+        except OSError:
+            d = b""
+        if not d:
+            break
+        got += d
+    return got
+
+
 pid, fd = pty.fork()
 if pid == 0:
     os.execvp("bluetoothctl", ["bluetoothctl"])
@@ -45,17 +63,7 @@ for cmd, delay in STEPS:
         os.write(fd, (cmd + "\n").encode())
     except OSError:
         break
-    end = time.time() + delay
-    while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.3)
-        if r:
-            try:
-                d = os.read(fd, 4096)
-            except OSError:
-                d = b""
-            if not d:
-                break
-            buf += d
+    buf += _pump(fd, delay)
 
 for line in buf.decode(errors="replace").splitlines():
     low = line.lower()

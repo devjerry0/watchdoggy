@@ -85,15 +85,21 @@ class YoloDetector:
         )
         out: list[Detection] = []
         for r in results:
-            names = r.names
-            for box in r.boxes:
-                label = names[int(box.cls[0])]
-                score = float(box.conf[0])
-                if not keep_detection(label, score, cfg):
-                    continue
-                x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
-                out.append(Detection(label, score, (x1, y1, x2, y2)))
+            out.extend(_result_detections(r, cfg))
         return out
+
+
+def _result_detections(result, cfg) -> list[Detection]:
+    """One YOLO result's boxes, filtered to the classes/thresholds we keep."""
+    out: list[Detection] = []
+    for box in result.boxes:
+        label = result.names[int(box.cls[0])]
+        score = float(box.conf[0])
+        if not keep_detection(label, score, cfg):
+            continue
+        x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
+        out.append(Detection(label, score, (x1, y1, x2, y2)))
+    return out
 
 
 def build_detector(settings: Settings, runtime: RuntimeSettings) -> Detector:

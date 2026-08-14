@@ -40,17 +40,23 @@ def _env(i: int, n: int, edge: float = 0.012) -> float:
     return 1.0
 
 
+def _sweep(amp: float, f0: float, f1: float, n: int, harmonic: float) -> list:
+    out = []
+    ph = 0.0
+    for i in range(n):
+        f = f0 + (f1 - f0) * (i / n)
+        ph += 2 * math.pi * f / SR
+        v = math.sin(ph) + harmonic * math.sin(2 * ph)
+        out.append(amp * _env(i, n) * v)
+    return out
+
+
 def chirp(sweeps: int, amp: float, f0: float, f1: float, dur: float, gap: float,
           harmonic: float = 0.0):
     out = []
     n = int(dur * SR)
     for _ in range(sweeps):
-        ph = 0.0
-        for i in range(n):
-            f = f0 + (f1 - f0) * (i / n)
-            ph += 2 * math.pi * f / SR
-            v = math.sin(ph) + harmonic * math.sin(2 * ph)
-            out.append(amp * _env(i, n) * v)
+        out += _sweep(amp, f0, f1, n, harmonic)
         out += [0.0] * int(gap * SR)
     return out
 

@@ -13,17 +13,18 @@ from doggy.core.config import Settings
 from doggy.events.store import EventRecord, EventStore
 
 
-def _event_dict(record: EventRecord) -> dict:
-    """Serialize an EventRecord for the API, computing a live age.
-
-    ``age_seconds`` prefers ``wall_time`` (Unix epoch): the monotonic ``ts`` is
-    not comparable across restarts, so fall back to it only when the clock was
-    never set (``wall_time is None``).
-    """
+def _age_seconds(record: EventRecord) -> float:
+    """Prefer ``wall_time`` (Unix epoch): the monotonic ``ts`` is not
+    comparable across restarts, so fall back to it only when the clock was
+    never set (``wall_time is None``)."""
     if record.wall_time:
-        age = max(0.0, time.time() - record.wall_time)
-    else:
-        age = max(0.0, time.monotonic() - record.ts)
+        return max(0.0, time.time() - record.wall_time)
+    return max(0.0, time.monotonic() - record.ts)
+
+
+def _event_dict(record: EventRecord) -> dict:
+    """Serialize an EventRecord for the API, computing a live age."""
+    age = _age_seconds(record)
     return {
         "id": record.id,
         "ts": record.ts,
@@ -71,11 +72,11 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
                 z.write(jsonl, "events.jsonl")
             # No lock is held while reading files: a record whose thumb/clip was
             # concurrently deleted (delete/prune) fails is_file and is skipped.
-            for r in records:
-                for name in (r.thumb, r.clip):
-                    p = Path(settings.event_log_dir) / name if name else None
-                    if p and p.is_file():
-                        z.write(p, name)
+            media = (name for r in records for name in (r.thumb, r.clip) if name)
+            for name in media:
+                p = Path(settings.event_log_dir) / name
+                if p.is_file():
+                    z.write(p, name)
         return Response(buf.getvalue(), media_type="application/zip", headers={
             "Content-Disposition": "attachment; filename=watchdoggy-export.zip"})
 

@@ -41,8 +41,7 @@ class FakeCamera:
 
     def frames(self) -> Iterator[np.ndarray]:
         while True:
-            for f in self._frames:
-                yield f
+            yield from self._frames
             if not self._loop:
                 return
 
