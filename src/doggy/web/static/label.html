@@ -269,7 +269,8 @@ let zoomed = false;
 let busy = false;
 
 const CHIP_DEFS = [
-  ["unlabeled", "Queue"], ["auto", "Auto"], ["needs_boxes", "Needs boxes"],
+  ["unlabeled", "Queue"], ["disputed", "Disputed"], ["auto", "Auto"],
+  ["needs_boxes", "Needs boxes"],
   ["no_prelabels", "No ·x"], ["dog", "Dog"], ["dog_mixed", "Dog+bad box"],
   ["person", "Person"], ["empty", "Nothing"], ["skip", "Skipped"], ["all", "All"],
 ];
@@ -288,7 +289,7 @@ function esc(s){ return String(s).replace(/[&<>"']/g,
 // -- filters + filmstrip ----------------------------------------------------
 function renderChips(){
   document.getElementById("chips").innerHTML = CHIP_DEFS.map(([key, word]) => {
-    const warn = key === "needs_boxes" && counts[key] > 0;
+    const warn = (key === "needs_boxes" || key === "disputed") && counts[key] > 0;
     return '<button class="chip' + (filter === key ? " on" : "")
       + (warn ? " warn" : "") + '" onclick="setFilter(\'' + key + '\')">'
       + word + '<span class="n">' + (counts[key] ?? 0) + '</span></button>';
@@ -381,6 +382,9 @@ async function select(i){
   if (!d.verdict && d.auto_label) why += " · auto-labeled: "
     + (VERDICT_WORDS[d.auto_label.verdict] || d.auto_label.verdict)
     + " (tap a button to overrule)";
+  if (d.disputed) why += " · MODEL DISPUTES THIS LABEL: says "
+    + esc(d.disputed.model_says) + " (" + Math.round(d.disputed.nano_conf * 100)
+    + "%) — re-judge to settle";
   document.getElementById("why_text").textContent = "Saved because: " + (why || "unknown");
   const sugKey = d.suggested === "no_dog" ? "person" : d.suggested;
   document.getElementById("hint_sug").textContent =

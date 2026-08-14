@@ -358,3 +358,23 @@ def test_autolabel_lifecycle(tmp_path):
                   json={"name": "sample_1", "verdict": "dog_mixed"}).status_code == 422
     assert c.post("/api/dataset/autolabel",
                   json={"name": "sample_404", "verdict": "dog"}).status_code == 404
+
+
+def test_dispute_lifecycle(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1", verdict="person", prelabel_dogs=1)
+    r = c.post("/api/dataset/dispute",
+               json={"name": "sample_1", "model_says": "dog", "nano_conf": 0.91})
+    assert r.json() == {"ok": True}
+    d = c.get("/api/dataset/frames?filter=disputed").json()
+    assert d["counts"]["disputed"] == 1
+    assert d["frames"][0]["disputed"] is True
+    detail = c.get("/api/dataset/sample/sample_1").json()
+    assert detail["disputed"]["model_says"] == "dog"
+    # re-judging settles the dispute
+    c.post("/api/dataset/label", json={"name": "sample_1", "verdict": "dog"})
+    assert c.get("/api/dataset/frames?filter=disputed").json()["counts"]["disputed"] == 0
+    assert c.post("/api/dataset/dispute",
+                  json={"name": "sample_404", "model_says": "dog"}).status_code == 404
+    assert c.post("/api/dataset/dispute",
+                  json={"name": "sample_1"}).status_code == 422

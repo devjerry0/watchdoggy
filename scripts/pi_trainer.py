@@ -274,6 +274,19 @@ def _apply_auto_verdicts(verdicts_file: Path) -> int:
     return applied
 
 
+def _apply_disputes(disputes_file: Path) -> int:
+    if not disputes_file.is_file():
+        return 0
+    applied = 0
+    for stem, dispute in json.loads(disputes_file.read_text()).items():
+        try:
+            _api("/api/dataset/dispute", {"name": stem, **dispute})
+            applied += 1
+        except Exception as exc:
+            log(f"WARNING: dispute flag failed for {stem}: {exc}")
+    return applied
+
+
 def _run_prelabel_job(job: dict) -> str:
     before = _billing_summary()
     with tempfile.TemporaryDirectory() as tmp:
@@ -283,8 +296,10 @@ def _run_prelabel_job(job: dict) -> str:
         _modal("kickoff_prelabels", arguments, job["id"])
         merged = _merge_prelabels(Path(tmp) / "prelabels.json")
         autos = _apply_auto_verdicts(Path(tmp) / "auto_verdicts.json")
+        disputes = _apply_disputes(Path(tmp) / "disputes.json")
     cost = _run_cost(before)
-    return (f"{merged} frames prelabeled, {autos} auto-labeled"
+    return (f"{merged} frames prelabeled, {autos} auto-labeled, "
+            f"{disputes} labels disputed"
             + (f" (${cost:.2f})" if cost is not None else ""))
 
 

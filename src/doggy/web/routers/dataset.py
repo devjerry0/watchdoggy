@@ -29,8 +29,9 @@ _REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
 # dog-verdict frames where NO model produced a dog box (training would drop
 # them without hand boxes); "no_prelabels" finds frames the big model hasn't
 # scored yet.
-_FRAME_FILTERS = {"unlabeled", "auto", "dog", "dog_mixed", "person", "empty",
-                  "skip", "needs_boxes", "no_prelabels", "all"}
+_FRAME_FILTERS = {"unlabeled", "auto", "disputed", "dog", "dog_mixed",
+                  "person", "empty", "skip", "needs_boxes", "no_prelabels",
+                  "all"}
 _NANO_FALLBACK_CONF = 0.45  # mirrors training's PRELABEL_CONF fallback rule
 
 
@@ -68,6 +69,8 @@ def build_router(settings: Settings, capture: DatasetCapture,
             return not verdict and not meta.get("auto_label")
         if name == "auto":
             return not verdict and bool(meta.get("auto_label"))
+        if name == "disputed":
+            return bool(meta.get("disputed"))
         if name == "no_prelabels":
             return "prelabels" not in meta
         if name == "needs_boxes":
@@ -101,6 +104,7 @@ def build_router(settings: Settings, capture: DatasetCapture,
                          "image": f"/dataset/{side.stem}.jpg",
                          "verdict": verdict or auto.get("verdict"),
                          "auto": not verdict and bool(auto),
+                         "disputed": bool(meta.get("disputed")),
                          "hand_boxes": isinstance(meta.get("human_boxes"), list),
                          "_sort": ((prio, -meta.get("wall_time", 0))
                                    if filter == "unlabeled"
@@ -122,6 +126,7 @@ def build_router(settings: Settings, capture: DatasetCapture,
         meta = json.loads(side.read_text())
         return {"name": safe, "image": f"/dataset/{safe}.jpg",
                 "auto_label": meta.get("auto_label"),
+                "disputed": meta.get("disputed"),
                 "verdict": meta.get("human_label"),
                 "reasons": meta.get("reasons", []),
                 "suggested": meta.get("suggested_label"),
@@ -200,8 +205,10 @@ def build_router(settings: Settings, capture: DatasetCapture,
         else:
             meta["human_label"] = verdict
             meta["labeled_at"] = time.time()
-            # A human verdict supersedes any machine auto-label.
+            # A human verdict supersedes any machine auto-label, and
+            # re-judging a frame settles its dispute.
             meta.pop("auto_label", None)
+            meta.pop("disputed", None)
             if "boxes" in body:
                 # Hand-drawn boxes: the COMPLETE annotation for this frame
                 # (every dog and person). Training trusts them over any model.
@@ -275,6 +282,25 @@ def build_router(settings: Settings, capture: DatasetCapture,
             return {"ok": True, "skipped": "human label wins"}
         meta["auto_label"] = {"verdict": verdict, "labeled_at": time.time(),
                               "source": "nano+x consensus"}
+        side.write_text(json.dumps(meta))
+        return {"ok": True}
+
+    @router.post("/api/dataset/dispute")
+    def api_dispute(body: dict) -> dict:
+        """The nightly jury contradicts an existing label: flag the frame
+        for human re-review. Any fresh human verdict clears the flag."""
+        name = Path(str(body.get("name", ""))).name  # traversal guard
+        side = Path(settings.dataset_dir) / f"{name}.json"
+        if not name.startswith("sample_") or not side.is_file():
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND,
+                                detail="not found")
+        model_says = str(body.get("model_says", ""))[:40]
+        if not model_says:
+            raise HTTPException(status_code=422, detail="model_says required")
+        meta = json.loads(side.read_text())
+        meta["disputed"] = {"model_says": model_says,
+                            "nano_conf": float(body.get("nano_conf", 0)),
+                            "flagged_at": time.time()}
         side.write_text(json.dumps(meta))
         return {"ok": True}
 

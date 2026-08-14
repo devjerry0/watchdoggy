@@ -222,14 +222,13 @@ def run_prelabels(run_name: str) -> dict:
     cache = prelabel(stems)
 
     auto_verdicts = {}
+    disputes = {}
     deployed_dir = run_root / "deployed_ncnn_model"
     if deployed_dir.is_dir():
         nano = YOLO(str(deployed_dir), task="detect")
         for stem in stems:
             sidecar = DATASET_MIRROR / f"{stem}.json"
             meta = json.loads(sidecar.read_text()) if sidecar.is_file() else {}
-            if meta.get("human_label") or meta.get("auto_label"):
-                continue
             prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
                                       conf=0.1, imgsz=640, device="cpu",
                                       verbose=False)[0]
@@ -241,16 +240,31 @@ def run_prelabels(run_name: str) -> dict:
                     nano_dog = max(nano_dog, conf)
                 if label == "person":
                     nano_person = max(nano_person, conf)
-            verdict = _consensus_verdict(cache[stem], nano_dog, nano_person,
-                                         meta.get("reasons", []))
-            if verdict:
-                auto_verdicts[stem] = verdict
-        print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} of "
-              f"the unlabeled frames", flush=True)
+            human = meta.get("human_label")
+            if not human and not meta.get("auto_label"):
+                verdict = _consensus_verdict(cache[stem], nano_dog, nano_person,
+                                             meta.get("reasons", []))
+                if verdict:
+                    auto_verdicts[stem] = verdict
+                continue
+            # Label audit: when BOTH jurors strongly contradict a human
+            # verdict, flag it. Blind-testing found real mislabels this way
+            # (a 0.9-confident "non-dog" frame usually contains a dog).
+            if human in ("dog", "dog_mixed"):
+                if nano_dog <= AUTO_CLEAR_NANO_CONF and not cache[stem]["dogs"]:
+                    disputes[stem] = {"model_says": "no dog",
+                                      "nano_conf": round(nano_dog, 3)}
+            if human in ("person", "empty", "no_dog"):
+                if nano_dog >= AUTO_DOG_NANO_CONF and cache[stem]["dogs"]:
+                    disputes[stem] = {"model_says": "dog",
+                                      "nano_conf": round(nano_dog, 3)}
+        print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
+              f"unlabeled frames; disputed {len(disputes)} existing labels",
+              flush=True)
 
     volume.commit()
     return {"run_name": run_name, "prelabels": _fresh_prelabels(cache_before),
-            "auto_verdicts": auto_verdicts}
+            "auto_verdicts": auto_verdicts, "disputes": disputes}
 
 
 def _upload(dataset_dir: Path, deployed_dir: Path | None,
@@ -316,6 +330,7 @@ def kickoff_prelabels(dataset_dir: str, out_dir: str,
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     (out / "auto_verdicts.json").write_text(
         json.dumps(results.get("auto_verdicts", {})))
+    (out / "disputes.json").write_text(json.dumps(results.get("disputes", {})))
     print(f"[pipeline] {len(results['prelabels'])} new frames prelabeled, "
-          f"{len(results.get('auto_verdicts', {}))} auto-labeled "
-          f"-> {out}")
+          f"{len(results.get('auto_verdicts', {}))} auto-labeled, "
+          f"{len(results.get('disputes', {}))} labels disputed -> {out}")
