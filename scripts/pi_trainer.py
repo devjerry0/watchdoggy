@@ -340,6 +340,13 @@ def _run_train_job(job: dict) -> str:
         out = Path(tmp)
         merged = _merge_prelabels(out / "prelabels.json")
         summary = json.loads((out / "summary.json").read_text())
+        # The candidate audits its own exam: strong disagreements with
+        # held-out labels become Disputed flags for the human.
+        for stem, dispute in (summary.get("exam_suspects") or {}).items():
+            try:
+                _api("/api/dataset/dispute", {"name": stem, **dispute})
+            except Exception as exc:
+                log(f"WARNING: exam-suspect flag failed for {stem}: {exc}")
         (JOBS_DIR / f"{job['id']}.report.md").write_text(
             (out / "report.md").read_text())
         # The scorecard the training page renders: gate compare, threshold

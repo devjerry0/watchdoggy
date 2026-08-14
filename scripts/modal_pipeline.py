@@ -109,6 +109,31 @@ def _deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
     return {**gate, "deploy": passes, "deployed": old_score, "reason": reason}
 
 
+# The exam's own audit: yesterday's jurors can't catch label errors that only
+# the newest model can see, so every candidate disputes the held-out frames it
+# confidently disagrees with -- proven necessity: a candidate's "false fires"
+# turned out to be sleeping/edge dogs the human and both old jurors missed.
+SUSPECT_FIRE_CONF = 0.7   # candidate very sure a "non-dog" frame has a dog
+SUSPECT_QUIET_CONF = 0.1  # candidate sees nothing in a "dog" frame
+
+
+def _exam_suspects(run_dir: Path, bundle: Path) -> dict:
+    from ultralytics import YOLO
+    from kitchen_training.evaluation import dog_confs, eval_frames
+    frames = [f for f in eval_frames(run_dir) if f.heldout]
+    confs = dog_confs(YOLO(str(bundle), task="detect"), frames, "cpu")
+    suspects = {}
+    for frame in frames:
+        conf = confs[frame.stem]
+        if not frame.is_dog and conf >= SUSPECT_FIRE_CONF:
+            suspects[frame.stem] = {"model_says": "dog", "nano_conf": conf}
+        if frame.is_dog and conf <= SUSPECT_QUIET_CONF:
+            suspects[frame.stem] = {"model_says": "no dog", "nano_conf": conf}
+    print(f"[pipeline] candidate disputes {len(suspects)} held-out labels",
+          flush=True)
+    return suspects
+
+
 def _prune_old_runs(runs_dir: Path) -> None:
     import shutil
     run_dirs = sorted(p for p in runs_dir.glob("*") if p.is_dir())
@@ -149,6 +174,7 @@ def run_pipeline(run_name: str, recipe: dict,
     metrics["robustness"] = robustness(run_dir, bundle)
     gate = _deploy_gate(run_dir, bundle, run_root / "deployed_ncnn_model",
                         fire_conf)
+    exam_suspects = _exam_suspects(run_dir, bundle)
     report(run_dir, dataset_stats, metrics, "fine-tune", bundle)
 
     results = {
@@ -168,6 +194,7 @@ def run_pipeline(run_name: str, recipe: dict,
         # The headline score IS the gate's new-model score: measured at the
         # appliance's runtime threshold, not a fixed default.
         "ncnn_heldout": gate["new"],
+        "exam_suspects": exam_suspects,
     }
     bundle_tar = _tar_bytes(bundle) if gate["deploy"] else None
     _prune_old_runs(RUNS)
@@ -287,7 +314,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
     (out_dir / "summary.json").write_text(json.dumps(
         {key: results[key] for key in
          ("run_name", "gate", "dataset", "recipe", "ncnn_truth",
-          "robustness", "ncnn_heldout")}, indent=1))
+          "robustness", "ncnn_heldout", "exam_suspects")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     if bundle_tar:
