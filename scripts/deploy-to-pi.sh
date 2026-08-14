@@ -8,6 +8,15 @@
 #
 # Re-runnable: safe to run repeatedly. It won't clobber an existing .env, and it
 # skips the model download/export if already present.
+#
+# AFTER harden-pi.sh (egress firewall), the provisioning half of this script
+# cannot run: uv's installer, apt-get, and `uv sync` all need the internet the
+# appliance no longer has. For CODE updates on a hardened Pi, sync only the
+# code trees and restart:
+#   rsync -az --delete --exclude __pycache__ src/     doggy@doggypi.local:doggy/src/
+#   rsync -az --delete --exclude __pycache__ scripts/ doggy@doggypi.local:doggy/scripts/
+#   ssh doggy@doggypi.local 'sudo systemctl restart doggy'
+# (the trainer timer picks up new scripts on its next pass by itself)
 set -euo pipefail
 
 TARGET="${1:?usage: deploy-to-pi.sh <user@host> [remote_dir]}"
@@ -17,10 +26,16 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 echo "==> Deploying $REPO_DIR  ->  $TARGET:~/$REMOTE_DIR"
 
 # 1. Sync source. Exclude local venv/build junk, heavy artifacts, and the Mac's
-#    .env (the Pi gets its own below).
+#    .env (the Pi gets its own below). The second exclude line protects the
+#    Pi's LIVE STATE from --delete: the training dataset, the job queue, the
+#    uploaded soothing library, and uploaded alarm sounds exist only on the
+#    Pi -- without these excludes a re-deploy would erase them. The third
+#    line keeps Mac-side pulls of those same frames from shipping back.
 rsync -az --delete \
   --exclude '.venv' --exclude '.git' --exclude '__pycache__' --exclude '.pytest_cache' \
   --exclude 'models' --exclude 'events' --exclude '*.mp4' --exclude '*.mp3' --exclude '.env' \
+  --exclude 'dataset' --exclude 'jobs' --exclude 'soothing' --exclude 'sounds' \
+  --exclude 'dataset-pull' --exclude 'training-runs' --exclude '.claude' --exclude '.DS_Store' \
   "$REPO_DIR"/ "$TARGET:$REMOTE_DIR"/
 
 # 2. Remote provisioning.
