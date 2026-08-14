@@ -136,6 +136,19 @@
   #boxhint{font-family:var(--mono);font-size:.6rem;letter-spacing:.11em;
        color:var(--stone);margin-top:.55rem;text-transform:uppercase}
 
+  /* Help */
+  #help{margin-top:1.1rem;border:1px solid var(--seam);border-radius:10px;
+       padding:.6rem .9rem;font-size:.85rem;color:var(--stone)}
+  #help summary{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;
+       text-transform:uppercase;color:var(--stone);cursor:pointer}
+  #help summary:hover{color:var(--lamp)}
+  #help p{margin:.6rem 0}
+  #help ul{margin:.4rem 0;padding-left:1.2rem}
+  #help li{margin:.3rem 0}
+  #help b{color:var(--linen);font-weight:600}
+  #help .c-moss{color:var(--moss)} #help .c-ember{color:var(--ember)}
+  #help .c-lamp{color:var(--lamp)}
+
   @media(max-width:560px){
     .btns{grid-template-columns:1fr 1fr}
     .btns button .k{display:none}
@@ -202,6 +215,33 @@
       <div id="boxhint">drag on empty space to draw · tap a box to select ·
         drag it to move · corners resize · box every dog and person</div>
     </div>
+    <details id="help">
+      <summary>How labeling works — buttons vs drawing boxes</summary>
+      <p><b>The verdict buttons say WHAT is in the frame; the machine's
+      ·x&nbsp;boxes say WHERE.</b> Training keeps or repairs the machine boxes
+      based on your verdict:</p>
+      <ul>
+        <li><b class="c-moss">Dog in frame</b> — keeps the ·x dog <i>and</i>
+          person boxes (people in dog frames are useful person examples). If
+          no model drew a dog box at all, the frame is dropped from training
+          — the <b class="c-ember">Needs boxes</b> chip collects those for
+          hand-drawing.</li>
+        <li><b class="c-lamp">Dog + bad box</b> — a real dog is here, but a
+          “dog” box sitting on a person gets discarded.</li>
+        <li><b class="c-ember">Person only</b> — every dog box was a lie and
+          is deleted; the person boxes teach what a person looks like from
+          this camera.</li>
+        <li><b>Nothing</b> — an empty label: teaches pure background.</li>
+      </ul>
+      <p><b>Fix boxes makes you the final authority.</b> Your rectangles
+      replace every machine box — what you drew is an object, and anything
+      you <i>didn't</i> box is trained as background. So box <b>every</b> dog
+      and person in the frame. The verdict is derived from your boxes, and
+      hand-boxed frames wear an amber corner marker in the filmstrip.</p>
+      <p>Rule of thumb: when the boxes on screen look right, one tap is all
+      the truth needed. Draw only when the boxes themselves are wrong or
+      missing.</p>
+    </details>
   </div>
 </div>
 
@@ -250,14 +290,23 @@ function renderChips(){
       + word + '<span class="n">' + (counts[key] ?? 0) + '</span></button>';
   }).join("");
 }
-function renderStrip(){
+function buildStrip(){
+  // Built ONCE per filter load; navigation only flips the .on class.
+  // Thumbs come from the cached /dataset/thumb/ endpoint (~5KB each), not
+  // the full frames -- a 400-frame strip stays a sane download.
   document.getElementById("strip").innerHTML = frames.map((f, i) =>
     '<div class="thumb' + (f.verdict ? " v-" + esc(f.verdict) : "")
-    + (i === idx ? " on" : "") + '" data-i="' + i + '">'
-    + '<img loading="lazy" src="' + esc(f.image) + '" alt="">'
+    + '" data-i="' + i + '">'
+    + '<img loading="lazy" src="/dataset/thumb/' + esc(f.name) + '.jpg" alt="">'
     + (f.hand_boxes ? '<div class="hb"></div>' : '') + '</div>').join("");
-  const active = document.querySelector("#strip .thumb.on");
-  if (active) active.scrollIntoView({block: "nearest", inline: "center"});
+}
+function markActive(){
+  const current = document.querySelector("#strip .thumb.on");
+  if (current) current.classList.remove("on");
+  const next = document.querySelector('#strip .thumb[data-i="' + idx + '"]');
+  if (!next) return;
+  next.classList.add("on");
+  next.scrollIntoView({block: "nearest", inline: "center"});
 }
 document.getElementById("strip").addEventListener("click", e => {
   const t = e.target.closest(".thumb");
@@ -270,6 +319,7 @@ async function loadFrames(keep = "index"){
   catch(e){ return; }
   const prevName = (frames[idx] || {}).name;
   frames = d.frames; counts = d.counts;
+  buildStrip();
   const total = counts.all || 0;
   const done = total - (counts.unlabeled || 0);
   document.getElementById("progress").textContent =
@@ -277,7 +327,7 @@ async function loadFrames(keep = "index"){
   document.getElementById("bar").firstElementChild.style.width =
     total ? (100 * done / total) + "%" : "0%";
   renderChips();
-  if (!frames.length){ idx = -1; current = null; showEmpty(true); renderStrip(); return; }
+  if (!frames.length){ idx = -1; current = null; showEmpty(true); return; }
   showEmpty(false);
   let next = 0;
   if (keep === "name" && prevName){
@@ -312,7 +362,7 @@ async function select(i){
   if (boxMode) exitBoxMode();
   exitZoom();
   idx = i;
-  renderStrip();
+  markActive();
   let d;
   try { d = await (await fetch("/api/dataset/sample/" + frames[i].name)).json(); }
   catch(e){ return; }

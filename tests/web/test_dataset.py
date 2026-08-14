@@ -307,3 +307,23 @@ def test_sample_detail_and_guards(tmp_path):
     assert d["prelabels"]["boxes"][0]["label"] == "dog"
     assert c.get("/api/dataset/sample/sample_none").status_code == 404
     assert c.get("/api/dataset/sample/..%2Fx").status_code == 404
+
+
+def test_thumbnail_generated_cached_and_guarded(tmp_path):
+    import numpy as np, cv2
+    c, _, ddir = _client(tmp_path)
+    ddir.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ddir / "sample_1.jpg"), np.zeros((480, 640, 3), np.uint8))
+    r = c.get("/dataset/thumb/sample_1.jpg")
+    assert r.status_code == 200
+    thumb = ddir / "thumbs" / "sample_1.jpg"
+    assert thumb.is_file()
+    small = cv2.imread(str(thumb))
+    assert small.shape[1] == 160  # downscaled, not the full frame
+    assert c.get("/dataset/thumb/sample_1.jpg").status_code == 200  # cache hit
+    assert c.get("/dataset/thumb/..%2F.env").status_code == 404
+    assert c.get("/dataset/thumb/notasample.jpg").status_code == 404
+    # pruned source -> stale thumb removed on next request
+    (ddir / "sample_1.jpg").unlink()
+    assert c.get("/dataset/thumb/sample_1.jpg").status_code == 404
+    assert not thumb.is_file()
