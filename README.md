@@ -22,21 +22,22 @@ Detection runs entirely on the device. The camera feed never leaves your network
 
 The stock COCO-trained model has never seen *your* kitchen from *your* camera angle. Ours kept mistaking a person loading the dishwasher for a dog. The fix is a closed loop that lives on the appliance:
 
-1. **Capture** — the detector saves interesting frames as they happen: every alarm (plus the raw seconds before it), borderline detections, suppressed boxes, person activity, and periodic background shots.
-2. **Label** — the `/label` page is a fast one-tap verdict tool (dog / person only / nothing), with a full box editor when a frame needs hand-drawn truth. A large offline model (yolo26x) pre-draws boxes for every frame — each night it scores the day's new frames on a cloud GPU, so the morning queue is already annotated and most labels are one tap.
+1. **Capture** — the detector saves interesting frames as they happen: every alarm (plus the raw seconds before it), borderline detections, suppressed boxes, person activity, and periodic background shots. A brightness failsafe skips lights-off frames, so darkness never floods the queue.
+2. **Machine labeling, nightly** — a cloud pass runs every night: a large model (yolo26x) draws `·x` boxes for every new frame, and a **two-model jury** (the deployed fine-tune + the big model) auto-labels the frames it can unanimously vouch for. The jury also **audits existing labels** — when both models strongly contradict a human verdict, the frame is flagged Disputed for re-review. The rules were blind-tested against stripped human labels and tuned until dangerous errors hit zero; anything the jury is unsure about goes to the human. A capture-reason guard keeps it honest: frames saved *because* something dog-like triggered can never be machine-labeled "no dog".
+3. **Human labeling — only the disagreements** — the `/label` page is a fixed stage with a filmstrip and filter chips: the Queue (what the jury couldn't settle), Disputed, Auto (spot-check the machine's work; one tap overrules forever), and Needs-boxes finders. Verdicts are one keystroke; a full box editor handles frames needing hand-drawn truth, which then outranks every model.
 
    ![Label page: filter chips, the big model's boxes, filmstrip navigation, one-tap verdicts](docs/label.png)
-3. **Train** — every couple of days (configurable), a dedicated trainer process packs the labeled dataset, sends one job to a Modal cloud GPU, and gets back a fine-tuned model: big-model label fusion, blur/dark augmentation, training, frame-level evaluation scored the way the alarm actually fires, NCNN export, and a robustness stress test (blur, darkness, overexposure, compression, camera shift).
-4. **Gate** — the new model deploys **only if it beats or ties the currently-live model on a held-out exam with zero false fires**. No regression can ship. The previous model is kept on disk for instant rollback.
-5. **Repeat** — every mistake it makes becomes training data against it.
+4. **Train** — every couple of days (configurable), the trainer sends one job to a Modal cloud GPU: label fusion, blur/dark augmentation, training (GPU tier and batch size auto-scale with dataset size), frame-level evaluation scored the way the alarm actually fires, NCNN export, and a robustness stress test (blur, darkness, overexposure, compression, camera shift). Auto-labeled frames train but never enter the exam.
+5. **Gate** — the new model deploys **only if it beats or ties the currently-live model on a held-out, 100% human-verified exam — judged at the appliance's actual runtime threshold — with zero false fires**. No regression can ship. The previous model is kept on disk for instant rollback.
+6. **Repeat** — every mistake it makes becomes training data against it, and the exam grows harder as the dataset grows.
 
-Your only job is a few minutes of tapping on the Label page now and then. Everything else — nightly prelabels, scheduled training, evaluation, gated deployment — happens on its own.
+Your only job is a few minutes of arbitration on the Label page now and then. Everything else — nightly prelabels, consensus auto-labeling, label audits, scheduled training, evaluation, gated deployment — happens on its own.
 
-The `/training` page is the console: edit the recipe (epochs, batch, freeze, augmentation) and the schedule, queue a run manually, watch the cloud run's log live, and read every run's full report (leaderboard, deploy-truth scores, robustness table).
+The `/training` page is the console: the live model's scorecard, dataset composition, real cloud spend against your credit allowance (billing pulled from Modal; every run records its true cost), an improvement chart across runs, the cloud run's stages and log streaming live while it works, recipe + schedule knobs, and every run's full report (threshold curves, gate comparison, robustness table).
 
 ![Training console: live model score, dataset composition, cloud budget, and the improvement chart](docs/training.png)
 
-In this kitchen the loop took the model from 15/61 dog moments caught with 5 false alarms (stock) to 63/64 caught with zero false-alarm signal — measured on the exported bundle the Pi actually runs, on frames the model never trained on.
+In this kitchen the loop's first day took the model from 15/61 dog moments caught with 5 false alarms (stock COCO weights) to 90%+ catch rates with zero false-alarm signal — measured on the exported bundle the Pi actually runs, on held-out frames it never trained on. The exam itself keeps growing as frames get labeled, so the bar rises with the model.
 
 ### Privacy model
 
