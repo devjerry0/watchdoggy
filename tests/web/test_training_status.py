@@ -1,36 +1,7 @@
 import json
 
-from fastapi.testclient import TestClient
-
-from doggy.core.config import Settings
-from doggy.core.runtime import RuntimeSettings
-from doggy.core.status import FrameBuffer, StatusStore
-from doggy.decision.gate import FireGate
-from doggy.events.store import EventStore
-from doggy.reaction.sound import FakeAlerter
-from doggy.web import create_app
-
-
-def _client(tmp_path):
-    settings = Settings(event_log_dir=tmp_path / "events",
-                        dataset_dir=tmp_path / "dataset",
-                        jobs_dir=tmp_path / "jobs")
-    runtime = RuntimeSettings(settings.tunable())
-    store = EventStore(tmp_path / "events", 100, 0)
-    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, FireGate(runtime))
-    return TestClient(app), tmp_path
-
-
-def _seed_sidecar(tmp_path, stem, labeled, prelabeled):
-    d = tmp_path / "dataset"
-    d.mkdir(parents=True, exist_ok=True)
-    meta = {"wall_time": 1.0, "reasons": ["fire"]}
-    if labeled:
-        meta["human_label"] = "dog"
-    if prelabeled:
-        meta["prelabels"] = {"model": "yolo26x", "boxes": []}
-    (d / f"{stem}.json").write_text(json.dumps(meta))
+from .conftest import _seed_sidecar
+from .conftest import _training_client as _client
 
 
 def test_status_counts_unlabeled_and_missing_prelabels(tmp_path):
@@ -128,32 +99,6 @@ def test_pages_served_with_menu(tmp_path):
         assert 'href="/label"' in html and 'href="/training"' in html
 
 
-def test_settings_roundtrip_and_validation(tmp_path):
-    c, _ = _client(tmp_path)
-    d = c.get("/api/training/settings").json()
-    assert d["epochs"] == 200 and d["augment"] is True and d["batch"] == "auto"
-    r = c.post("/api/training/settings",
-               json={"epochs": 120, "augment": False, "nightly_prelabel_hour": 3})
-    assert r.json()["settings"]["epochs"] == 120
-    d = c.get("/api/training/settings").json()
-    assert d["epochs"] == 120 and d["augment"] is False and d["batch"] == "auto"
-    assert c.post("/api/training/settings",
-                  json={"epochs": 9999}).status_code == 422
-    assert c.post("/api/training/settings",
-                  json={"augment": "yes"}).status_code == 422
-
-
-def test_request_carries_validated_params(tmp_path):
-    c, root = _client(tmp_path)
-    d = c.post("/api/training/request",
-               json={"kind": "train",
-                     "params": {"epochs": 80, "augment": False}}).json()
-    assert d["job"]["params"] == {"epochs": 80, "augment": False}
-    assert c.post("/api/training/request",
-                  json={"kind": "prelabel",
-                        "params": {"epochs": 0}}).status_code == 422
-
-
 def test_log_endpoint_tails_and_guards(tmp_path):
     c, root = _client(tmp_path)
     jobs = root / "jobs"
@@ -178,24 +123,3 @@ def test_status_includes_billing_when_daemon_wrote_it(tmp_path):
     assert d["settings"]["monthly_credits"] == 30
     assert c.post("/api/training/settings",
                   json={"monthly_credits": 100}).json()["settings"]["monthly_credits"] == 100
-
-
-def test_gpu_setting_validated(tmp_path):
-    c, _ = _client(tmp_path)
-    assert c.get("/api/training/settings").json()["gpu"] == "auto"
-    assert c.post("/api/training/settings",
-                  json={"gpu": "A10G"}).json()["settings"]["gpu"] == "A10G"
-    assert c.post("/api/training/settings",
-                  json={"gpu": "H9000"}).status_code == 422
-
-
-def test_batch_setting_accepts_auto_and_tiers_only(tmp_path):
-    c, _ = _client(tmp_path)
-    assert c.post("/api/training/settings",
-                  json={"batch": 32}).json()["settings"]["batch"] == 32
-    assert c.post("/api/training/settings",
-                  json={"batch": "auto"}).json()["settings"]["batch"] == "auto"
-    assert c.post("/api/training/settings", json={"batch": 13}).status_code == 422
-    assert c.post("/api/training/request",
-                  json={"kind": "train",
-                        "params": {"batch": "auto"}}).json()["job"]["params"]["batch"] == "auto"
