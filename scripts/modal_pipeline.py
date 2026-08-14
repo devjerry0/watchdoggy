@@ -76,10 +76,14 @@ def run_pipeline(run_name: str, recipe: dict,
     """The whole training day in one container. Returns (results, bundle_tar)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
-    from kitchen_training.pipeline import full_run
+    from kitchen_training.config import RUNS
+    from kitchen_training.pipeline import full_run, prune_old_runs
 
     results, bundle = full_run(run_name, recipe, fire_conf, run_root)
+    # Tar BEFORE pruning: if the Pi's clock regressed, the current run can
+    # sort oldest and pruning first would delete the winning bundle.
     bundle_tar = _tar_bytes(bundle) if bundle else None
+    prune_old_runs(RUNS)
     volume.commit()
     return results, bundle_tar
 

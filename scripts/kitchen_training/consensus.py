@@ -8,8 +8,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ultralytics import YOLO
-
 from kitchen_training.config import DATASET_MIRROR
 
 AUTO_DOG_NANO_CONF = 0.6     # nano must be alarm-grade sure a dog is there
@@ -48,7 +46,7 @@ def _sidecar_meta(stem: str) -> dict:
     return json.loads(sidecar.read_text()) if sidecar.is_file() else {}
 
 
-def _nano_scores(nano: YOLO, stem: str) -> tuple[float, float]:
+def _nano_scores(nano, stem: str) -> tuple[float, float]:
     """(max dog conf, max person conf) from the deployed nano on one frame."""
     prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
                               conf=NANO_SCAN_CONF, imgsz=NANO_IMAGE_SIZE,
@@ -87,6 +85,7 @@ def judge_frames(stems: list[str], cache: dict,
     juror, so nothing is auto-labeled or disputed."""
     if not deployed_dir.is_dir():
         return {}, {}
+    from ultralytics import YOLO  # deferred, like every kitchen_training module
     nano = YOLO(str(deployed_dir), task="detect")
     auto_verdicts: dict = {}
     disputes: dict = {}

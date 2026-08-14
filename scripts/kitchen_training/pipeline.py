@@ -1,7 +1,12 @@
 """The two cloud runs, as plain functions: the full training day and the
 nightly prelabel/consensus pass. `modal_pipeline.py` wraps these in Modal
 functions; everything here is infrastructure-free and runs wherever the
-KT_* environment points it."""
+KT_* environment points it.
+
+IMPORTANT: this module (and everything it imports) captures the KT_* paths
+at import time via kitchen_training.config -- import it only AFTER the
+environment is pointed at the right roots (see modal_pipeline's
+_point_kitchen_training_at_volume)."""
 from __future__ import annotations
 
 import json
@@ -93,7 +98,10 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "ncnn_heldout": gate["new"],
         "exam_suspects": suspects,
     }
-    prune_old_runs(RUNS)
+    # NOTE: no pruning here -- the caller tars the bundle first, THEN calls
+    # prune_old_runs. Pruning first could delete the current run dir when the
+    # Pi's clock regressed (run names sort by timestamp), losing the bundle
+    # of a gate-passing run before it was captured.
     return results, (bundle if gate["deploy"] else None)
 
 

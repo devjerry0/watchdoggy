@@ -1,10 +1,12 @@
 # Architecture
 
-watchdoggy is a small (~1,700 line) always-on appliance that watches one frame at a
+watchdoggy is a small (~5,000 line) always-on appliance that watches one frame at a
 time: **see** it (vision), **decide** whether it is a fire (decision), and **react**
-(reaction). The code is organized into domain packages along those lines. This page maps
-each package to its job, names the design patterns that earn their keep and why they are
-here, and records the invariants that must not drift.
+(reaction). The code is organized into domain packages along those lines, with a hard
+house style: no file over 200 lines, no `else` blocks (early returns instead), no
+nested loops (extract the inner loop). This page maps each package to its job, names
+the design patterns that earn their keep and why they are here, and records the
+invariants that must not drift.
 
 ## Domain map
 
@@ -14,7 +16,8 @@ src/doggy/
   app.py               composition root: builds and wires every object, then runs the loop
   pipeline.py          Facade: orchestrates one detect cycle over the wired collaborators
   core/                cross-cutting primitives
-    config.py          Settings (pydantic): `DOGGY_*` env vars read once at startup
+    config.py          Settings (pydantic): structural `DOGGY_*` env vars read once at startup
+    tunables.py        TunableSettings + ArmedWindow: every field the web UI can change live
     runtime.py         RuntimeSettings: thread-safe live-tunable settings, swapped atomically
     status.py          Status/StatusStore snapshot + FrameBuffer (latest-frame slot)
     pacer.py           Pacer: sleeps only the time still needed to hit a target interval
@@ -27,6 +30,7 @@ src/doggy/
     filters/           Chain of Responsibility links over FrameAnalysis
       base.py          DetectionFilter protocol + FilterChain
       person.py        suppress targets that are really people (IoU coincidence)
+      size.py          suppress "dog" boxes too big/tall to be a dog (bent-over person)
       zone.py          keep only candidates inside the drawn watch area
   decision/            decide: is this a fire, and is a fire allowed right now
     trigger.py         TriggerLogic FSM: M-of-N window + confirm timer + jittered cooldown
@@ -38,19 +42,32 @@ src/doggy/
     sound.py           alerter backends (Template Method) + registry + SoundReaction
     clips.py           ClipBuffer + ClipService (per-frame capture and a catch reaction)
     outcome.py         OutcomeWatcher: clear-time + theft measurement per catch, drives escalation (per-frame stage + hub reaction, like ClipService)
-    soothing.py        SoothingPlayer: loops the calm-audio library, a catch interrupts it (daemon-thread loop + hub reaction)
-    dataset.py         DatasetCapture: saves raw frames + detection sidecars at confusing moments for fine-tuning (per-frame stage + hub reaction)
+    soothing/          calm-audio playback (daemon-thread loop + hub reaction)
+      player.py        SoothingPlayer: the loop, lifecycle, and catch-hold reaction
+      session.py       TrackSession: playing ONE track (poll slices, volume-follow, cuts)
+      state.py         PlaybackState: the monitor guarding what both threads share
+      audio.py         AudioBackend: pw-play/afplay spawn, live wpctl volume, library listing
+    dataset.py         DatasetCapture: saves raw frames + detection sidecars for fine-tuning (per-frame stage + hub reaction)
+    capture_policy.py  CapturePolicy: WHEN to harvest a frame (cooldowns, borderline band, person memory, darkness floor)
   events/
-    store.py           EventStore/EventRecord: the only writer of events.jsonl + JPEGs
+    store.py           EventStore: the only writer of events.jsonl + JPEGs (locking, CRUD)
+    record.py          EventRecord + the jsonl line format (parse, mtime backfill, dump)
+    report.py          pure analytics: activity summary + weekly report card
+    lab.py             pure analytics: per-sound deterrence + wearing-off trend
+    retention.py       RetentionPolicy: which events/clips age out (store does the deleting)
   hardware/            the Pi's physical signals
     thermal.py         ThermalGovernor: CPU temperature -> detect interval
     power.py           PowerMonitor: cached under-voltage flags from vcgencmd
   web/                 the LAN dashboard (FastAPI)
     app.py             create_app + serve (plain http, or https + onboarding door) + GET /
     door.py            onboarding door on plain http: trust-probes the https side, serves the home CA
+    door_content.py    the door's templated payloads: the HTML page + Apple .mobileconfig
     envfile.py         in-place .env writer for settings saved from the dashboard
-    routers/           one router per endpoint group: status, settings, events, sounds, snooze, talk, soothing, speaker, dataset
-    static/index.html  the single-page dashboard
+    jobqueue.py        web side of the cross-user training job queue + trainer settings
+    routers/           one router per endpoint group: status, settings, events, sounds,
+                       snooze, talk, soothing, speaker, training; dataset/ is a package
+                       (sidecars vocabulary, browse, labeling, images) behind one build_router
+    static/            the single-page dashboard, label page, and training console
 ```
 
 ## Applied patterns
@@ -91,6 +108,18 @@ for it -- not for symmetry.
   Every other module takes its collaborators as constructor arguments and never builds them.
   That is what keeps the object graph in one readable place and the whole tree testable with
   fakes.
+- **Policy vs mechanism splits -- `reaction/capture_policy.py`, `events/retention.py`.**
+  The decision (should this frame be sampled? which events age out?) is a pure object with
+  no I/O; the owning service does the file work. Each half stays small, and the policy is
+  testable without touching disk.
+- **Monitor object -- `reaction/soothing/state.py`.** The detect thread and the soothing
+  loop share three fields (running proc, interrupted proc, hold deadline). `PlaybackState`
+  owns the lock and exposes intent-named operations (`arm_hold`, `register`, `release`),
+  so the locking discipline lives in one 60-line class instead of being threaded through
+  the player.
+- **Pure analytics modules -- `events/report.py`, `events/lab.py`.** The store hands them a
+  records snapshot and a clock reading; they hold no locks and touch no files, so the
+  dashboard's numbers are plain functions of data.
 
 ## Patterns already present
 

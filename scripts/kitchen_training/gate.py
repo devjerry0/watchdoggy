@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ultralytics import YOLO
-
 from kitchen_training.config import DATASET_MIRROR
 from kitchen_training.evaluation import curve, dog_confs, eval_frames, score
 
@@ -26,6 +24,7 @@ def deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
     zero-FP hard rule kept vetoing models that caught 20+ more dogs over
     noise-level FP differences on a growing exam. Freshness wins exact
     ties: the challenger trained on newer data."""
+    from ultralytics import YOLO  # deferred, like every kitchen_training module
     frames = eval_frames(run_dir)
     new_confs = dog_confs(YOLO(str(new_bundle), task="detect"), frames, "cpu")
     new_score = score(frames, new_confs, fire_conf, True)
@@ -52,6 +51,7 @@ def deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
 
 
 def exam_suspects(run_dir: Path, bundle: Path) -> dict:
+    from ultralytics import YOLO  # deferred, like every kitchen_training module
     model = YOLO(str(bundle), task="detect")
     frames = [f for f in eval_frames(run_dir) if f.heldout]
     confs = dog_confs(model, frames, "cpu")

@@ -63,7 +63,6 @@ def mobileconfig(ca_path: Path) -> str:
     )
 
 
-
 def door_page(ssl_port: int) -> str:
     return _PAGE.replace("__SSL_PORT__", str(ssl_port))
 
