@@ -102,7 +102,7 @@ Type=oneshot
 User=trainer
 WorkingDirectory=/home/doggy/doggy
 ExecStart=/home/trainer/modal-env/bin/python /home/doggy/doggy/scripts/pi_trainer.py
-TimeoutStartSec=10800
+TimeoutStartSec=14400
 UNIT
 sudo tee /etc/systemd/system/doggy-trainer.timer >/dev/null <<'UNIT'
 [Unit]

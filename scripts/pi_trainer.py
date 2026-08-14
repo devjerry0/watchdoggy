@@ -42,7 +42,11 @@ LOCAL_API = "https://localhost:8443"
 
 AUTO_PRELABEL_MIN = 10
 PRELABEL_COOLDOWN = 6 * 3600.0
-STALE_RUNNING = 3 * 3600.0
+# Timeout stack, outermost to innermost: systemd (4h) > this daemon's
+# subprocess (3.5h) > the Modal function (3h). Each layer outlasts the one
+# inside it, so the innermost real deadline is the one that fires.
+STALE_RUNNING = 4 * 3600.0
+MODAL_SUBPROCESS_TIMEOUT = int(3.5 * 3600)
 # Recipe + schedule defaults; the training page's settings file overrides.
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
                      "augment": True, "train_interval_hours": 48,
@@ -241,7 +245,8 @@ def _modal(entrypoint: str, arguments: list[str], job_id: str) -> None:
     with open(JOBS_DIR / f"{job_id}.log", "ab") as log_file:
         subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
                         "--dataset-dir", str(DATASET_DIR)] + arguments,
-                       check=True, cwd=DOGGY_ROOT, timeout=3 * 3600,
+                       check=True, cwd=DOGGY_ROOT,
+                       timeout=MODAL_SUBPROCESS_TIMEOUT,
                        stdout=log_file, stderr=subprocess.STDOUT,
                        env={**os.environ, "DOGGY_TRAIN_GPU": gpu})
 
