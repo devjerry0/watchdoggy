@@ -44,12 +44,15 @@ AUTO_PRELABEL_MIN = 10
 PRELABEL_COOLDOWN = 6 * 3600.0
 STALE_RUNNING = 3 * 3600.0
 # Recipe + schedule defaults; the training page's settings file overrides.
-SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
-                     "train_interval_hours": 48, "min_new_labels": 5,
-                     "nightly_prelabel_hour": 2, "gpu": "auto"}
-# gpu=auto tiers by labeled-frame count. The nano model is dataloader-bound
-# on small sets -- a bigger GPU only pays once epochs are long enough.
+SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
+                     "augment": True, "train_interval_hours": 48,
+                     "min_new_labels": 5, "nightly_prelabel_hour": 2,
+                     "gpu": "auto"}
+# auto tiers by labeled-frame count. The nano model is dataloader-bound on
+# small sets -- a bigger GPU only pays once epochs are long enough; batch
+# grows with data but stays small enough for ~30+ optimizer steps/epoch.
 GPU_TIERS = ((2500, "A10G"), (0, "L4"))
+BATCH_TIERS = ((2500, 64), (800, 32), (0, 16))
 
 
 def _settings() -> dict:
@@ -222,6 +225,14 @@ def _gpu() -> str:
     return next(tier for floor, tier in GPU_TIERS if labeled >= floor)
 
 
+def _batch(job: dict) -> int:
+    chosen = {**_settings(), **(job.get("params") or {})}.get("batch", "auto")
+    if chosen != "auto":
+        return int(chosen)
+    _, labeled, _ = _sidecar_stats()
+    return next(size for floor, size in BATCH_TIERS if labeled >= floor)
+
+
 def _modal(entrypoint: str, arguments: list[str], job_id: str) -> None:
     # The full cloud-run output streams into the job's log file, which the
     # training page tails live via /api/training/log/{job_id}.
@@ -275,7 +286,7 @@ def _runtime_confidence() -> float:
 
 def _recipe_arguments(job: dict) -> list[str]:
     recipe = {**_settings(), **(job.get("params") or {})}
-    return ["--epochs", str(recipe["epochs"]), "--batch", str(recipe["batch"]),
+    return ["--epochs", str(recipe["epochs"]), "--batch", str(_batch(job)),
             "--freeze", str(recipe["freeze"]),
             "--fire-conf", str(_runtime_confidence()),
             "--augment" if recipe["augment"] else "--no-augment"]

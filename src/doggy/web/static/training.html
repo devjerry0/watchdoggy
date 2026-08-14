@@ -177,7 +177,11 @@
         <div class="field"><label for="f_epochs">epochs</label>
           <input id="f_epochs" type="number" min="10" max="500"></div>
         <div class="field"><label for="f_batch">batch</label>
-          <input id="f_batch" type="number" min="4" max="64"></div>
+          <select id="f_batch">
+            <option value="auto">auto (by dataset size)</option>
+            <option>8</option><option>16</option>
+            <option>32</option><option>64</option>
+          </select></div>
         <div class="field"><label for="f_freeze">freeze layers</label>
           <input id="f_freeze" type="number" min="0" max="23"></div>
         <div class="field check">
@@ -436,7 +440,7 @@ async function showReport(jobId){
 }
 
 // -- settings + actions -----------------------------------------------------
-const FIELDS = {epochs:"f_epochs", batch:"f_batch", freeze:"f_freeze",
+const FIELDS = {epochs:"f_epochs", freeze:"f_freeze",
                 train_interval_hours:"f_interval", min_new_labels:"f_minlabels",
                 nightly_prelabel_hour:"f_nightly", monthly_credits:"f_credits"};
 function fillSettings(s){
@@ -444,11 +448,14 @@ function fillSettings(s){
     document.getElementById(id).value = s[key];
   document.getElementById("f_augment").checked = !!s.augment;
   document.getElementById("f_gpu").value = s.gpu || "auto";
+  document.getElementById("f_batch").value = String(s.batch ?? "auto");
   settingsLoaded = true;
 }
 function readSettings(){
+  const rawBatch = document.getElementById("f_batch").value;
   const out = {augment: document.getElementById("f_augment").checked,
-               gpu: document.getElementById("f_gpu").value};
+               gpu: document.getElementById("f_gpu").value,
+               batch: rawBatch === "auto" ? "auto" : parseInt(rawBatch, 10)};
   for (const [key, id] of Object.entries(FIELDS))
     out[key] = parseInt(document.getElementById(id).value, 10);
   return out;

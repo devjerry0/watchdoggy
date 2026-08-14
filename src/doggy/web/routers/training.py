@@ -20,13 +20,15 @@ _HISTORY_SHOWN = 10
 # Trainer settings: recipe knobs for cloud runs + the auto-schedule. The web
 # writes trainer-settings.json; the daemon reads it each pass. Bounds keep a
 # fat-fingered form from queueing a 10-hour GPU burn.
-SETTINGS_DEFAULTS = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True,
+SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
+                     "augment": True,
                      "train_interval_hours": 48, "min_new_labels": 5,
                      "nightly_prelabel_hour": 2,
                      "monthly_credits": 30,  # Modal starter free tier
                      "gpu": "auto"}  # auto = tier by dataset size (daemon)
 _GPU_CHOICES = {"auto", "T4", "L4", "A10G", "A100"}
-_INT_BOUNDS = {"epochs": (10, 500), "batch": (4, 64), "freeze": (0, 23),
+_BATCH_CHOICES = {"auto", 8, 16, 32, 64}
+_INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),
                "train_interval_hours": (6, 336), "min_new_labels": (1, 100),
                "nightly_prelabel_hour": (0, 23), "monthly_credits": (0, 100000)}
 
@@ -106,6 +108,11 @@ def build_router(settings: Settings) -> APIRouter:
                 raise HTTPException(status_code=422,
                                     detail=f"gpu must be one of {sorted(_GPU_CHOICES)}")
             clean["gpu"] = body["gpu"]
+        if "batch" in body:
+            if body["batch"] not in _BATCH_CHOICES:
+                raise HTTPException(status_code=422,
+                                    detail="batch must be auto, 8, 16, 32, or 64")
+            clean["batch"] = body["batch"]
         return clean
 
     @router.get("/api/training/status")

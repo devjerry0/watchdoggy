@@ -116,8 +116,10 @@ def _prune_old_runs(runs_dir: Path) -> None:
         shutil.rmtree(stale, ignore_errors=True)
 
 
-@app.function(image=image, gpu=GPU, volumes={str(VOL): volume},
-              timeout=120 * MINUTES)
+# cpu/memory matter as much as the GPU here: the dataloader (decode +
+# augmentation) is pure CPU, and Modal's default allocation starves it.
+@app.function(image=image, gpu=GPU, cpu=8, memory=16384,
+              volumes={str(VOL): volume}, timeout=120 * MINUTES)
 def run_pipeline(run_name: str, recipe: dict,
                  fire_conf: float = 0.7) -> tuple[dict, bytes | None]:
     """The whole training day in one container. Returns (results, bundle_tar)."""
@@ -173,8 +175,8 @@ def run_pipeline(run_name: str, recipe: dict,
     return results, bundle_tar
 
 
-@app.function(image=image, gpu=GPU, volumes={str(VOL): volume},
-              timeout=30 * MINUTES)
+@app.function(image=image, gpu=GPU, cpu=4, memory=8192,
+              volumes={str(VOL): volume}, timeout=30 * MINUTES)
 def run_prelabels(run_name: str) -> dict:
     """Prelabels only: big-model boxes for every uploaded frame that the
     cache hasn't seen. Cheap; keeps the review page stocked with ·x boxes."""

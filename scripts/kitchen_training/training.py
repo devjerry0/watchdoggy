@@ -20,11 +20,13 @@ def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
     log(f"training {BASE_MODEL.name} locally: epochs<={epochs}, "
         f"freeze={freeze}, device={device()}")
     model = YOLO(str(BASE_MODEL))
+    # cache=True decodes each image once into RAM instead of once per epoch
+    # -- a 200-epoch run reads the dataset 200x otherwise.
     model.train(data=str(run_dir / "dataset/data.yaml"),
                 epochs=epochs,
                 patience=max(MIN_PATIENCE, epochs // PATIENCE_DIVISOR),
                 imgsz=IMAGE_SIZE, batch=batch, freeze=freeze, device=device(),
-                project=str(run_dir), name="train", exist_ok=True,
+                cache=True, project=str(run_dir), name="train", exist_ok=True,
                 verbose=False, plots=True)
     # Ultralytics decides the save dir (its settings can reroute project
     # paths); ask the trainer where it actually wrote instead of guessing.
