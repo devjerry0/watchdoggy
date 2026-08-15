@@ -104,10 +104,17 @@ class CapturePolicy:
             reasons.append("person_activity")
         return reasons
 
-    def duplicate(self, frame: np.ndarray, reasons: list[str]) -> bool:
-        """Near-duplicate of a recent save (never for fires). A True verdict
-        does NOT consume cooldowns -- the next distinct frame still saves."""
+    def duplicate(self, frame: np.ndarray, reasons: list[str],
+                  analysis: FrameAnalysis) -> bool:
+        """Near-duplicate of a recent save. Never for fires, and never for
+        any frame the model sees a dog in: on a fixed camera the background
+        dominates the hash, so distinct dog moments collide -- only dogless
+        scenes (the abundant class) are safe to thin. A True verdict does
+        NOT consume cooldowns -- the next distinct frame still saves."""
         if any(r in DEDUP_EXEMPT_REASONS for r in reasons):
+            return False
+        if any(d.label == "dog" for d in (*analysis.targets, *analysis.lowconf,
+                                          *analysis.suppressed)):
             return False
         h = dhash(frame)
         if any(hamming(h, seen) < DEDUP_HAMMING_FLOOR

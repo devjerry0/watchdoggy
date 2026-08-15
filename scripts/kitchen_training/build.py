@@ -13,11 +13,15 @@ from kitchen_training.fusion import fuse
 from kitchen_training.perturb import train_variants
 
 # Near-duplicate control (train split only; the exam is never thinned):
-# a cooking session yields dozens of frames of the same scene, and industry
-# practice (SemDeDup et al.) shows dropping near-dupes costs no accuracy.
-# 64-bit difference hash, Hamming < floor = duplicate. Human-labeled frames
-# are written first so a human frame is never dropped in favor of an auto.
+# a cooking session yields dozens of frames of the same scene. NON-DOG
+# frames only: on a fixed camera the static background dominates the hash,
+# and measured on this corpus every Hamming floor from 2 to 6 collides
+# half or more of the DISTINCT dog frames (a small dog is a handful of
+# bits). Dogs are the scarce class and are never dropped; negatives are
+# abundant and safely thinned. Human-labeled frames are written first so
+# a human frame is never dropped in favor of an auto.
 DEDUP_HAMMING_FLOOR = 6
+DEDUP_VERDICTS = {"person", "empty", "no_dog"}
 _DHASH_SIDE = 8
 
 # Human labels outvote the jury's in the loss -- standard pseudo-label
@@ -156,7 +160,8 @@ def build(run_dir: Path, augment: bool = False) -> dict:
         is_auto = not meta.get("human_label")
         split = _split(stem, meta, is_auto)
         image = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
-        if split == "train" and _near_duplicate(image, seen_hashes):
+        if (split == "train" and verdict in DEDUP_VERDICTS
+                and _near_duplicate(image, seen_hashes)):
             stats["dedup_dropped"] += 1
             continue
         stats["auto_labeled"] += is_auto

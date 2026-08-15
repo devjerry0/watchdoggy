@@ -30,20 +30,23 @@ def test_dhash_stable_and_sensitive():
 def test_duplicate_suppresses_near_identical_saves():
     policy = CapturePolicy()
     frame = _frame(3)
-    assert not policy.duplicate(frame, ["periodic"])  # nothing saved yet
+    assert not policy.duplicate(frame, ["periodic"], _analysis())
     policy.mark_saved(["periodic"], 0.0, frame)
     # The identical scene again: suppressed as a near-duplicate...
-    assert policy.duplicate(frame.copy(), ["person_activity"])
+    assert policy.duplicate(frame.copy(), ["person_activity"], _analysis())
     # ...but a genuinely different scene passes.
-    assert not policy.duplicate(_frame(4), ["person_activity"])
+    assert not policy.duplicate(_frame(4), ["person_activity"], _analysis())
 
 
-def test_fires_are_exempt_from_dedup():
+def test_fires_and_dog_frames_are_exempt_from_dedup():
     policy = CapturePolicy()
     frame = _frame(5)
     policy.mark_saved(["periodic"], 0.0, frame)
-    assert not policy.duplicate(frame.copy(), ["fire"])
-    assert not policy.duplicate(frame.copy(), ["fire_context"])
+    assert not policy.duplicate(frame.copy(), ["fire"], _analysis())
+    assert not policy.duplicate(frame.copy(), ["fire_context"], _analysis())
+    # A frame with any dog detection is never thinned: on a fixed camera
+    # distinct dog moments hash nearly alike, and dogs are the scarce class.
+    assert not policy.duplicate(frame.copy(), ["borderline"], _analysis(0.5))
 
 
 def test_flicker_fires_on_band_crossings_not_steady_scores():

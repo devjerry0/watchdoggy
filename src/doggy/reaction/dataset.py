@@ -88,7 +88,7 @@ class DatasetCapture:
         # Darkness and duplicate checks only run when a trigger wants to save.
         if too_dark(frame):
             return
-        if self._policy.duplicate(frame, reasons):
+        if self._policy.duplicate(frame, reasons, analysis):
             return
         self._policy.mark_saved(reasons, now, frame)
         self._save(frame, analysis, reasons)
