@@ -121,6 +121,32 @@ def matches(name: str, verdict: str | None, meta: dict, stem: str = "") -> bool:
     return verdict == name
 
 
+MODEL_NAME_MAX = 40
+
+
+def apply_prelabels(meta: dict, model: str, clean_boxes: list[dict]) -> None:
+    meta["prelabels"] = {"model": model[:MODEL_NAME_MAX], "boxes": clean_boxes}
+
+
+def apply_autolabel(meta: dict, verdict: str, now: float) -> bool:
+    """False when a human label already stands (human always wins)."""
+    if meta.get("human_label"):
+        return False
+    meta["auto_label"] = {"verdict": verdict, "labeled_at": now,
+                          "source": "nano+x consensus"}
+    return True
+
+
+def apply_dispute(meta: dict, model_says: str, nano_conf: float,
+                  now: float) -> bool:
+    """False when a human already arbitrated (never ask twice)."""
+    if meta.get("dispute_settled_at"):
+        return False
+    meta["disputed"] = {"model_says": model_says[:MODEL_NAME_MAX],
+                        "nano_conf": nano_conf, "flagged_at": now}
+    return True
+
+
 def _parse_box(raw: dict) -> dict:
     label, box = raw.get("label"), raw.get("box")
     well_formed = (label in ("dog", "person") and isinstance(box, list)

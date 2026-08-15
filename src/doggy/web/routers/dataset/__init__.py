@@ -14,7 +14,7 @@ from fastapi import APIRouter
 
 from doggy.core.config import Settings
 from doggy.events.store import EventStore
-from doggy.web.routers.dataset import browse, images, labeling
+from doggy.web.routers.dataset import batch, browse, images, labeling
 from doggy.web.sidecar_index import SidecarIndex
 
 
@@ -23,5 +23,6 @@ def build_router(settings: Settings, event_store: EventStore,
     router = APIRouter()
     router.include_router(browse.build_router(settings, index))
     router.include_router(labeling.build_router(settings, event_store))
+    router.include_router(batch.build_router(settings))
     router.include_router(images.build_router(settings))
     return router

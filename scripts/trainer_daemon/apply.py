@@ -10,6 +10,41 @@ from pathlib import Path
 from trainer_daemon.env import STAGING_BUNDLE, api_post, log
 
 
+BATCH_APPLY_TIMEOUT_S = 180
+
+
+def _load(path: Path | None) -> dict:
+    if path is None or not path.is_file():
+        return {}
+    return json.loads(path.read_text())
+
+
+def apply_cloud_results(prelabels_file: Path,
+                        verdicts_file: Path | None = None,
+                        disputes_file: Path | None = None) -> tuple[int, int, int]:
+    """(prelabeled, auto_labeled, disputed) counts, applied in ONE request.
+    Per-frame HTTPS (a TLS handshake each) took seconds per frame on a Pi
+    busy with inference; the batch endpoint takes one. Falls back to the
+    per-frame endpoints if the batch call fails."""
+    payload = {"model": "yolo26x",
+               "prelabels": _load(prelabels_file),
+               "auto_verdicts": _load(verdicts_file),
+               "disputes": _load(disputes_file)}
+    if not any((payload["prelabels"], payload["auto_verdicts"],
+                payload["disputes"])):
+        return 0, 0, 0
+    try:
+        counts = api_post("/api/dataset/apply-cloud-results", payload,
+                          timeout=BATCH_APPLY_TIMEOUT_S)
+        return (counts["prelabels"], counts["auto_verdicts"],
+                counts["disputes"])
+    except Exception as exc:
+        log(f"WARNING: batch apply failed ({exc}); using per-frame endpoints")
+        autos = apply_auto_verdicts(verdicts_file) if verdicts_file else 0
+        flags = apply_disputes(disputes_file) if disputes_file else 0
+        return merge_prelabels(prelabels_file), autos, flags
+
+
 def merge_prelabels(prelabels_file: Path) -> int:
     if not prelabels_file.is_file():
         return 0

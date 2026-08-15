@@ -14,6 +14,9 @@ from doggy.core.config import Settings
 from doggy.events.store import EventStore
 from doggy.web.routers.dataset.sidecars import (
     VERDICTS,
+    apply_autolabel,
+    apply_dispute,
+    apply_prelabels,
     parse_boxes,
     sidecar_or_404,
 )
@@ -94,8 +97,7 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
         _, side = sidecar_or_404(settings.dataset_dir, str(body.get("name", "")))
         clean = parse_boxes(body.get("boxes"))
         meta = json.loads(side.read_text())
-        meta["prelabels"] = {"model": str(body.get("model", "?"))[:40],
-                             "boxes": clean}
+        apply_prelabels(meta, str(body.get("model", "?")), clean)
         side.write_text(json.dumps(meta))
         return {"ok": True}
 
@@ -111,10 +113,8 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
                                 detail="verdict must be dog, person, or empty")
         _, side = sidecar_or_404(settings.dataset_dir, str(body.get("name", "")))
         meta = json.loads(side.read_text())
-        if meta.get("human_label"):
+        if not apply_autolabel(meta, verdict, time.time()):
             return {"ok": True, "skipped": "human label wins"}
-        meta["auto_label"] = {"verdict": verdict, "labeled_at": time.time(),
-                              "source": "nano+x consensus"}
         side.write_text(json.dumps(meta))
         return {"ok": True}
 
@@ -123,15 +123,13 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
         """The nightly jury contradicts an existing label: flag the frame
         for human re-review. Any fresh human verdict clears the flag."""
         _, side = sidecar_or_404(settings.dataset_dir, str(body.get("name", "")))
-        model_says = str(body.get("model_says", ""))[:40]
+        model_says = str(body.get("model_says", ""))
         if not model_says:
             raise HTTPException(status_code=422, detail="model_says required")
         meta = json.loads(side.read_text())
-        if meta.get("dispute_settled_at"):
+        if not apply_dispute(meta, model_says, float(body.get("nano_conf", 0)),
+                             time.time()):
             return {"ok": True, "skipped": "human already arbitrated"}
-        meta["disputed"] = {"model_says": model_says,
-                            "nano_conf": float(body.get("nano_conf", 0)),
-                            "flagged_at": time.time()}
         side.write_text(json.dumps(meta))
         return {"ok": True}
 

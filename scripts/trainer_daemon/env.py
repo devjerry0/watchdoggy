@@ -50,7 +50,8 @@ def log(message: str) -> None:
     print(f"[trainer] {message}", flush=True)
 
 
-def api_post(path: str, payload: dict) -> None:
+def api_post(path: str, payload: dict,
+             timeout: float = LOCAL_API_TIMEOUT_S) -> dict:
     context = ssl.create_default_context()  # household CA: skip verification
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
@@ -58,5 +59,5 @@ def api_post(path: str, payload: dict) -> None:
         f"{LOCAL_API}{path}", data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(request, context=context,
-                                timeout=LOCAL_API_TIMEOUT_S):
-        pass
+                                timeout=timeout) as resp:
+        return json.loads(resp.read())

@@ -7,11 +7,9 @@ import time
 from pathlib import Path
 
 from trainer_daemon.apply import (
-    apply_auto_verdicts,
-    apply_disputes,
+    apply_cloud_results,
     apply_exam_suspects,
     install_bundle,
-    merge_prelabels,
 )
 from trainer_daemon.cloud import batch, billing_summary, modal_run, run_cost
 from trainer_daemon.env import DEPLOYED_BUNDLE, DOGGY_ROOT, JOBS_DIR, log, settings
@@ -27,9 +25,10 @@ def run_prelabel_job(job: dict) -> str:
         if DEPLOYED_BUNDLE.is_dir():
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff_prelabels", arguments, job["id"])
-        merged = merge_prelabels(Path(tmp) / "prelabels.json")
-        autos = apply_auto_verdicts(Path(tmp) / "auto_verdicts.json")
-        disputes = apply_disputes(Path(tmp) / "disputes.json")
+        merged, autos, disputes = apply_cloud_results(
+            Path(tmp) / "prelabels.json",
+            Path(tmp) / "auto_verdicts.json",
+            Path(tmp) / "disputes.json")
     cost = run_cost(before)
     return (f"{merged} frames prelabeled, {autos} auto-labeled, "
             f"{disputes} labels disputed"
@@ -78,7 +77,7 @@ def run_train_job(job: dict) -> str:
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff", arguments, job["id"])
         out = Path(tmp)
-        merged = merge_prelabels(out / "prelabels.json")
+        merged, _, _ = apply_cloud_results(out / "prelabels.json")
         summary = json.loads((out / "summary.json").read_text())
         apply_exam_suspects(summary)
         (JOBS_DIR / f"{job['id']}.report.md").write_text(
