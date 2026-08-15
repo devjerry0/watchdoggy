@@ -86,6 +86,15 @@ def test_save_persists(tmp_path):
     assert saved["confidence"] == 0.65
 
 
+def test_patch_alone_persists(tmp_path):
+    # The appliance restarts itself for self-updates: a live-only change
+    # would be silently reverted, so every patch persists on the spot.
+    saved = {}
+    c, _, _ = client(tmp_path, saved=saved)
+    c.patch("/api/settings", json={"soothing_enabled": True})
+    assert saved["soothing_enabled"] is True
+
+
 def test_write_env_preserves_structural_keys(tmp_path):
     from doggy.web.envfile import _write_env
     from doggy.core.config import TunableSettings

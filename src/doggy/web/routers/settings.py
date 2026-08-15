@@ -28,10 +28,17 @@ def build_router(runtime: RuntimeSettings,
         except ValidationError as exc:
             raise HTTPException(status_code=_HTTP_422, detail=str(exc)) from exc
         runtime.update(updated)
+        # Persist immediately: the appliance restarts ITSELF now (self-
+        # updates), and a live-only change was silently reverted by the next
+        # restart. A toggle the user flipped must survive the machine's own
+        # maintenance.
+        save_env(updated)
         return updated.model_dump(mode="json")
 
     @router.post("/api/settings/save")
     def api_save() -> dict:
+        # Kept for compatibility (the dashboard still calls it); every patch
+        # already persisted itself.
         save_env(runtime.get())
         return {"ok": True}
 
