@@ -1,8 +1,10 @@
 """Consensus auto-labeling and the one-direction label audit.
 
-Both jurors must agree before a frame skips the human queue. The nano is
-the DEPLOYED kitchen specialist; X is the generic giant. Disagreement or
-hesitation = the frame stays for the human."""
+The nano is the DEPLOYED kitchen specialist; X is the generic giant. The
+jurors must agree before a frame skips the human queue -- except a
+near-certain nano dog stands alone (the specialist out-sees X on dark and
+half-hidden dogs it was specifically trained on). Genuine disagreement =
+the frame stays for the human."""
 from __future__ import annotations
 
 import json
@@ -10,15 +12,21 @@ from pathlib import Path
 
 from kitchen_training.config import DATASET_MIRROR
 
-AUTO_DOG_NANO_CONF = 0.6     # nano must be alarm-grade sure a dog is there
-AUTO_CLEAR_NANO_CONF = 0.2   # ...or this quiet for a confident "no dog"
+# Bars backtested 2026-08-14 against 917 human-labeled frames with the
+# deployed champion as juror (scratch: rule_sim.py): this rule-set wrongly
+# clears 1/917 dog frames (0.11% -- and that one is a suspected mislabel),
+# fabricates 0 dogs, and covers ~36% of a fresh queue vs ~0% before. The
+# old capture-reason gate ("innocent captures only") was retired the same
+# day: it was designed for a weak jury that missed 26% of hard dogs and
+# had become the sole bottleneck on autonomy. Safety nets that remain:
+# auto-labels train-split only, disputable by every future candidate.
+AUTO_DOG_NANO_CONF = 0.45    # dog when X agrees
+AUTO_DOG_SOLO_CONF = 0.85    # dog on nano alone (X misses dark/hidden dogs)
+AUTO_CLEAR_NANO_CONF = 0.15  # this quiet + no X dog = confident "no dog"
 AUTO_PERSON_NANO_CONF = 0.5
-# Third juror: the capture reason. A frame tagged fire/borderline/suppressed
-# exists BECAUSE something dog-like triggered at capture time -- if both
-# models now say "no dog", that contradiction goes to the human, never to an
-# auto-label (blind-test showed this is exactly where poisonous
-# missed-dog-as-background labels come from).
-SAFE_NO_DOG_REASONS = {"person_activity", "periodic", "user_marked_fp"}
+# The label AUDIT keeps the old alarm-grade bar: it second-guesses HUMAN
+# labels, and lowering it re-litigates frames the human had right.
+AUDIT_DOG_NANO_CONF = 0.6
 
 # The nano jury scan: sweep low so quietness is measurable, at the
 # appliance's inference size.
@@ -26,19 +34,19 @@ NANO_SCAN_CONF = 0.1
 NANO_IMAGE_SIZE = 640
 
 
-def consensus_verdict(x_entry: dict, nano_dog: float, nano_person: float,
-                      reasons: list) -> str | None:
+def consensus_verdict(x_entry: dict, nano_dog: float,
+                      nano_person: float) -> str | None:
     x_dog = bool(x_entry["dogs"])
     x_person = bool(x_entry["people"])
     if x_dog and nano_dog >= AUTO_DOG_NANO_CONF:
         return "dog"
-    innocent_capture = bool(reasons) and all(r in SAFE_NO_DOG_REASONS
-                                             for r in reasons)
-    if not x_dog and nano_dog <= AUTO_CLEAR_NANO_CONF and innocent_capture:
+    if nano_dog >= AUTO_DOG_SOLO_CONF:
+        return "dog"
+    if not x_dog and nano_dog <= AUTO_CLEAR_NANO_CONF:
         if x_person or nano_person >= AUTO_PERSON_NANO_CONF:
             return "person"
         return "empty"
-    return None  # jurors disagree or the capture itself smelled of dog
+    return None  # the jurors disagree: a human decides
 
 
 def _sidecar_meta(stem: str) -> dict:
@@ -73,7 +81,7 @@ def _audit_dispute(meta: dict, x_entry: dict, nano_dog: float) -> dict | None:
         return None
     if meta.get("human_label") not in ("person", "empty", "no_dog"):
         return None
-    if nano_dog >= AUTO_DOG_NANO_CONF and x_entry["dogs"]:
+    if nano_dog >= AUDIT_DOG_NANO_CONF and x_entry["dogs"]:
         return {"model_says": "dog", "nano_conf": round(nano_dog, 3)}
     return None
 
@@ -93,8 +101,7 @@ def judge_frames(stems: list[str], cache: dict,
         meta = _sidecar_meta(stem)
         nano_dog, nano_person = _nano_scores(nano, stem)
         if not meta.get("human_label") and not meta.get("auto_label"):
-            verdict = consensus_verdict(cache[stem], nano_dog, nano_person,
-                                        meta.get("reasons", []))
+            verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
             if verdict:
                 auto_verdicts[stem] = verdict
             continue
