@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 
+from trainer_daemon.clock import sync_clock
 from trainer_daemon.cloud import write_billing
 from trainer_daemon.env import JOBS_DIR, STALE_RUNNING, log
 from trainer_daemon.queue import jobs, synthesize_job, write_result
@@ -31,6 +32,7 @@ def _next_job() -> dict | None:
 
 def main() -> int:
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    sync_clock()  # first: everything below stamps times
     write_billing()  # keep the training page's budget card fresh
     if _reap_running():
         return 0

@@ -140,11 +140,29 @@ systemctl restart doggy
 HELPER
 sudo chmod 755 /usr/local/bin/doggy-install-code
 
-echo "==> sudoers: trainer may install the staged model/code + restart the service"
+echo "==> root helper: step the clock from the trainer's HTTPS time sync"
+sudo tee /usr/local/bin/doggy-set-clock >/dev/null <<'HELPER'
+#!/usr/bin/env bash
+# Steps the system clock to the given epoch seconds (the trainer daemon's
+# HTTPS Date-header sync -- the appliance has no RTC and the firewall
+# blocks public NTP). Sanity-bounded so a bad caller can't time-travel the
+# appliance into cert-breaking territory.
+set -euo pipefail
+TS="${1:?usage: doggy-set-clock <epoch-seconds>}"
+case "$TS" in (*[!0-9]*) echo "not an integer" >&2; exit 1;; esac
+# Accept only 2026-01-01 .. 2100-01-01.
+[ "$TS" -ge 1767225600 ] && [ "$TS" -le 4102444800 ] || { echo "timestamp out of range" >&2; exit 1; }
+date -u -s "@$TS" >/dev/null
+command -v fake-hwclock >/dev/null && fake-hwclock save || true
+HELPER
+sudo chmod 755 /usr/local/bin/doggy-set-clock
+
+echo "==> sudoers: trainer may install staged model/code, step the clock, restart"
 sudo tee /etc/sudoers.d/doggy-trainer >/dev/null <<'SUDO'
 trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-model
 trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-code
 trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-install-code --rollback
+trainer ALL=(root) NOPASSWD: /usr/local/bin/doggy-set-clock
 trainer ALL=(root) NOPASSWD: /usr/bin/systemctl restart doggy
 SUDO
 sudo chmod 440 /etc/sudoers.d/doggy-trainer
