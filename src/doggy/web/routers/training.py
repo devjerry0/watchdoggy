@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from doggy.core.config import Settings
 from doggy.web import jobqueue
@@ -67,11 +67,21 @@ def _software(jobs_dir: Path) -> dict:
 
 def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     router = APIRouter()
+    # Dataset tallies recomputed only when the index generation moves; the
+    # status endpoint is polled every few seconds by the training page.
+    memo: dict = {"gen": -1, "counts": (0, 0)}
+
+    def _counts() -> tuple[int, int]:
+        index.snapshot()
+        if memo["gen"] != index.generation:
+            memo["counts"] = _dataset_counts(index)
+            memo["gen"] = index.generation
+        return memo["counts"]
 
     @router.get("/api/training/status")
-    def api_status() -> dict:
+    def api_status() -> JSONResponse:
         jobs = jobqueue.list_jobs(Path(settings.jobs_dir))
-        unlabeled, missing_prelabels = _dataset_counts(index)
+        unlabeled, missing_prelabels = _counts()
         last_train = next((j for j in jobs
                            if j.get("kind") == "train"
                            and j.get("status") == "done"), None)
@@ -80,15 +90,18 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
         if last_train:
             next_auto = (last_train.get("updated_at", 0)
                          + trainer["train_interval_hours"] * SECONDS_PER_HOUR)
-        return {"unlabeled": unlabeled,
-                "missing_prelabels": missing_prelabels,
-                "jobs": jobs[:_HISTORY_SHOWN],
-                "last_train": last_train,
-                "next_auto_train": next_auto,
-                "settings": trainer,
-                "billing": _billing(Path(settings.jobs_dir)),
-                "model": _model_summary(Path(settings.model_path)),
-                "software": _software(Path(settings.jobs_dir))}
+        # Direct JSONResponse: the jobs carry fat _summary blobs and the
+        # jsonable_encoder pass over them per poll is pure overhead.
+        return JSONResponse(
+            {"unlabeled": unlabeled,
+             "missing_prelabels": missing_prelabels,
+             "jobs": jobs[:_HISTORY_SHOWN],
+             "last_train": last_train,
+             "next_auto_train": next_auto,
+             "settings": trainer,
+             "billing": _billing(Path(settings.jobs_dir)),
+             "model": _model_summary(Path(settings.model_path)),
+             "software": _software(Path(settings.jobs_dir))})
 
     @router.get("/api/training/settings")
     def api_get_settings() -> dict:

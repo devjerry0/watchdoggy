@@ -41,6 +41,25 @@ def test_torn_sidecar_is_skipped_then_recovers(tmp_path):
     assert [stem for stem, _ in index.snapshot()] == ["sample_1"]
 
 
+def test_generation_moves_only_on_change(tmp_path):
+    index = SidecarIndex(tmp_path)
+    index.snapshot()
+    start = index.generation
+    # Quiet scans don't move the generation -- derived-aggregate memos
+    # (chip counts, dataset tallies) rely on this to skip recomputing.
+    index.snapshot()
+    assert index.generation == start
+    _write(tmp_path, "sample_1", {"reasons": ["fire"]})
+    index.snapshot()
+    bumped = index.generation
+    assert bumped > start
+    index.snapshot()
+    assert index.generation == bumped
+    (tmp_path / "sample_1.json").unlink()
+    index.snapshot()
+    assert index.generation > bumped
+
+
 def test_non_sidecar_files_ignored_and_bytes_counted(tmp_path):
     _write(tmp_path, "sample_1", {"reasons": []})
     (tmp_path / "sample_1.jpg").write_bytes(b"x" * 100)
