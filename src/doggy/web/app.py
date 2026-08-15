@@ -15,6 +15,7 @@ from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 from doggy.web.door import create_door_app
 from doggy.web.envfile import write_env as _write_env
+from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers import dataset as dataset_router
 from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk
 from doggy.web.routers import settings as settings_router
@@ -27,11 +28,13 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
                event_store: EventStore, gate: FireGate,
                dataset: DatasetCapture | None = None,
                save_env: Callable[[TunableSettings], None] = _write_env) -> FastAPI:
-    # Web-only callers (tests) may omit the capture service; stats/mark only
-    # touch the dataset dir, so a local instance is equivalent.
-    if dataset is None:
-        dataset = DatasetCapture(settings.dataset_dir, settings.dataset_cap_bytes,
-                                 runtime)
+    # `dataset` is unused since the web layer reads sidecars via the shared
+    # SidecarIndex; the parameter stays so the composition root's (and the
+    # tests') call shape is stable.
+    _ = dataset
+    # One index for every dataset/training view: per-request re-parsing of
+    # thousands of sidecars is what made those pages take ~10s on the Pi.
+    sidecar_index = SidecarIndex(settings.dataset_dir)
     app = FastAPI(title="doggy")
 
     @app.get("/")
@@ -75,8 +78,9 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     app.include_router(snooze.build_router(gate))
     app.include_router(talk.build_router(runtime))
     app.include_router(speaker.build_router())
-    app.include_router(dataset_router.build_router(settings, dataset, event_store))
-    app.include_router(training_router.build_router(settings))
+    app.include_router(dataset_router.build_router(settings, event_store,
+                                                   sidecar_index))
+    app.include_router(training_router.build_router(settings, sidecar_index))
 
     return app
 

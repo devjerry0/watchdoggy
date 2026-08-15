@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 
 from doggy.core.config import Settings
 from doggy.web import jobqueue
+from doggy.web.sidecar_index import SidecarIndex
 
 # Job kinds the training page can request. "train" = full cloud pipeline run
 # (prelabel + build + fine-tune + eval + gated deploy); "prelabel" = fresh
@@ -20,16 +21,10 @@ _LOG_TAIL_LINES = 200
 SECONDS_PER_HOUR = 3600.0
 
 
-def _dataset_counts(dataset_dir: Path) -> tuple[int, int]:
+def _dataset_counts(index: SidecarIndex) -> tuple[int, int]:
     unlabeled = 0
     missing_prelabels = 0
-    if not dataset_dir.is_dir():
-        return 0, 0
-    for sidecar in dataset_dir.glob("sample_*.json"):
-        try:
-            meta = json.loads(sidecar.read_text())
-        except (OSError, ValueError):
-            continue
+    for _, meta in index.snapshot():
         unlabeled += not meta.get("human_label")
         missing_prelabels += "prelabels" not in meta
     return unlabeled, missing_prelabels
@@ -70,13 +65,13 @@ def _software(jobs_dir: Path) -> dict:
     return {"installed": installed, "check": check}
 
 
-def build_router(settings: Settings) -> APIRouter:
+def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/training/status")
     def api_status() -> dict:
         jobs = jobqueue.list_jobs(Path(settings.jobs_dir))
-        unlabeled, missing_prelabels = _dataset_counts(Path(settings.dataset_dir))
+        unlabeled, missing_prelabels = _dataset_counts(index)
         last_train = next((j for j in jobs
                            if j.get("kind") == "train"
                            and j.get("status") == "done"), None)

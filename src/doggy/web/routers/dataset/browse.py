@@ -1,4 +1,6 @@
-"""Read-only dataset views: stats, the filmstrip, one frame, the queue."""
+"""Read-only dataset views: stats, the filmstrip, one frame, the queue.
+All listings come from the shared SidecarIndex -- per-request re-parsing
+of thousands of sidecars is what made these pages crawl on the Pi."""
 from __future__ import annotations
 
 import json
@@ -6,15 +8,13 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from doggy.core.config import Settings
-from doggy.reaction.dataset import DatasetCapture
 from doggy.web.routers.dataset.sidecars import (
     FRAME_FILTERS,
     matches,
-    read_meta,
     reason_priority,
     sidecar_or_404,
-    sidecar_paths,
 )
+from doggy.web.sidecar_index import SidecarIndex
 
 # The filmstrip and history rails cap their payloads: listings are unbounded
 # as the dataset grows, and the Pi serves these over WiFi.
@@ -46,12 +46,20 @@ def _frame_row(stem: str, verdict: str | None, meta: dict) -> dict:
             "hand_boxes": isinstance(meta.get("human_boxes"), list)}
 
 
-def build_router(settings: Settings, capture: DatasetCapture) -> APIRouter:
+def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/dataset")
     def api_dataset() -> dict:
-        return capture.stats()
+        """Sample count, byte usage, and per-reason tallies for the dashboard."""
+        by_reason: dict[str, int] = {}
+        sidecars = index.snapshot()
+        for _, meta in sidecars:
+            for r in meta.get("reasons", []):
+                by_reason[r] = by_reason.get(r, 0) + 1
+        return {"samples": len(sidecars), "bytes": index.sample_bytes(),
+                "cap_bytes": settings.dataset_cap_bytes,
+                "by_reason": by_reason}
 
     @router.get("/api/dataset/frames")
     def api_frames(filter: str = "unlabeled") -> dict:
@@ -61,23 +69,21 @@ def build_router(settings: Settings, capture: DatasetCapture) -> APIRouter:
                                 detail=f"filter must be one of {sorted(FRAME_FILTERS)}")
         keyed = []
         counts = dict.fromkeys(FRAME_FILTERS, 0)
-        for side in sidecar_paths(settings.dataset_dir):
-            meta = read_meta(side)
-            if meta is None:
-                continue
+        for stem, meta in index.snapshot():
             verdict = meta.get("human_label")
-            _add_chip_counts(counts, verdict, meta, side.stem)
-            if not matches(filter, verdict, meta, side.stem):
+            _add_chip_counts(counts, verdict, meta, stem)
+            if not matches(filter, verdict, meta, stem):
                 continue
             keyed.append((_sort_key(filter, meta),
-                          _frame_row(side.stem, verdict, meta)))
+                          _frame_row(stem, verdict, meta)))
         keyed.sort(key=lambda pair: pair[0])
         return {"frames": [row for _, row in keyed[:FRAME_PAGE_LIMIT]],
                 "counts": counts}
 
     @router.get("/api/dataset/sample/{name}")
     def api_sample(name: str) -> dict:
-        """Everything the stage needs to show one frame."""
+        """Everything the stage needs to show one frame. Read directly (not
+        via the index): the editor must always see its own last write."""
         safe, side = sidecar_or_404(settings.dataset_dir, name)
         meta = json.loads(side.read_text())
         return {"name": safe, "image": f"/dataset/{safe}.jpg",
@@ -95,15 +101,12 @@ def build_router(settings: Settings, capture: DatasetCapture) -> APIRouter:
         """The next frame to review: unlabeled, highest-signal reason first."""
         pending = []
         labeled = 0
-        for side in sidecar_paths(settings.dataset_dir):
-            meta = read_meta(side)
-            if meta is None:
-                continue
+        for stem, meta in index.snapshot():
             if meta.get("human_label"):
                 labeled += 1
                 continue
             pending.append((reason_priority(meta), -meta.get("wall_time", 0),
-                            side.stem, meta))
+                            stem, meta))
         pending.sort()
         if not pending:
             return {"remaining": 0, "labeled": labeled, "sample": None}
@@ -121,11 +124,10 @@ def build_router(settings: Settings, capture: DatasetCapture) -> APIRouter:
         """Already-judged frames, most recently labeled first, so verdicts can
         be reviewed and corrected (mislabels happen -- ours included)."""
         rows = []
-        for side in sidecar_paths(settings.dataset_dir):
-            meta = read_meta(side)
-            if meta is None or not meta.get("human_label"):
+        for stem, meta in index.snapshot():
+            if not meta.get("human_label"):
                 continue
-            rows.append({"name": side.stem, "image": f"/dataset/{side.stem}.jpg",
+            rows.append({"name": stem, "image": f"/dataset/{stem}.jpg",
                          "verdict": meta["human_label"],
                          "labeled_at": meta.get("labeled_at", 0),
                          "reasons": meta.get("reasons", []),
