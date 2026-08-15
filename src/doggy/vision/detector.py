@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import logging
+import multiprocessing
 import platform
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 
 from doggy.core.config import Settings, TunableSettings
-from doggy.vision.detection import Detection, INVENTORY_LABELS, PERSON_LABEL
 from doggy.core.runtime import RuntimeSettings
+from doggy.vision import inference_worker
+from doggy.vision.detection import Detection, INVENTORY_LABELS, PERSON_LABEL
+
+log = logging.getLogger("doggy")
+
+# One inference normally takes well under a second; a worker silent for this
+# long is stuck (or its child died mid-call) and gets replaced.
+INFERENCE_TIMEOUT_S = 30.0
 
 
 class Detector(Protocol):
@@ -57,18 +67,33 @@ def select_device() -> str:
 
 
 class YoloDetector:
-    """Ultralytics YOLO wrapper: returns watched-class + person detections.
+    """YOLO detections via a dedicated inference child process.
 
     People come free from the same inference and feed the misclassification
     suppression filter; they are never alerted on.
+
+    The child process exists because the ncnn binding holds the GIL for the
+    whole forward pass (see vision/inference_worker.py) -- in-process
+    inference froze every other thread, including the dashboard. The model
+    lives only in the child; a dead or stuck child is replaced and the
+    frame is reported empty (the M-of-N trigger absorbs a missed frame).
     """
 
-    def __init__(self, model_path: Path, runtime: RuntimeSettings, device: str | None = None) -> None:
-        from ultralytics import YOLO
-
-        self._model = YOLO(str(model_path))
+    def __init__(self, model_path: Path, runtime: RuntimeSettings,
+                 device: str | None = None) -> None:
+        self._model_path = str(model_path)
         self._runtime = runtime
         self._device = device or select_device()
+        self._pool = self._start_pool()
+
+    def _start_pool(self) -> ProcessPoolExecutor:
+        # spawn, never fork: this process carries a dozen live threads
+        # (uvicorn, capture, soothing) and forking them is undefined joy.
+        return ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=multiprocessing.get_context("spawn"),
+            initializer=inference_worker.init,
+            initargs=(self._model_path, self._device))
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         cfg = self._runtime.get()
@@ -80,26 +105,17 @@ class YoloDetector:
                 if cfg.inventory_enabled else cfg.confidence)
         if cfg.dataset_enabled:
             conf = min(conf, DATASET_FLOOR)
-        results = self._model.predict(
-            frame, conf=conf, device=self._device, verbose=False
-        )
-        out: list[Detection] = []
-        for r in results:
-            out.extend(_result_detections(r, cfg))
-        return out
-
-
-def _result_detections(result, cfg) -> list[Detection]:
-    """One YOLO result's boxes, filtered to the classes/thresholds we keep."""
-    out: list[Detection] = []
-    for box in result.boxes:
-        label = result.names[int(box.cls[0])]
-        score = float(box.conf[0])
-        if not keep_detection(label, score, cfg):
-            continue
-        x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
-        out.append(Detection(label, score, (x1, y1, x2, y2)))
-    return out
+        try:
+            future = self._pool.submit(inference_worker.predict, frame, conf)
+            raw = future.result(timeout=INFERENCE_TIMEOUT_S)
+        except Exception:
+            # A crashed/stuck child must not take down the detect loop.
+            log.exception("inference worker failed; replacing it")
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = self._start_pool()
+            return []
+        return [Detection(label, score, box) for label, score, box in raw
+                if keep_detection(label, score, cfg)]
 
 
 def build_detector(settings: Settings, runtime: RuntimeSettings) -> Detector:
