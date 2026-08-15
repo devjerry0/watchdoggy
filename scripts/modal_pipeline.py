@@ -123,8 +123,8 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
     (out_dir / "summary.json").write_text(json.dumps(
         {key: results[key] for key in
          ("run_name", "gate", "dataset", "recipe", "ncnn_truth",
-          "robustness", "robustness_deployed", "ncnn_heldout",
-          "exam_suspects")}, indent=1))
+          "robustness", "robustness_deployed", "slices", "calibration",
+          "ncnn_heldout", "exam_suspects")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     if bundle_tar:

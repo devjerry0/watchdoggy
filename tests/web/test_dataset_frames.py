@@ -112,3 +112,16 @@ def test_exam_filter_is_stable_hash_val_split(tmp_path):
     d = c.get("/api/dataset/frames?filter=exam").json()
     assert d["counts"]["exam"] == 1
     assert d["frames"][0]["name"] == val_stem
+
+
+def test_user_marked_fp_frames_are_always_exam(tmp_path):
+    # Escaped failures are permanent exam members regardless of the hash
+    # split (mirrors kitchen_training.build._split).
+    import hashlib as h
+    c, _, ddir = _client(tmp_path)
+    # Find a stem the hash split would put in TRAIN.
+    stem = next(f"sample_{2000 + i}" for i in range(50)
+                if int(h.sha1(f"sample_{2000 + i}".encode()).hexdigest(), 16) % 4)
+    _seed_full(ddir, stem, verdict="no_dog", reasons=["user_marked_fp"])
+    d = c.get("/api/dataset/frames?filter=exam").json()
+    assert d["counts"]["exam"] == 1

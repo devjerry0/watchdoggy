@@ -62,7 +62,8 @@ def _scorecard(summary: dict, started: float, before: dict | None) -> dict:
     # curve, robustness, dataset shape, recipe, duration.
     card = {key: summary.get(key) for key in
             ("gate", "dataset", "recipe", "fire_conf",
-             "ncnn_truth", "robustness", "robustness_deployed")}
+             "ncnn_truth", "robustness", "robustness_deployed",
+             "slices", "calibration")}
     card["duration_s"] = round(time.time() - started)
     card["cost_usd"] = run_cost(before)
     return card

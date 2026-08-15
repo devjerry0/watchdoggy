@@ -11,9 +11,12 @@ from doggy.vision.analysis import FrameAnalysis
 from doggy.vision.detection import Detection
 
 
-def _img():
-    # Mid-gray, not black: harvest triggers skip lights-off frames.
-    return np.full((8, 8, 3), 120, np.uint8)
+def _img(seed=0):
+    # Mid-gray base (not black: harvest triggers skip lights-off frames) with
+    # per-seed noise: near-duplicate suppression drops repeats of the same
+    # scene, so tests that expect a SECOND save must pass a fresh seed.
+    rng = np.random.default_rng(seed)
+    return rng.integers(60, 200, (8, 8, 3)).astype(np.uint8)
 
 
 def _analysis(targets=(), people=(), suppressed=(), lowconf=()):
@@ -89,7 +92,7 @@ def test_cooldown_limits_borderline_rate(tmp_path):
     borderline = [s for s in _samples(tmp_path)
                   if "borderline" in json.loads(s.read_text())["reasons"]]
     assert len(borderline) == 1  # 10s cooldown swallowed the rest
-    c.on_frame(_img(), _analysis(targets=[d]), 25.0, _cfg())  # past cooldown
+    c.on_frame(_img(1), _analysis(targets=[d]), 25.0, _cfg())  # past cooldown
     borderline = [s for s in _samples(tmp_path)
                   if "borderline" in json.loads(s.read_text())["reasons"]]
     assert len(borderline) == 2

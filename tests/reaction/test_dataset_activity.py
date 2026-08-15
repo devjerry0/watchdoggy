@@ -11,9 +11,12 @@ from doggy.vision.analysis import FrameAnalysis
 from doggy.vision.detection import Detection
 
 
-def _img():
-    # Mid-gray, not black: harvest triggers skip lights-off frames.
-    return np.full((8, 8, 3), 120, np.uint8)
+def _img(seed=0):
+    # Mid-gray base (not black: harvest triggers skip lights-off frames) with
+    # per-seed noise: near-duplicate suppression drops repeats of the same
+    # scene, so tests that expect a SECOND save must pass a fresh seed.
+    rng = np.random.default_rng(seed)
+    return rng.integers(60, 200, (8, 8, 3)).astype(np.uint8)
 
 
 def _analysis(targets=(), people=(), suppressed=(), lowconf=()):
@@ -54,10 +57,10 @@ def test_person_activity_sampling_during_and_after_person(tmp_path):
     n0 = len(sides)
     c.on_frame(_img(), _analysis(people=[person]), 110.0, _cfg())    # cooldown holds
     assert len(_samples(tmp_path)) == n0
-    c.on_frame(_img(), _analysis(people=[person]), 180.0, _cfg())    # still cooking
+    c.on_frame(_img(2), _analysis(people=[person]), 180.0, _cfg())   # still cooking
     # Person bends out of sight; 45s after last sighting (still "recent") and
     # past the 120s cooldown -> the head-only-phase sample is due.
-    c.on_frame(_img(), _analysis(), 225.0, _cfg())
+    c.on_frame(_img(3), _analysis(), 225.0, _cfg())
     tail = [x for x in _samples(tmp_path)
             if "person_activity" in json.loads(x.read_text())["reasons"]]
     assert len(tail) == 2

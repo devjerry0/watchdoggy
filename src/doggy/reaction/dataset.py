@@ -85,10 +85,12 @@ class DatasetCapture:
         reasons = self._policy.reasons_due(analysis, now)
         if not reasons:
             return
-        # The darkness check only runs when a trigger actually wants to save.
+        # Darkness and duplicate checks only run when a trigger wants to save.
         if too_dark(frame):
             return
-        self._policy.mark_saved(reasons, now)
+        if self._policy.duplicate(frame, reasons):
+            return
+        self._policy.mark_saved(reasons, now, frame)
         self._save(frame, analysis, reasons)
 
     # -- hub Reaction -------------------------------------------------------

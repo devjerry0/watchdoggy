@@ -24,8 +24,8 @@ from fastapi import status as http_status
 # the legacy coarse verdict from the catch log's one-tap button, kept valid.
 VERDICTS = {"dog", "dog_mixed", "person", "empty", "no_dog", "skip"}
 # Review order: highest training signal first, newest first within a class.
-REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2,
-                   "fire_context": 3, "person_activity": 4, "periodic": 5}
+REASON_PRIORITY = {"fire": 0, "suppressed": 1, "borderline": 2, "flicker": 3,
+                   "fire_context": 4, "person_activity": 5, "periodic": 6}
 UNKNOWN_REASON_PRIORITY = 9
 # Filmstrip filters. "unlabeled" is the work queue; "needs_boxes" finds
 # dog-verdict frames where NO model produced a dog box (training would drop
@@ -89,11 +89,15 @@ def has_dog_box(meta: dict) -> bool:
                for d in targets)
 
 
-def is_exam(stem: str, verdict: str | None) -> bool:
-    """Human-labeled frames whose stable hash lands in the val split --
-    exactly what every model is judged on. Auto labels never sit here."""
+def is_exam(stem: str, verdict: str | None, meta: dict) -> bool:
+    """Human-labeled frames the models are judged on: the stable hash-split
+    val frames PLUS every user-flagged false fire (escaped failures are
+    permanent exam members -- mirrors kitchen_training.build._split).
+    Auto labels never sit here."""
     if not verdict or verdict == "skip":
         return False
+    if "user_marked_fp" in meta.get("reasons", []):
+        return True
     return int(hashlib.sha1(stem.encode()).hexdigest(),
                16) % VAL_FRACTION_MOD == 0
 
@@ -102,7 +106,7 @@ def matches(name: str, verdict: str | None, meta: dict, stem: str = "") -> bool:
     if name == "all":
         return True
     if name == "exam":
-        return is_exam(stem, verdict)
+        return is_exam(stem, verdict, meta)
     if name == "unlabeled":
         # Auto-labeled frames are off the human's queue.
         return not verdict and not meta.get("auto_label")

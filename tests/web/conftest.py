@@ -100,13 +100,13 @@ def _seed_sample(dataset_dir, stem, reasons, wall_time, label=None):
 
 
 def _seed_full(ddir, stem, verdict=None, prelabel_dogs=None, hand=None,
-               nano_dog_conf=None, wall=100.0):
+               nano_dog_conf=None, wall=100.0, reasons=("fire",)):
     import json as _json
     ddir.mkdir(parents=True, exist_ok=True)
     import numpy as np
     import cv2
     cv2.imwrite(str(ddir / f"{stem}.jpg"), np.zeros((8, 8, 3), np.uint8))
-    meta = {"wall_time": wall, "reasons": ["fire"]}
+    meta = {"wall_time": wall, "reasons": list(reasons)}
     if verdict:
         meta["human_label"] = verdict
         meta["labeled_at"] = wall + 1

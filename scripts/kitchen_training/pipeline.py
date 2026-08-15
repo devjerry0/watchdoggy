@@ -17,10 +17,11 @@ from kitchen_training.build import build
 from kitchen_training.config import BASE_MODEL, DATASET_MIRROR, PRELABEL_CACHE, RUNS
 from kitchen_training.consensus import judge_frames
 from kitchen_training.dataset import prelabel
-from kitchen_training.evaluation import evaluate, ncnn_truth, robustness
+from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
 from kitchen_training.export import export
 from kitchen_training.gate import deploy_gate, exam_suspects
 from kitchen_training.report import report
+from kitchen_training.slices import calibration, slice_report
 from kitchen_training.training import train
 
 # The proven recipe from the sweep: "long" (200 epochs) won on the full
@@ -71,6 +72,11 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     metrics["robustness"] = robustness(run_dir, bundle)
     deployed_dir = run_root / "deployed_ncnn_model"
     gate = deploy_gate(run_dir, bundle, deployed_dir, fire_conf)
+    new_confs = gate.pop("_new_confs")
+    deployed_confs = gate.pop("_deployed_confs", None)
+    exam = eval_frames(run_dir)
+    metrics["slices"] = slice_report(exam, new_confs, deployed_confs, fire_conf)
+    metrics["calibration"] = calibration(exam, new_confs)
     if deployed_dir.is_dir():
         # The incumbent runs the same stress suite: comparisons stay
         # apples-to-apples as the exam grows.
@@ -93,6 +99,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "ncnn_truth": metrics["ncnn_truth"],
         "robustness": metrics["robustness"],
         "robustness_deployed": metrics.get("robustness_deployed"),
+        "slices": metrics["slices"],
+        "calibration": metrics["calibration"],
         # The headline score IS the gate's new-model score: measured at the
         # appliance's runtime threshold, not a fixed default.
         "ncnn_heldout": gate["new"],

@@ -102,6 +102,29 @@ def _robustness_md(metrics: dict) -> list[str]:
     return lines
 
 
+def _slices_md(metrics: dict) -> list[str]:
+    slices = metrics.get("slices")
+    if not slices:
+        return []
+    lines = ["", "## Failure-mode slices (held-out, candidate vs deployed)",
+             "", "One aggregate hides corner regressions; these are named",
+             "corners. Indicators, not vetoes.", "",
+             "| slice | catches | false fires | deployed catches | deployed FP |",
+             "|---|---|---|---|---|"]
+    for name in sorted(slices):
+        t = slices[name]
+        lines.append(f"| {name} | {t['caught']}/{t['dogs']} | "
+                     f"{t['false_fires']}/{t['nondogs']} | "
+                     f"{t['deployed_caught']}/{t['dogs']} | "
+                     f"{t['deployed_false_fires']}/{t['nondogs']} |")
+    cal = metrics.get("calibration")
+    if cal:
+        lines += ["", f"Calibration: fitted temperature {cal['temperature']} "
+                      f"(1.0 = honest confidences), ECE {cal['ece']:.1%} over "
+                      f"{cal['exam_frames']} exam frames."]
+    return lines
+
+
 def _deploy_md(ncnn_bundle: Path | None) -> list[str]:
     if not ncnn_bundle:
         return []
@@ -132,6 +155,7 @@ def report(run_dir: Path, dataset_stats: dict, metrics: dict, winner: str,
     lines += _dropped_md(dataset_stats)
     lines += _ncnn_md(metrics, winner)
     lines += _robustness_md(metrics)
+    lines += _slices_md(metrics)
     lines += _deploy_md(ncnn_bundle)
     (run_dir / "report.md").write_text("\n".join(lines) + "\n")
     log(f"report: {run_dir / 'report.md'}")

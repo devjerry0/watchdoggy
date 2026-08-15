@@ -30,6 +30,9 @@ def deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
     new_score = score(frames, new_confs, fire_conf, True)
     gate = {"fire_conf": fire_conf, "new": new_score,
             "new_errors": new_score["missed"] + new_score["false_fires"]}
+    # Per-stem confs ride along under _ keys for the slice/calibration
+    # report; the pipeline pops them before results are serialized.
+    gate["_new_confs"] = new_confs
     if not deployed_dir.is_dir():
         return {**gate, "deploy": True, "deployed": None, "deployed_errors": None,
                 "reason": "no deployed bundle uploaded",
@@ -45,6 +48,7 @@ def deploy_gate(run_dir: Path, new_bundle: Path, deployed_dir: Path,
               + (" -- best model wins" if passes else " -- incumbent stands"))
     return {**gate, "deploy": passes, "deployed": old_score,
             "deployed_errors": old_errors, "reason": reason,
+            "_deployed_confs": old_confs,
             # The incumbent's full curve rides along so every report compares
             # both models on the same grown exam, not just at one threshold.
             "deployed_curve": curve(frames, old_confs)}
