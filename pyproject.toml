@@ -3,7 +3,7 @@ name = "doggy"
 version = "0.1.0"
 description = "Local dog-presence detector with a deterrent speaker and a localhost dashboard"
 requires-python = ">=3.11"
-license = "AGPL-3.0-or-later"
+license = "MIT"
 dependencies = [
     "ultralytics>=8.3.0",
     "torch>=2.2",

@@ -155,4 +155,12 @@ uv run pytest -m slow          # detector test (needs the model and fixtures)
 
 ## License
 
-AGPL-3.0-or-later, matching YOLO26n.
+The code in this repository is MIT licensed.
+
+Two dependency notes, stated plainly. First, the project depends on the
+Ultralytics YOLO library, which is AGPL-3.0: none of its code lives in this
+repository, but installing the dependencies and running the combined work
+puts that combination under AGPL terms (or an Ultralytics commercial
+license). Second, the YOLO26 weights and any model you fine-tune from them
+inherit Ultralytics' licensing; the MIT grant here covers this project's
+code, not the models it trains.
