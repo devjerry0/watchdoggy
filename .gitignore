@@ -20,3 +20,4 @@ __pycache__/
 /training-runs/
 /finetune/
 /runs/
+contact_sheet*.png
