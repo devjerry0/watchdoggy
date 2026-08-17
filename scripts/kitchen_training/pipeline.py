@@ -113,13 +113,24 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     return results, (bundle if gate["deploy"] else None)
 
 
-def prelabel_run(run_name: str, run_root: Path) -> dict:
-    """Big-model boxes for new frames, plus consensus auto-verdicts and
-    label-audit disputes when a deployed nano provides the second juror."""
+def _mirror_stems() -> list[str]:
+    return [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
+
+
+def prelabel_phase(run_name: str) -> dict:
+    """GPU phase: big-model boxes for frames the cache has never seen."""
     cache_before = cached_stems()
-    stems = [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
-    cache = prelabel(stems)
+    prelabel(_mirror_stems())
+    return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before)}
+
+
+def consensus_phase(run_name: str, run_root: Path) -> dict:
+    """CPU phase: consensus auto-verdicts and label-audit disputes when a
+    deployed nano provides the second juror. Runs without a GPU -- holding
+    one through the judging loop was most of a pass's bill."""
+    stems = _mirror_stems()
+    cache = prelabel(stems)  # fully cached by the prelabel phase
     auto_verdicts, disputes = judge_frames(stems, cache,
                                            run_root / "deployed_ncnn_model")
-    return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before),
-            "auto_verdicts": auto_verdicts, "disputes": disputes}
+    return {"run_name": run_name, "auto_verdicts": auto_verdicts,
+            "disputes": disputes}

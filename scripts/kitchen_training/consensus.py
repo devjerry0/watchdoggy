@@ -7,10 +7,18 @@ half-hidden dogs it was specifically trained on). Genuine disagreement =
 the frame stays for the human."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR
+from kitchen_training.config import DATASET_MIRROR, RUNS
+
+# A jury's verdict on an unchanged frame cannot change until the jury does.
+# Frames this exact jury (deployed weights + rule constants) has already
+# judged with no action are remembered here and skipped -- re-judging the
+# whole refused backlog every pass was most of a pass's compute. A new
+# champion or a rule change voids the memory automatically.
+JURY_MEMORY = RUNS / "jury-no-action.json"
 
 # Bars backtested 2026-08-14 against 917 human-labeled frames with the
 # deployed champion as juror (scratch: rule_sim.py): this rule-set wrongly
@@ -86,28 +94,79 @@ def _audit_dispute(meta: dict, x_entry: dict, nano_dog: float) -> dict | None:
     return None
 
 
+def _jury_id(deployed_dir: Path) -> str:
+    """The jury's identity: deployed weights + rule constants."""
+    digest = hashlib.sha256(repr((
+        AUTO_DOG_NANO_CONF, AUTO_DOG_SOLO_CONF, AUTO_CLEAR_NANO_CONF,
+        AUTO_PERSON_NANO_CONF, AUDIT_DOG_NANO_CONF)).encode())
+    for weights in sorted(deployed_dir.glob("**/*.bin")):
+        digest.update(weights.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def _load_no_action(jury: str) -> set[str]:
+    try:
+        stored = json.loads(JURY_MEMORY.read_text())
+    except (OSError, ValueError):
+        return set()
+    if stored.get("jury") != jury:
+        return set()  # new champion or new rules: the memory is void
+    return set(stored.get("stems", []))
+
+
+def _needs_judging(meta: dict, x_entry: dict, no_action: set[str],
+                   stem: str) -> bool:
+    if meta.get("human_label"):
+        # Only the one-direction audit applies: non-dog label, not yet
+        # settled or flagged, and X must see a dog for a dispute to be
+        # possible at all.
+        return (meta["human_label"] in ("person", "empty", "no_dog")
+                and not meta.get("dispute_settled_at")
+                and not meta.get("disputed")
+                and bool(x_entry["dogs"])
+                and stem not in no_action)
+    if meta.get("auto_label"):
+        return False
+    return stem not in no_action
+
+
 def judge_frames(stems: list[str], cache: dict,
                  deployed_dir: Path) -> tuple[dict, dict]:
-    """(auto_verdicts, disputes) for every frame, judged by the deployed
-    nano + the big-model cache. Without a deployed nano there is no second
-    juror, so nothing is auto-labeled or disputed."""
+    """(auto_verdicts, disputes) judged by the deployed nano + the big-model
+    cache. Without a deployed nano there is no second juror, so nothing is
+    auto-labeled or disputed. Frames this jury already declined stay
+    declined without re-scoring (see JURY_MEMORY)."""
     if not deployed_dir.is_dir():
         return {}, {}
-    from ultralytics import YOLO  # deferred, like every kitchen_training module
-    nano = YOLO(str(deployed_dir), task="detect")
+    jury = _jury_id(deployed_dir)
+    no_action = _load_no_action(jury)
+    metas = {stem: _sidecar_meta(stem) for stem in stems}
+    todo = [stem for stem in stems
+            if _needs_judging(metas[stem], cache[stem], no_action, stem)]
+    print(f"[pipeline] jury {jury}: judging {len(todo)} frames, "
+          f"{len(stems) - len(todo)} skipped (labeled, settled, or already "
+          f"declined by this jury)", flush=True)
     auto_verdicts: dict = {}
     disputes: dict = {}
-    for stem in stems:
-        meta = _sidecar_meta(stem)
-        nano_dog, nano_person = _nano_scores(nano, stem)
-        if not meta.get("human_label") and not meta.get("auto_label"):
-            verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
-            if verdict:
-                auto_verdicts[stem] = verdict
-            continue
-        dispute = _audit_dispute(meta, cache[stem], nano_dog)
-        if dispute:
-            disputes[stem] = dispute
+    if todo:
+        from ultralytics import YOLO  # deferred, like the whole package
+        nano = YOLO(str(deployed_dir), task="detect")
+        for stem in todo:
+            nano_dog, nano_person = _nano_scores(nano, stem)
+            if not metas[stem].get("human_label"):
+                verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
+                if verdict:
+                    auto_verdicts[stem] = verdict
+                    continue
+                no_action.add(stem)
+                continue
+            dispute = _audit_dispute(metas[stem], cache[stem], nano_dog)
+            if dispute:
+                disputes[stem] = dispute
+                continue
+            no_action.add(stem)
+    JURY_MEMORY.write_text(json.dumps({"jury": jury,
+                                       "stems": sorted(no_action)}))
     print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
           f"unlabeled frames; disputed {len(disputes)} existing labels",
           flush=True)

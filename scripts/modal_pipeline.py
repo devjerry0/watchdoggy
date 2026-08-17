@@ -91,14 +91,26 @@ def run_pipeline(run_name: str, recipe: dict,
 @app.function(image=image, gpu=GPU, cpu=4, memory=8192,
               volumes={str(VOL): volume}, timeout=30 * MINUTES)
 def run_prelabels(run_name: str) -> dict:
-    """Nightly pass: big-model boxes for new frames, plus consensus
-    auto-verdicts for unlabeled frames where the deployed nano and the big
-    model agree -- those skip the human queue (train-split only)."""
+    """GPU phase of the nightly pass: big-model boxes for new frames only."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
-    from kitchen_training.pipeline import prelabel_run
+    from kitchen_training.pipeline import prelabel_phase
 
-    results = prelabel_run(run_name, run_root)
+    results = prelabel_phase(run_name)
+    volume.commit()
+    return results
+
+
+@app.function(image=image, cpu=4, memory=8192,
+              volumes={str(VOL): volume}, timeout=30 * MINUTES)
+def run_consensus(run_name: str) -> dict:
+    """CPU phase: the jury judges what needs judging (no GPU billed while
+    a CPU model loops over frames)."""
+    run_root = PIPELINE_ROOT / "runs" / run_name
+    _point_kitchen_training_at_volume(run_root)
+    from kitchen_training.pipeline import consensus_phase
+
+    results = consensus_phase(run_name, run_root)
     volume.commit()
     return results
 
@@ -162,6 +174,7 @@ def kickoff_prelabels(dataset_dir: str, out_dir: str,
                        Path(deployed_dir) if deployed_dir else None, None)
     print("[pipeline] prelabeling in the cloud ...")
     results = run_prelabels.remote(run_name)
+    results.update(run_consensus.remote(run_name))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
