@@ -119,8 +119,14 @@ SNAPS=/home/doggy/doggy-state-backup
 SNAP_KEEP=2
 snap="$SNAPS/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$snap"
-for p in dataset jobs models .env; do
-  [ -e "$APP/$p" ] && cp -a "$APP/$p" "$snap/$p"
+# Sidecars (the labels: the irreplaceable human work), not the frames --
+# frames live in the Volume mirror and the workstation backups, and a
+# multi-GB copy raced live capture (a file vanishing mid-cp killed the
+# helper under set -e). Every copy here tolerates concurrent mutation.
+(cd "$APP/dataset" 2>/dev/null && find . -maxdepth 1 -name 'sample_*.json' -print0 \
+  | tar -czf "$snap/dataset-sidecars.tgz" --null -T - 2>/dev/null) || true
+for p in jobs models .env; do
+  [ -e "$APP/$p" ] && cp -a "$APP/$p" "$snap/$p" 2>/dev/null || true
 done
 chown -R doggy:doggy "$SNAPS"
 ls -1d "$SNAPS"/*/ 2>/dev/null | sort | head -n -$SNAP_KEEP | xargs -r rm -rf
