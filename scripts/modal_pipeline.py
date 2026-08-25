@@ -124,7 +124,7 @@ def _upload(dataset_dir: Path, deployed_dir: Path | None,
             seed_models: Path | None) -> str:
     run_name = time.strftime("%Y%m%d-%H%M%S")
     print(f"[pipeline] syncing {dataset_dir} and starting run {run_name} ...")
-    from kitchen_training.sync import sync_mirror
+    from mirror_sync import sync_mirror  # sibling module: no ML deps
     sync_mirror(volume, dataset_dir)
     with volume.batch_upload(force=True) as up:
         if deployed_dir and deployed_dir.is_dir():

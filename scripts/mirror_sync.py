@@ -1,5 +1,9 @@
 """Client-side mirror sync: delta uploads plus the light index.
 
+Standalone on purpose: this runs in the trainer venv, which has modal and
+nothing else -- importing it must never drag in the ML stack (the
+kitchen_training package __init__ eagerly imports cv2 and friends).
+
 Runs on the machine that owns the frames (the Pi's trainer, or a Mac).
 Two jobs: ship only new/changed sample_* files to the shared Volume mirror
 (short retried chunks, manifest checkpoint after every chunk so any attempt
