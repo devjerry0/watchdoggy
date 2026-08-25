@@ -8,8 +8,6 @@ import time
 from trainer_daemon.env import DATASET_DIR, JOBS_DIR, log, settings
 from trainer_daemon.update import update_due
 
-AUTO_PRELABEL_MIN = 10
-PRELABEL_COOLDOWN = 6 * 3600.0
 SECONDS_PER_HOUR = 3600.0
 SECONDS_PER_DAY = 24 * 3600
 
@@ -92,13 +90,13 @@ def synthesize_job(existing: list[dict]) -> dict | None:
                           f"auto: {new_labels} new labels since last run")
     missing, _, _ = sidecar_stats()
     last_prelabel = newest_done("prelabel")
-    # Nightly: after the configured hour, prelabel EVERY new frame once, so
-    # the morning's label queue is already stocked with ·x boxes.
+    # Nightly ONLY: after the configured hour, prelabel + auto-label every
+    # new frame once, so the morning's label queue is stocked. Heavy days
+    # don't trigger extra cloud passes (user-decided); the training page's
+    # "Fetch boxes now" button covers the on-demand case.
     if missing > 0 and last_prelabel < last_nightly_slot(conf["nightly_prelabel_hour"]):
         return queue_auto("prelabel",
                           f"nightly: {missing} new frames to prelabel")
-    if missing >= AUTO_PRELABEL_MIN and now - last_prelabel >= PRELABEL_COOLDOWN:
-        return queue_auto("prelabel", f"auto: {missing} frames lack prelabels")
     return _update_job(now)
 
 
