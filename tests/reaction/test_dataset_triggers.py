@@ -129,3 +129,21 @@ def test_prune_deletes_oldest_past_cap(tmp_path):
     assert len(jpgs) <= 1 and len(sides) <= 1
     for s in sides:
         assert s.with_suffix(".jpg").is_file() or not jpgs
+
+
+def test_prune_never_deletes_labeled_frames(tmp_path):
+    import json as _json
+    c = _capture(tmp_path, cap=10**9)
+    d = Detection("dog", 0.5, (0, 0, 4, 4))
+    c.on_frame(_img(1), _analysis(targets=[d]), 10.0, _cfg())
+    labeled = sorted(_samples(tmp_path))[0]
+    meta = _json.loads(labeled.read_text())
+    meta["human_label"] = "dog"
+    labeled.write_text(_json.dumps(meta))
+    # Shrink the cap to nothing: every subsequent save prunes hard, and the
+    # old blind oldest-first prune would have eaten the labeled frame first.
+    c._cap = 1
+    c.on_frame(_img(2), _analysis(targets=[d]), 25.0, _cfg())
+    c.on_frame(_img(3), _analysis(targets=[d]), 40.0, _cfg())
+    survivors = {s.stem for s in _samples(tmp_path)}
+    assert labeled.stem in survivors  # the labeled frame outlives the cap

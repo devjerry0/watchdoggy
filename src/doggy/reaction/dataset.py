@@ -12,6 +12,7 @@ import numpy as np
 from doggy.core.config import TunableSettings
 from doggy.core.runtime import RuntimeSettings
 from doggy.reaction.capture_policy import CapturePolicy, too_dark
+from doggy.reaction.dataset_prune import prune
 from doggy.reaction.clips import ClipBuffer
 from doggy.reaction.hub import DogCaught
 from doggy.vision.analysis import FrameAnalysis
@@ -149,19 +150,7 @@ class DatasetCapture:
             log.exception("dataset: failed to save %s", what)
 
     def _prune(self) -> None:
-        samples = sorted(self._dir.glob("sample_*.jpg"))
-        total = sum(p.stat().st_size for p in self._dir.glob("sample_*") if p.is_file())
-        while samples and total > self._cap:
-            total -= self._delete_sample(samples.pop(0))
-
-    def _delete_sample(self, image: Path) -> int:
-        """Remove one sample (frame + sidecar); returns the bytes freed."""
-        freed = 0
-        for p in (image, image.with_suffix(".json")):
-            if p.is_file():
-                freed += p.stat().st_size
-                p.unlink()
-        return freed
+        prune(self._dir, self._cap)
 
     def stats(self) -> dict:
         """Sample count, byte usage, and per-reason tallies for the dashboard."""
