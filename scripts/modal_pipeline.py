@@ -120,77 +120,12 @@ def run_consensus(run_name: str) -> dict:
     return results
 
 
-# The dataset outgrew whole-mirror uploads: ~1GB per pass over a home
-# upstream hit Modal's stream timeout and killed 19 straight runs. One
-# SHARED mirror in the Volume is delta-synced instead -- a local manifest
-# (a dotfile beside the frames, so it travels with the data source) records
-# what is already up; only new/changed sample_* files upload, in bounded
-# chunks so no single stream can time out.
-MIRROR = "pipeline/mirror"
-# The Pi uploads over WiFi and sustained streams get reset after minutes:
-# keep streams short, retry each with a fresh connection, and advance the
-# manifest after EVERY chunk so any attempt resumes exactly where the last
-# one stopped -- the mirror converges across daemon passes no matter how
-# rude the network is.
-UPLOAD_CHUNK_FILES = 100
-CHUNK_RETRIES = 5
-CHUNK_RETRY_WAIT_S = 20
-
-
-def _put_chunk(dataset_dir: Path, chunk: list[str]) -> None:
-    for attempt in range(CHUNK_RETRIES):
-        try:
-            with volume.batch_upload(force=True) as up:
-                for name in chunk:
-                    up.put_file(str(dataset_dir / name), f"{MIRROR}/{name}")
-            return
-        except Exception as exc:
-            if attempt == CHUNK_RETRIES - 1:
-                raise
-            print(f"[pipeline]   chunk failed ({type(exc).__name__}); "
-                  f"retry {attempt + 2}/{CHUNK_RETRIES} in "
-                  f"{CHUNK_RETRY_WAIT_S}s", flush=True)
-            time.sleep(CHUNK_RETRY_WAIT_S)
-
-
-def _sync_mirror(dataset_dir: Path) -> None:
-    manifest_file = dataset_dir / ".upload-manifest.json"
-    try:
-        old = json.loads(manifest_file.read_text())
-    except (OSError, ValueError):
-        old = {}
-    current = {}
-    for p in sorted(dataset_dir.iterdir()):
-        if not p.name.startswith("sample_") or not p.is_file():
-            continue
-        st = p.stat()
-        current[p.name] = [st.st_mtime_ns, st.st_size]
-    changed = [n for n, sig in current.items() if old.get(n) != sig]
-    deleted = [n for n in old if n not in current]
-    print(f"[pipeline] mirror sync: {len(changed)} to upload, "
-          f"{len(deleted)} to delete, {len(current) - len(changed)} unchanged",
-          flush=True)
-    for start in range(0, len(changed), UPLOAD_CHUNK_FILES):
-        chunk = changed[start:start + UPLOAD_CHUNK_FILES]
-        _put_chunk(dataset_dir, chunk)
-        for name in chunk:
-            old[name] = current[name]
-        manifest_file.write_text(json.dumps(old))  # resume point
-        print(f"[pipeline]   uploaded {min(start + UPLOAD_CHUNK_FILES, len(changed))}"
-              f"/{len(changed)}", flush=True)
-    for name in deleted:
-        try:
-            volume.remove_file(f"{MIRROR}/{name}")
-        except Exception:
-            pass  # already gone is fine; the mirror only needs to converge
-    manifest_file.write_text(json.dumps(current))
-
-
 def _upload(dataset_dir: Path, deployed_dir: Path | None,
             seed_models: Path | None) -> str:
     run_name = time.strftime("%Y%m%d-%H%M%S")
     print(f"[pipeline] syncing {dataset_dir} and starting run {run_name} ...")
-    _sync_mirror(dataset_dir)
+    from kitchen_training.sync import sync_mirror
+    sync_mirror(volume, dataset_dir)
     with volume.batch_upload(force=True) as up:
         if deployed_dir and deployed_dir.is_dir():
             up.put_directory(str(deployed_dir),

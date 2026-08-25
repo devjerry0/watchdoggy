@@ -20,6 +20,20 @@ def pull(host: str) -> None:
     log(f"dataset mirror: {count} samples")
 
 
+def _labeled_stems(include_auto: bool) -> list[str] | None:
+    """Stems worth opening, from the light index the sync ships alongside
+    the mirror ({stem: [human, auto, settled, disputed]}). On a Volume's
+    network filesystem, globbing and reading tens of thousands of sidecars
+    to find the labeled few took the better part of an hour; the uploader
+    already knows and says so in one file."""
+    index = DATASET_MIRROR / ".labeled-index.json"
+    if not index.is_file():
+        return None  # local/dev mirrors: fall back to the full scan
+    entries = json.loads(index.read_text())
+    return sorted(stem for stem, (human, auto, _, _) in entries.items()
+                  if human or (include_auto and auto))
+
+
 def labeled_sidecars(include_auto: bool = False) -> list[tuple[str, str, dict]]:
     """(stem, verdict, meta) for every judged frame whose image exists.
 
@@ -27,8 +41,14 @@ def labeled_sidecars(include_auto: bool = False) -> list[tuple[str, str, dict]]:
     machine-graded. include_auto adds machine-consensus auto labels (build
     uses them for extra training data; they are confined to the train split).
     """
+    stems = _labeled_stems(include_auto)
+    if stems is None:
+        stems = sorted(p.stem for p in DATASET_MIRROR.glob("sample_*.json"))
     out = []
-    for sidecar in sorted(DATASET_MIRROR.glob("sample_*.json")):
+    for stem in stems:
+        sidecar = DATASET_MIRROR / f"{stem}.json"
+        if not sidecar.is_file():
+            continue
         meta = json.loads(sidecar.read_text())
         verdict = meta.get("human_label")
         if not verdict and include_auto:
@@ -39,7 +59,7 @@ def labeled_sidecars(include_auto: bool = False) -> list[tuple[str, str, dict]]:
             continue
         if not sidecar.with_suffix(".jpg").is_file():
             continue
-        out.append((sidecar.stem, verdict, meta))
+        out.append((stem, verdict, meta))
     return out
 
 

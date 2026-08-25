@@ -78,22 +78,6 @@ def _nano_scores(nano, stem: str) -> tuple[float, float]:
     return nano_dog, nano_person
 
 
-def _audit_dispute(meta: dict, x_entry: dict, nano_dog: float) -> dict | None:
-    """Label audit, ONE direction only: a confident dog sighting on a
-    non-dog label usually means a real dog the human missed. The reverse
-    direction ("dog-labeled but we see nothing") was removed: the jury
-    misses ~26% of hard borderline dogs, so it mostly second-guessed labels
-    the human had right. A human who already arbitrated a dispute is not
-    asked twice (dispute_settled_at)."""
-    if meta.get("dispute_settled_at"):
-        return None
-    if meta.get("human_label") not in ("person", "empty", "no_dog"):
-        return None
-    if nano_dog >= AUDIT_DOG_NANO_CONF and x_entry["dogs"]:
-        return {"model_says": "dog", "nano_conf": round(nano_dog, 3)}
-    return None
-
-
 def _jury_id(deployed_dir: Path) -> str:
     """The jury's identity: deployed weights + rule constants."""
     digest = hashlib.sha256(repr((
@@ -114,18 +98,34 @@ def _load_no_action(jury: str) -> set[str]:
     return set(stored.get("stems", []))
 
 
-def _needs_judging(meta: dict, x_entry: dict, no_action: set[str],
-                   stem: str) -> bool:
-    if meta.get("human_label"):
-        # Only the one-direction audit applies: non-dog label, not yet
-        # settled or flagged, and X must see a dog for a dispute to be
-        # possible at all.
-        return (meta["human_label"] in ("person", "empty", "no_dog")
-                and not meta.get("dispute_settled_at")
-                and not meta.get("disputed")
+def _entries(stems: list[str]) -> dict[str, list]:
+    """Per-stem [human, auto, settled, disputed], from the shipped index
+    when present (zero sidecar reads over the network filesystem), else
+    from the sidecars themselves."""
+    path = DATASET_MIRROR / ".labeled-index.json"
+    if path.is_file():
+        index = json.loads(path.read_text())
+        # A stem the index missed is brand new: treat as unlabeled.
+        return {stem: index.get(stem, [None, None, 0, 0]) for stem in stems}
+    entries = {}
+    for stem in stems:
+        meta = _sidecar_meta(stem)
+        entries[stem] = [meta.get("human_label"),
+                         (meta.get("auto_label") or {}).get("verdict"),
+                         1 if meta.get("dispute_settled_at") else 0,
+                         1 if meta.get("disputed") else 0]
+    return entries
+
+
+def _needs_judging_entry(entry: list, x_entry: dict, no_action: set[str],
+                         stem: str) -> bool:
+    human, auto, settled, disputed = entry
+    if human:
+        return (human in ("person", "empty", "no_dog")
+                and not settled and not disputed
                 and bool(x_entry["dogs"])
                 and stem not in no_action)
-    if meta.get("auto_label"):
+    if auto:
         return False
     return stem not in no_action
 
@@ -140,9 +140,10 @@ def judge_frames(stems: list[str], cache: dict,
         return {}, {}
     jury = _jury_id(deployed_dir)
     no_action = _load_no_action(jury)
-    metas = {stem: _sidecar_meta(stem) for stem in stems}
+    entries = _entries(stems)
     todo = [stem for stem in stems
-            if _needs_judging(metas[stem], cache[stem], no_action, stem)]
+            if _needs_judging_entry(entries[stem], cache[stem], no_action,
+                                    stem)]
     print(f"[pipeline] jury {jury}: judging {len(todo)} frames, "
           f"{len(stems) - len(todo)} skipped (labeled, settled, or already "
           f"declined by this jury)", flush=True)
@@ -153,16 +154,18 @@ def judge_frames(stems: list[str], cache: dict,
         nano = YOLO(str(deployed_dir), task="detect")
         for stem in todo:
             nano_dog, nano_person = _nano_scores(nano, stem)
-            if not metas[stem].get("human_label"):
+            if not entries[stem][0]:  # no human label: the consensus path
                 verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
                 if verdict:
                     auto_verdicts[stem] = verdict
                     continue
                 no_action.add(stem)
                 continue
-            dispute = _audit_dispute(metas[stem], cache[stem], nano_dog)
-            if dispute:
-                disputes[stem] = dispute
+            # Audit path: the prefilter already established eligibility
+            # (non-dog human label, unsettled, undisputed, X sees a dog).
+            if nano_dog >= AUDIT_DOG_NANO_CONF and cache[stem]["dogs"]:
+                disputes[stem] = {"model_says": "dog",
+                                  "nano_conf": round(nano_dog, 3)}
                 continue
             no_action.add(stem)
     JURY_MEMORY.write_text(json.dumps({"jury": jury,
