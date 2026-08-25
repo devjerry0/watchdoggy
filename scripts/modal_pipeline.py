@@ -47,7 +47,11 @@ image = (
     .add_local_python_source("kitchen_training")
 )
 
-volume = modal.Volume.from_name("watchdoggy-train", create_if_missing=True)
+# watchdoggy-train-2: the original volume accumulated ~10 days of unpruned
+# full-mirror copies from failed runs and degraded server-side until every
+# operation (even ls) hit Modal's edge timeout. A fresh volume took the same
+# upload in 1 second. Migrated 2026-08-25; the old volume is expendable.
+volume = modal.Volume.from_name("watchdoggy-train-2", create_if_missing=True)
 
 
 def _tar_bytes(directory: Path) -> bytes:
