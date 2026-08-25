@@ -15,6 +15,7 @@ in a file."""
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -56,17 +57,34 @@ def _write_index(volume, dataset_dir: Path) -> None:
             1 if meta.get("dispute_settled_at") else 0,
             1 if meta.get("disputed") else 0,
         ]
-    local = dataset_dir / ".labeled-index.json"
+    local = _state_dir(dataset_dir) / ".labeled-index.json"
     local.write_text(json.dumps(index))
     with volume.batch_upload(force=True) as up:
         up.put_file(str(local), f"{MIRROR}/.labeled-index.json")
     print(f"[pipeline] index shipped: {len(index)} frames", flush=True)
 
 
+def _state_dir(dataset_dir: Path) -> Path:
+    """Where the manifest and index live. On the appliance the trainer
+    cannot create files in doggy's dataset dir (755 doggy:doggy); the
+    shared jobs dir (2775 doggy:trainer) is the two-user meeting point by
+    construction. A workstation owns its dataset copy and keeps state
+    beside it."""
+    if os.access(dataset_dir, os.W_OK):
+        return dataset_dir
+    return dataset_dir.parent / "jobs"
+
+
 def sync_mirror(volume, dataset_dir: Path) -> None:
-    manifest_file = dataset_dir / ".upload-manifest.json"
+    state = _state_dir(dataset_dir)
+    manifest_file = state / ".upload-manifest.json"
+    # Legacy location fallback: earlier versions kept state beside the
+    # frames; honor an existing manifest there so migration re-uploads
+    # nothing.
+    source = manifest_file if manifest_file.is_file() \
+        else dataset_dir / ".upload-manifest.json"
     try:
-        old = json.loads(manifest_file.read_text())
+        old = json.loads(source.read_text())
     except (OSError, ValueError):
         old = {}
     current = {}
