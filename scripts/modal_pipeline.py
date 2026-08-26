@@ -14,7 +14,7 @@ in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
 review page), and kitchen_ncnn_model/ when the gate passes.
 
-The Volume ("watchdoggy-train") holds the model weights (seed once with
+The Volume ("watchdoggy-train-2") holds the model weights (seed once with
 kickoff --seed-models, from a machine that has models/yolo26?.pt), the
 prelabel cache, and the last few run directories.
 """
