@@ -16,7 +16,8 @@ rules, then send it to Modal and apply the results:
 Stdlib only. Progress is written to job_<id>.result.json files, which the
 web's /api/training/status overlays on the originals (different users can't
 edit each other's files). Modules: `env` (paths/settings/local API),
-`queue` (job files + auto rules), `cloud` (Modal + billing), `apply`
+`queue` (job files + auto rules), `cloud` (Modal runs), `billing`
+(spend tracking + the monthly credit gate on cloud jobs), `apply`
 (pushing results back into the appliance), `runs` (the two job runners),
 `daemon` (main).
 """

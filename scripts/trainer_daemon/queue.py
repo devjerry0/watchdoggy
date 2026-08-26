@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 
+from trainer_daemon.billing import credit_refusal
 from trainer_daemon.env import DATASET_DIR, JOBS_DIR, log, settings
 from trainer_daemon.update import update_due
 
@@ -82,6 +83,10 @@ def synthesize_job(existing: list[dict]) -> dict | None:
 
     conf = settings()
     now = time.time()
+    # Out of Modal credits: don't manufacture cloud jobs that would only
+    # be refused every pass; self-updates still run (GitHub, not Modal).
+    if credit_refusal("train") is not None:
+        return _update_job(now)
     last_train = newest_done("train")
     new_labels = labels_since(last_train)
     if (now - last_train >= conf["train_interval_hours"] * SECONDS_PER_HOUR

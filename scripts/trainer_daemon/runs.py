@@ -11,7 +11,8 @@ from trainer_daemon.apply import (
     apply_exam_suspects,
     install_bundle,
 )
-from trainer_daemon.cloud import batch, billing_summary, modal_run, run_cost
+from trainer_daemon.billing import billing_summary, run_cost
+from trainer_daemon.cloud import batch, modal_run
 from trainer_daemon.env import DEPLOYED_BUNDLE, DOGGY_ROOT, JOBS_DIR, log, settings
 from trainer_daemon.update import run_update_job
 

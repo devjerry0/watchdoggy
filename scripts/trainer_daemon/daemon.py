@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import time
 
+from trainer_daemon.billing import credit_refusal, write_billing
 from trainer_daemon.clock import sync_clock
-from trainer_daemon.cloud import write_billing
 from trainer_daemon.env import JOBS_DIR, STALE_RUNNING, log
 from trainer_daemon.queue import jobs, synthesize_job, write_result
 from trainer_daemon.runs import RUNNERS
@@ -40,6 +40,12 @@ def main() -> int:
     job = _next_job()
     if job is None:
         log("nothing to do")
+        return 0
+
+    refusal = credit_refusal(job["kind"])
+    if refusal is not None:
+        log(f"job {job['id']} {refusal}")
+        write_result(job["id"], "failed", refusal)
         return 0
 
     log(f"running {job['kind']} job {job['id']}")

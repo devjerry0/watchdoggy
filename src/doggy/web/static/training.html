@@ -525,6 +525,8 @@ function renderBudget(d){
     + (100 * frac) + '%"></div>'
     + '<div style="background:var(--seam);width:' + (100 - 100 * frac) + '%"></div>';
   const bits = [];
+  if (b.billed_cost > 0 || used >= allowance)
+    bits.push('<span class="bad">cloud jobs paused: no credits left</span>');
   if (allowance) bits.push("$" + Math.max(0, allowance - used).toFixed(2)
     + " of $" + allowance + " credits left");
   bits.push(b.billed_cost > 0
