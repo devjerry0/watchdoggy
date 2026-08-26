@@ -248,10 +248,12 @@ function _dur(s){
   return s >= 90 ? Math.round(s/60) + " min" : s + "s";
 }
 function heldout(j){
-  // Score at the threshold the detector actually ran with during that run
-  // (older reports predate fire_conf and were measured at the 0.7 era).
-  const t = j.summary && j.summary.ncnn_truth;
-  const th = String((j.summary && j.summary.fire_conf) || 0.7);
+  // Score at the threshold the detector actually ran with during that run.
+  // The gate block always records it; top-level fire_conf is newer and can
+  // be absent; reports older than both were measured in the 0.7 era.
+  const s = j.summary || {};
+  const th = String((s.gate && s.gate.fire_conf) || s.fire_conf || 0.7);
+  const t = s.ncnn_truth;
   return t && t[th] && t[th].heldout;
 }
 
