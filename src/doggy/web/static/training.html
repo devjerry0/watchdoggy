@@ -248,8 +248,11 @@ function _dur(s){
   return s >= 90 ? Math.round(s/60) + " min" : s + "s";
 }
 function heldout(j){
+  // Score at the threshold the detector actually ran with during that run
+  // (older reports predate fire_conf and were measured at the 0.7 era).
   const t = j.summary && j.summary.ncnn_truth;
-  return t && t["0.7"] && t["0.7"].heldout;
+  const th = String((j.summary && j.summary.fire_conf) || 0.7);
+  return t && t[th] && t[th].heldout;
 }
 
 // -- cards ------------------------------------------------------------------
@@ -268,7 +271,9 @@ function renderModel(d){
   if (latest && latest.summary && latest.summary.gate && latest.summary.gate.deployed){
     const old = latest.summary.gate.deployed;
     bits.push("replaced a model that caught " + old.caught + "/"
-              + (old.caught + old.missed));
+              + (old.caught + old.missed)
+              + (old.false_fires != null
+                 ? " with " + old.false_fires + " false" : ""));
   }
   bits.push(m.rollback_available ? "rollback bundle on disk" : "no rollback bundle");
   document.getElementById("model_fine").innerHTML =

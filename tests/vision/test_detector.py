@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -43,8 +45,9 @@ def test_keep_detection_target_above_threshold_kept():
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not Path("tests/fixtures/dog.jpg").is_file(),
+                    reason="photo fixtures are local-only, never in the repo")
 def test_yolo_detects_dog_and_ignores_empty_room():
-    from pathlib import Path
     from doggy.vision.detector import YoloDetector
     from doggy.core.config import TunableSettings
     from doggy.core.runtime import RuntimeSettings

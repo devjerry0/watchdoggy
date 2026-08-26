@@ -21,3 +21,6 @@ __pycache__/
 /finetune/
 /runs/
 contact_sheet*.png
+
+# Photo fixtures stay local: kitchen frames must never enter the public repo
+tests/fixtures/
