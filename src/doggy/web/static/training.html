@@ -259,7 +259,7 @@ function heldout(j){
 function renderModel(d){
   const deployJobs = lastJobs.filter(j => j.kind === "train" && j.status === "done"
                                      && /DEPLOYED/.test(j.detail || ""));
-  const latest = deployJobs[0];
+  const latest = d.last_deploy || deployJobs[0];
   const h = latest && heldout(latest);
   document.getElementById("model_hero").innerHTML = h
     ? '<span class="ok">' + h.caught + "/" + (h.caught + h.missed) + '</span> caught · '

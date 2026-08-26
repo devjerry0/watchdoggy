@@ -85,6 +85,12 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
         last_train = next((j for j in jobs
                            if j.get("kind") == "train"
                            and j.get("status") == "done"), None)
+        # The model card needs the last deploy even after nightly prelabel
+        # and update jobs push it out of the history slice below.
+        last_deploy = next((j for j in jobs
+                            if j.get("kind") == "train"
+                            and j.get("status") == "done"
+                            and "DEPLOYED" in (j.get("detail") or "")), None)
         trainer = jobqueue.trainer_settings(Path(settings.jobs_dir))
         next_auto = None
         if last_train:
@@ -97,6 +103,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
              "missing_prelabels": missing_prelabels,
              "jobs": jobs[:_HISTORY_SHOWN],
              "last_train": last_train,
+             "last_deploy": last_deploy,
              "next_auto_train": next_auto,
              "settings": trainer,
              "billing": _billing(Path(settings.jobs_dir)),

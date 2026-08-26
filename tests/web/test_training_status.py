@@ -71,6 +71,26 @@ def test_status_reports_last_done_train_and_next_auto(tmp_path):
     assert not again["already_pending"]
 
 
+def test_status_surfaces_deploy_job_pushed_out_of_history_window(tmp_path):
+    # The model card reads the last DEPLOYED train job; nightly prelabel and
+    # update jobs must not push it out of reach of the 10-job history slice.
+    c, root = _client(tmp_path)
+    jobs = root / "jobs"
+    jobs.mkdir()
+    (jobs / "job_01.json").write_text(json.dumps(
+        {"id": "job_01", "kind": "train", "status": "done",
+         "requested_at": 100.0, "updated_at": 200.0,
+         "detail": "DEPLOYED new model (held-out 20/24 catches, 1 FP)"}))
+    for i in range(2, 14):
+        (jobs / f"job_{i:02d}.json").write_text(json.dumps(
+            {"id": f"job_{i:02d}", "kind": "prelabel", "status": "done",
+             "requested_at": 100.0 * i, "updated_at": 100.0 * i + 50,
+             "detail": "auto-labeled 5"}))
+    d = c.get("/api/training/status").json()
+    assert "job_01" not in [j["id"] for j in d["jobs"]]
+    assert d["last_deploy"]["id"] == "job_01"
+
+
 def test_result_file_overlays_job_status(tmp_path):
     c, root = _client(tmp_path)
     jobs = root / "jobs"
