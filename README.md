@@ -1,6 +1,6 @@
 # watchdoggy
 
-Counter Watch is a ~$62 Raspberry Pi appliance that watches your kitchen counter, spots the dog when it jumps up, and plays a deterrent sound. It only reacts inside an area you draw, ignores people, and manages its own temperature. It **retrains its own vision model on the frames it captures**, so it gets better at your kitchen, your light, and your dog, week after week. It updates its own software too: tag a release on GitHub and every appliance installs it, health-checks itself, and rolls back if anything looks wrong.
+Counter Watch is a ~$62 Raspberry Pi appliance that watches your kitchen counter and plays a deterrent sound the moment the dog enters an area you draw. It ignores people and manages its own temperature. It **retrains its own vision model on the frames it captures**, so it gets better at your kitchen, your light, and your dog, week after week. It updates its own software too: tag a release on GitHub and every appliance installs it, health-checks itself, and rolls back if anything looks wrong.
 
 Detection runs entirely on the device. The camera feed never leaves your network. The only thing that ever touches the internet, and only if you enable it, is a sandboxed trainer that sends training jobs to your own private cloud GPU account and checks GitHub for releases.
 
