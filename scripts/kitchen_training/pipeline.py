@@ -10,6 +10,7 @@ _point_kitchen_training_at_volume)."""
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
 from kitchen_training.export import export
 from kitchen_training.gate import deploy_gate, exam_suspects
-from kitchen_training.hygiene import (janitor, mark_completed, scale_epochs,
+from kitchen_training.hygiene import (fit_epochs, janitor, mark_completed,
                                       strip_dataset)
 from kitchen_training.report import report
 from kitchen_training.slices import calibration, slice_report
@@ -73,11 +74,12 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
 
     dataset_stats = build(run_dir, augment=recipe["augment"])
     corpus = dataset_stats["train"] + dataset_stats["augmented"]
-    epochs = scale_epochs(recipe["epochs"], corpus)
+    ceiling = float(os.environ.get("KT_JOB_CEILING_SECONDS", 10 * 3600))
+    epochs = fit_epochs(recipe["epochs"], corpus, ceiling)
     if epochs != recipe["epochs"]:
-        print(f"[pipeline] {corpus} train images: scaling epochs "
-              f"{recipe['epochs']} -> {epochs} to hold the step budget",
-              flush=True)
+        print(f"[pipeline] {corpus} train images cannot finish "
+              f"{recipe['epochs']} epochs inside the {ceiling / 3600:.0f}h "
+              f"ceiling: capping to {epochs}", flush=True)
         recipe = {**recipe, "epochs_requested": recipe["epochs"],
                   "epochs": epochs}
     best = train(run_dir, "local", epochs=recipe["epochs"],

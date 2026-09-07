@@ -111,14 +111,16 @@ def test_strip_dataset_spares_bundle_and_report(tmp_path):
     assert (run / "report.md").exists()
 
 
-def test_epoch_scaling_holds_the_step_budget():
-    # The proven anchor stays untouched...
-    assert hygiene.scale_epochs(80, 2_700) == 80
-    # ...an exploded corpus scales down to the floor...
-    assert hygiene.scale_epochs(80, 22_000) == hygiene.MIN_EPOCHS
-    # ...a mid-size corpus lands proportionally...
-    assert hygiene.scale_epochs(80, 8_000) == 27
-    # ...an explicit low request is never raised...
-    assert hygiene.scale_epochs(10, 22_000) == 10
-    # ...and a legacy 200-epoch request is capped at the proven 80 anchor.
-    assert hygiene.scale_epochs(200, 2_700) == 80
+def test_epochs_are_capped_only_by_the_ceiling():
+    ceiling = 10 * 3600
+    # Requested epochs run as requested while they fit the ceiling --
+    # data growth alone never scales them down (user-decided; early
+    # stopping owns convergence)...
+    assert hygiene.fit_epochs(80, 2_700, ceiling) == 80
+    assert hygiene.fit_epochs(80, 22_000, ceiling) == 80
+    # ...a corpus too big for the request gets trimmed to what fits...
+    assert hygiene.fit_epochs(80, 60_000, ceiling) == 30
+    # ...never below the floor even when nothing truly fits...
+    assert hygiene.fit_epochs(80, 500_000, ceiling) == hygiene.MIN_EPOCHS
+    # ...and an explicit low request is never raised.
+    assert hygiene.fit_epochs(10, 22_000, ceiling) == 10

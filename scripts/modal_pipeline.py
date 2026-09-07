@@ -75,6 +75,9 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     os.environ["KT_RUNS_DIR"] = str(PIPELINE_ROOT / "training-runs")
     os.environ["KT_BASE_MODEL"] = str(PIPELINE_ROOT / "models/yolo26n.pt")
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
+    # The ceiling-fit epoch cap (kitchen_training.hygiene.fit_epochs) must
+    # know the real function timeout so a run never overruns it.
+    os.environ["KT_JOB_CEILING_SECONDS"] = str(CLOUD_JOB_CEILING)
 
 
 # cpu/memory matter as much as the GPU here: the dataloader (decode +

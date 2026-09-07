@@ -21,11 +21,14 @@ from pathlib import Path
 # deletes it.
 COMPLETED_MARKER = ".completed"
 
-# Total images-seen budget per training run, anchored to the proven recipe
-# (80 epochs x ~2.7k train images). Overnight auto-labeling can grow the
-# corpus by an order of magnitude; holding the step budget roughly constant
-# keeps runs inside the function timeout and the monthly credits.
-EPOCH_IMAGE_BUDGET = 216_000
+# Epochs are NOT scaled down as data grows (user-decided; early stopping in
+# training.py/config.py is the convergence controller). The only automatic
+# adjustment is a CEILING FIT: cap epochs so the projected run finishes
+# inside the cloud-job ceiling instead of timing out and losing everything.
+# Throughput measured on the proven run (~216k images in ~50min on L4),
+# taken conservatively; overhead covers prelabel/build/eval/export.
+TRAIN_IMAGES_PER_SECOND = 60
+OVERHEAD_SECONDS = 1.5 * 3600
 MIN_EPOCHS = 15
 
 # An unmarked run dir younger than this is spared: it may belong to a run
@@ -37,11 +40,15 @@ MIN_EPOCHS = 15
 CORPSE_GRACE_SECONDS = 11 * 3600
 
 
-def scale_epochs(requested: int, corpus_images: int) -> int:
-    """Epochs that spend ~EPOCH_IMAGE_BUDGET on this corpus: never more than
-    requested, and never below MIN_EPOCHS unless the request itself was."""
-    scaled = round(EPOCH_IMAGE_BUDGET / max(corpus_images, 1))
-    return min(requested, max(MIN_EPOCHS, scaled))
+def fit_epochs(requested: int, corpus_images: int,
+               ceiling_seconds: float) -> int:
+    """The requested epochs, capped only when they cannot finish inside the
+    cloud-job ceiling (better a trimmed run than a timed-out corpse). Never
+    below MIN_EPOCHS unless the request itself was."""
+    budget = max(ceiling_seconds - OVERHEAD_SECONDS,
+                 3600.0) * TRAIN_IMAGES_PER_SECOND
+    fits = int(budget // max(corpus_images, 1))
+    return min(requested, max(MIN_EPOCHS, fits))
 
 
 def janitor(runs_dir: Path, keep: int, current_run: str,
