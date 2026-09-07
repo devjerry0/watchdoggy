@@ -184,9 +184,9 @@ Type=oneshot
 User=trainer
 WorkingDirectory=/home/doggy/doggy
 ExecStart=/home/trainer/modal-env/bin/python /home/doggy/doggy/scripts/pi_trainer.py
-# Outermost layer of the timeout stack (see trainer_daemon/env.py): must
-# outlast the daemon's 12.5h modal subprocess timeout.
-TimeoutStartSec=46800
+# Outermost wait layer (see trainer_daemon/env.py): the 10h cloud-job
+# ceiling + 1h, so systemd never kills a wait on a legitimate run.
+TimeoutStartSec=39600
 # The detector's NCNN threads sync per layer, so any co-running CPU load
 # gates all of them: trainer passes yield the cores (FPS stays ~2 instead
 # of dropping to ~1 whenever the trainer wakes up).

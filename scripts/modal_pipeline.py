@@ -33,6 +33,11 @@ import modal
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # kitchen_training
 
 MINUTES = 60
+# One ceiling for EVERY cloud job (user-decided): high enough that no
+# legitimate run is ever killed and its work lost, low enough to bound a
+# hung container's bill (~$8 worst case on L4). The Pi-side wrappers must
+# outlast this number -- trainer_daemon/env.py derives them from it.
+CLOUD_JOB_CEILING = 10 * 60 * MINUTES
 GPU = os.environ.get("DOGGY_TRAIN_GPU", "L4")
 VOL = Path("/vol")
 PIPELINE_ROOT = VOL / "pipeline"
@@ -74,11 +79,8 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
 
 # cpu/memory matter as much as the GPU here: the dataloader (decode +
 # augmentation) is pure CPU, and Modal's default allocation starves it.
-# Timeout is a last-resort safety net, not a budget: epoch scaling keeps a
-# normal run ~2h, and a timed-out container leaves a corpse the janitor must
-# clean -- so it is set far above any legitimate run (12h ~= $10 worst case).
 @app.function(image=image, gpu=GPU, cpu=8, memory=16384,
-              volumes={str(VOL): volume}, timeout=12 * 60 * MINUTES)
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
 def run_pipeline(run_name: str, recipe: dict,
                  fire_conf: float = 0.7) -> tuple[dict, bytes | None]:
     """The whole training day in one container. Returns (results, bundle_tar)."""
@@ -97,7 +99,7 @@ def run_pipeline(run_name: str, recipe: dict,
 
 
 @app.function(image=image, gpu=GPU, cpu=4, memory=8192,
-              volumes={str(VOL): volume}, timeout=120 * MINUTES)
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
 def run_prelabels(run_name: str) -> dict:
     """GPU phase of the nightly pass: big-model boxes for new frames only."""
     run_root = PIPELINE_ROOT / "runs" / run_name
@@ -110,7 +112,7 @@ def run_prelabels(run_name: str) -> dict:
 
 
 @app.function(image=image, cpu=4, memory=8192,
-              volumes={str(VOL): volume}, timeout=120 * MINUTES)
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
 def run_consensus(run_name: str) -> dict:
     """CPU phase: the jury judges what needs judging (no GPU billed while
     a CPU model loops over frames)."""

@@ -17,14 +17,15 @@ PIPELINE = DOGGY_ROOT / "scripts/modal_pipeline.py"
 LOCAL_API = "https://localhost:8443"
 LOCAL_API_TIMEOUT_S = 15
 
-# Timeout stack, outermost to innermost: stale-reap (13h) >= systemd
-# TimeoutStartSec (13h) > this daemon's subprocess (12.5h) > the Modal
-# function (12h). Each layer outlasts the one inside it, so the innermost
-# real deadline is the one that fires. All raised together Sep 2026: the
-# function timeout is a last-resort net, not a budget -- epoch scaling
-# (kitchen_training.hygiene) keeps a normal run ~2h.
-STALE_RUNNING = 13 * 3600.0
-MODAL_SUBPROCESS_TIMEOUT = int(12.5 * 3600)
+# ONE real deadline: every cloud job gets the same 10h ceiling
+# (CLOUD_JOB_CEILING in scripts/modal_pipeline.py -- keep these in sync).
+# The wrappers below are not extra timeouts, just the wait layers that must
+# OUTLAST that ceiling or they'd kill the wait and strand the result:
+# subprocess +30min, then systemd TimeoutStartSec / stale-reap +1h
+# (setup-pi-trainer.sh writes the systemd value).
+CLOUD_JOB_CEILING = 10 * 3600
+MODAL_SUBPROCESS_TIMEOUT = CLOUD_JOB_CEILING + 1800
+STALE_RUNNING = float(CLOUD_JOB_CEILING + 3600)
 
 # Recipe + schedule defaults; the training page's settings file overrides.
 SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,

@@ -30,11 +30,11 @@ MIN_EPOCHS = 15
 
 # An unmarked run dir younger than this is spared: it may belong to a run
 # that is still executing in another container (e.g. a Mac-launched kickoff
-# overlapping the Pi's pass). 13h matches the outermost timeout-stack layer
-# (trainer_daemon/env.py) -- past it, no container can still be writing.
-# Real corpses are hours old by the next attempt, so self-heal is delayed
-# at most one backoff cycle.
-CORPSE_GRACE_SECONDS = 13 * 3600
+# overlapping the Pi's pass). 11h = the 10h cloud-job ceiling
+# (modal_pipeline.CLOUD_JOB_CEILING) + 1h -- past it, no container can
+# still be writing. Real corpses are hours old by the next attempt, so
+# self-heal is delayed at most one backoff cycle.
+CORPSE_GRACE_SECONDS = 11 * 3600
 
 
 def scale_epochs(requested: int, corpus_images: int) -> int:

@@ -21,7 +21,7 @@ BACKOFF_AFTER = 3
 BACKOFF_BASE_SECONDS = SECONDS_PER_HOUR
 BACKOFF_CAP_SECONDS = SECONDS_PER_DAY
 # A single failure this expensive arms the backoff on its own: three
-# back-to-back 12h hang-failures would otherwise burn ~the whole monthly
+# back-to-back 10h hang-failures would otherwise burn ~the whole monthly
 # budget before the third strike. (Duration uses requested_at, so a manual
 # job that sat queued while the timer was down can trip this early -- cheap
 # false positive, manual retries bypass the backoff anyway.)
