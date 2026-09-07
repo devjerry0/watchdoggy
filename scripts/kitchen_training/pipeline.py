@@ -20,14 +20,18 @@ from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
 from kitchen_training.export import export
 from kitchen_training.gate import deploy_gate, exam_suspects
+from kitchen_training.hygiene import (janitor, mark_completed, scale_epochs,
+                                      strip_dataset)
 from kitchen_training.report import report
 from kitchen_training.slices import calibration, slice_report
 from kitchen_training.training import train
 
-# The proven recipe from the sweep: "long" (200 epochs) won on the full
-# dataset with augmentation. The training page can override per run; the
-# 10-config sweep stays available manually via train_kitchen_model.py --sweep.
-DEFAULT_RECIPE = {"epochs": 200, "batch": 16, "freeze": 10, "augment": True}
+# The proven recipe on the grown corpus: 80 epochs (the old 300-frame-era
+# "long" 200-epoch sweep winner predates the v1.0.17 retune; hygiene's
+# EPOCH_IMAGE_BUDGET is anchored to 80 x ~2.7k and caps the effective epochs
+# anyway). The training page can override per run; the 10-config sweep stays
+# available manually via train_kitchen_model.py --sweep.
+DEFAULT_RECIPE = {"epochs": 80, "batch": 16, "freeze": 10, "augment": True}
 KEEP_RUNS = 5
 
 
@@ -61,9 +65,21 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     print(f"[pipeline] recipe: {recipe}", flush=True)
     cache_before = cached_stems()
     run_dir = RUNS / run_name
+    # Janitor BEFORE the first write: a full Volume must heal itself here,
+    # not depend on a successful run that a full Volume prevents.
+    for stale in janitor(RUNS, KEEP_RUNS, run_name, run_root.parent):
+        print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_stats = build(run_dir, augment=recipe["augment"])
+    corpus = dataset_stats["train"] + dataset_stats["augmented"]
+    epochs = scale_epochs(recipe["epochs"], corpus)
+    if epochs != recipe["epochs"]:
+        print(f"[pipeline] {corpus} train images: scaling epochs "
+              f"{recipe['epochs']} -> {epochs} to hold the step budget",
+              flush=True)
+        recipe = {**recipe, "epochs_requested": recipe["epochs"],
+                  "epochs": epochs}
     best = train(run_dir, "local", epochs=recipe["epochs"],
                  batch=recipe["batch"], freeze=recipe["freeze"])
     metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
@@ -106,6 +122,10 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "ncnn_heldout": gate["new"],
         "exam_suspects": suspects,
     }
+    # The built dataset (2+ files per frame) is what hit the Volume's
+    # 500k-inode limit; the bundle, weights and report stay for forensics.
+    strip_dataset(run_dir)
+    mark_completed(run_dir)
     # NOTE: no pruning here -- the caller tars the bundle first, THEN calls
     # prune_old_runs. Pruning first could delete the current run dir when the
     # Pi's clock regressed (run names sort by timestamp), losing the bundle
@@ -117,8 +137,13 @@ def _mirror_stems() -> list[str]:
     return [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
 
 
-def prelabel_phase(run_name: str) -> dict:
+def prelabel_phase(run_name: str, run_root: Path | None = None) -> dict:
     """GPU phase: big-model boxes for frames the cache has never seen."""
+    if run_root is not None:
+        # Janitor here, not only in consensus: the consensus phase runs AFTER
+        # this one, so on bad weeks (prelabels failing) it would never fire.
+        for stale in janitor(RUNS, KEEP_RUNS, run_name, run_root.parent):
+            print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     cache_before = cached_stems()
     prelabel(_mirror_stems())
     return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before)}
@@ -128,6 +153,10 @@ def consensus_phase(run_name: str, run_root: Path) -> dict:
     """CPU phase: consensus auto-verdicts and label-audit disputes when a
     deployed nano provides the second juror. Runs without a GPU -- holding
     one through the judging loop was most of a pass's bill."""
+    # Nightly janitor pass: prelabel jobs leave kickoff upload dirs too, and
+    # on bad weeks (every run failing) nothing else would ever clean up.
+    for stale in janitor(RUNS, KEEP_RUNS, run_name, run_root.parent):
+        print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     stems = _mirror_stems()
     cache = prelabel(stems)  # fully cached by the prelabel phase
     auto_verdicts, disputes = judge_frames(stems, cache,

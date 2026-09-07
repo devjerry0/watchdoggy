@@ -510,9 +510,16 @@ function renderBudget(d){
   const hero = document.getElementById("cost_hero");
   const fine = document.getElementById("cost_fine");
   const bar = document.getElementById("cost_bar");
+  const failLine = d.cloud_failure_streak >= (d.cloud_backoff_after || 3)
+    ? '<span class="bad">' + d.cloud_failure_streak
+      + ' cloud jobs failed in a row — auto jobs paused (backoff); see the newest job\'s log</span>'
+    : null;
   if (!b){
     hero.textContent = "–";
-    fine.textContent = "spend appears after the trainer's next pass";
+    // The streak must show even before billing.json exists: broken Modal
+    // credentials fail every job AND never produce a billing summary.
+    fine.innerHTML = failLine
+      ? failLine : "spend appears after the trainer's next pass";
     return;
   }
   const allowance = (d.settings && d.settings.monthly_credits) || 0;
@@ -525,6 +532,7 @@ function renderBudget(d){
     + (100 * frac) + '%"></div>'
     + '<div style="background:var(--seam);width:' + (100 - 100 * frac) + '%"></div>';
   const bits = [];
+  if (failLine) bits.push(failLine);
   if (b.billed_cost > 0 || used >= allowance)
     bits.push('<span class="bad">cloud jobs paused: no credits left</span>');
   if (allowance) bits.push("$" + Math.max(0, allowance - used).toFixed(2)

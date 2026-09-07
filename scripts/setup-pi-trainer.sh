@@ -184,7 +184,16 @@ Type=oneshot
 User=trainer
 WorkingDirectory=/home/doggy/doggy
 ExecStart=/home/trainer/modal-env/bin/python /home/doggy/doggy/scripts/pi_trainer.py
-TimeoutStartSec=14400
+# Outermost layer of the timeout stack (see trainer_daemon/env.py): must
+# outlast the daemon's 12.5h modal subprocess timeout.
+TimeoutStartSec=46800
+# The detector's NCNN threads sync per layer, so any co-running CPU load
+# gates all of them: trainer passes yield the cores (FPS stays ~2 instead
+# of dropping to ~1 whenever the trainer wakes up).
+Nice=10
+CPUWeight=20
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 UNIT
 sudo tee /etc/systemd/system/doggy-trainer.timer >/dev/null <<'UNIT'
 [Unit]

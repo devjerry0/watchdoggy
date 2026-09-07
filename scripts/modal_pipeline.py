@@ -74,8 +74,11 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
 
 # cpu/memory matter as much as the GPU here: the dataloader (decode +
 # augmentation) is pure CPU, and Modal's default allocation starves it.
+# Timeout is a last-resort safety net, not a budget: epoch scaling keeps a
+# normal run ~2h, and a timed-out container leaves a corpse the janitor must
+# clean -- so it is set far above any legitimate run (12h ~= $10 worst case).
 @app.function(image=image, gpu=GPU, cpu=8, memory=16384,
-              volumes={str(VOL): volume}, timeout=180 * MINUTES)
+              volumes={str(VOL): volume}, timeout=12 * 60 * MINUTES)
 def run_pipeline(run_name: str, recipe: dict,
                  fire_conf: float = 0.7) -> tuple[dict, bytes | None]:
     """The whole training day in one container. Returns (results, bundle_tar)."""
@@ -94,20 +97,20 @@ def run_pipeline(run_name: str, recipe: dict,
 
 
 @app.function(image=image, gpu=GPU, cpu=4, memory=8192,
-              volumes={str(VOL): volume}, timeout=30 * MINUTES)
+              volumes={str(VOL): volume}, timeout=120 * MINUTES)
 def run_prelabels(run_name: str) -> dict:
     """GPU phase of the nightly pass: big-model boxes for new frames only."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
     from kitchen_training.pipeline import prelabel_phase
 
-    results = prelabel_phase(run_name)
+    results = prelabel_phase(run_name, run_root)
     volume.commit()
     return results
 
 
 @app.function(image=image, cpu=4, memory=8192,
-              volumes={str(VOL): volume}, timeout=30 * MINUTES)
+              volumes={str(VOL): volume}, timeout=120 * MINUTES)
 def run_consensus(run_name: str) -> dict:
     """CPU phase: the jury judges what needs judging (no GPU billed while
     a CPU model loops over frames)."""
