@@ -317,7 +317,8 @@
     <div class="col-live">
       <div class="card monitor-card c-mon">
         <div id="vidwrap">
-          <img id="live" src="/stream.mjpg" alt="live camera" />
+          <img id="live" src="/stream.mjpg" alt="live camera"
+               onerror="this.alt='Too many live viewers — close another dashboard tab (retrying…)'; const el=this; setTimeout(function(){ el.src='/stream.mjpg?' + Date.now(); }, 15000);" />
           <div class="scrim top"></div>
           <div class="scrim bottom"></div>
           <span class="osd tl">CAM 01 · COUNTER</span>

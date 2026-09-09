@@ -17,7 +17,7 @@ def test_snapshot_tracks_new_changed_and_deleted(tmp_path):
     # A changed file is re-read once the (in-process) writer invalidates:
     # an in-place edit does not move the directory mtime the scan keys on...
     _write(tmp_path, "sample_1", {"reasons": ["fire"], "human_label": "dog"})
-    index.invalidate()
+    index.upsert("sample_1")
     assert index.snapshot()[0][1]["human_label"] == "dog"
     # ...and a deleted one drops out.
     (tmp_path / "sample_2.json").unlink()
@@ -86,8 +86,8 @@ def test_quiet_directory_is_not_rescanned(tmp_path, monkeypatch):
     index = SidecarIndex(tmp_path)
     index.snapshot()
     scans = []
-    real = index._scan
-    monkeypatch.setattr(index, "_scan", lambda: scans.append(1) or real())
+    monkeypatch.setattr(index, "_full_scan", lambda: scans.append("full") or False)
+    monkeypatch.setattr(index, "_sync_names", lambda: scans.append("names") or False)
     for _ in range(5):
         index.snapshot()
     assert scans == []
@@ -107,11 +107,11 @@ def test_in_place_edit_needs_invalidate_or_staleness(tmp_path, monkeypatch):
     index.snapshot()
     _write(tmp_path, "sample_1", {"reasons": ["fire"], "human_label": "dog"})
     assert "human_label" not in index.snapshot()[0][1]   # not yet: dir mtime same
-    index.invalidate()
+    index.upsert("sample_1")                               # what the writer does
     assert index.snapshot()[0][1]["human_label"] == "dog"
-    # ...and the safety net: a stale index rescans on its own.
+    # ...and the safety net: a stale index re-stats everything on its own.
     _write(tmp_path, "sample_1", {"reasons": ["fire"], "human_label": "empty"})
-    index._scanned_at -= 10_000
+    index._full_scanned_at -= 100_000
     assert index.snapshot()[0][1]["human_label"] == "empty"
 
 
@@ -122,3 +122,27 @@ def test_sample_bytes_comes_from_the_scan(tmp_path):
     index = SidecarIndex(tmp_path)
     expected = (tmp_path / "sample_1.json").stat().st_size + 100
     assert index.sample_bytes() == expected
+
+
+def test_added_file_uses_names_sync_not_full_restat(tmp_path, monkeypatch):
+    # A captured frame moves the dir mtime: only the NEW name gets a stat +
+    # parse; the other 95k entries are not re-stat'ed.
+    _write(tmp_path, "sample_1", {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    index.snapshot()
+    full = []
+    monkeypatch.setattr(index, "_full_scan", lambda: full.append(1) or False)
+    _write(tmp_path, "sample_2", {"reasons": ["periodic"]})
+    assert [s for s, _ in index.snapshot()] == ["sample_1", "sample_2"]
+    (tmp_path / "sample_1.json").unlink()
+    assert [s for s, _ in index.snapshot()] == ["sample_2"]
+    assert full == []
+
+
+def test_upsert_of_a_deleted_sidecar_drops_it(tmp_path):
+    _write(tmp_path, "sample_1", {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    assert len(index.snapshot()) == 1
+    (tmp_path / "sample_1.json").unlink()
+    index.upsert("sample_1")
+    assert index.snapshot() == []

@@ -88,7 +88,7 @@ def build_router(settings: Settings, event_store: EventStore,
         meta = json.loads(side.read_text())
         _apply_label(meta, verdict, body)
         side.write_text(json.dumps(meta))
-        index.invalidate()  # in-place edit: the dir mtime won't move
+        index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/prelabels")
@@ -102,7 +102,7 @@ def build_router(settings: Settings, event_store: EventStore,
         meta = json.loads(side.read_text())
         apply_prelabels(meta, str(body.get("model", "?")), clean)
         side.write_text(json.dumps(meta))
-        index.invalidate()  # in-place edit: the dir mtime won't move
+        index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/autolabel")
@@ -120,7 +120,7 @@ def build_router(settings: Settings, event_store: EventStore,
         if not apply_autolabel(meta, verdict, time.time()):
             return {"ok": True, "skipped": "human label wins"}
         side.write_text(json.dumps(meta))
-        index.invalidate()  # in-place edit: the dir mtime won't move
+        index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/dispute")
@@ -136,7 +136,7 @@ def build_router(settings: Settings, event_store: EventStore,
                              time.time()):
             return {"ok": True, "skipped": "human already arbitrated"}
         side.write_text(json.dumps(meta))
-        index.invalidate()  # in-place edit: the dir mtime won't move
+        index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/mark/{event_id}")

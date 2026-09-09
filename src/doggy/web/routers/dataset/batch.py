@@ -66,7 +66,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
                 applied["disputes"] += apply_dispute(meta, model_says,
                                                      nano_conf, now)
             side.write_text(json.dumps(meta))
-            index.invalidate()  # in-place edit: the dir mtime won't move
+            index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True, **applied}
 
     return router
