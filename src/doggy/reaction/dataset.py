@@ -27,6 +27,7 @@ log = logging.getLogger("doggy")
 CONTEXT_WINDOW = 12.0
 CONTEXT_SPACING = 2.0
 CONTEXT_MAX_FRAMES = 6
+PRUNE_INTERVAL_SECONDS = 600.0
 
 
 def _det(d: Detection) -> dict:
@@ -62,9 +63,15 @@ class DatasetCapture:
 
     def __init__(self, dataset_dir: Path, cap_bytes: int, runtime: RuntimeSettings,
                  clock: Callable[[], float] = time.monotonic,
-                 wall_clock: Callable[[], float] = time.time) -> None:
+                 wall_clock: Callable[[], float] = time.time,
+                 prune_interval: float = PRUNE_INTERVAL_SECONDS) -> None:
         self._dir = Path(dataset_dir)
         self._cap = cap_bytes
+        # The cap prune stats every sample_* file (~95k at 47k frames: 2-4s
+        # of CPU on the Pi, felt as an FPS dip); once per interval, not per
+        # save. 0 = every save (tests).
+        self._prune_interval = prune_interval
+        self._next_prune_at = 0.0
         # For the hub path: fires arrive without cfg, so the enabled decision
         # is read at the fire moment (the ClipService pattern).
         self._runtime = runtime
@@ -150,6 +157,10 @@ class DatasetCapture:
             log.exception("dataset: failed to save %s", what)
 
     def _prune(self) -> None:
+        now = self._clock()
+        if now < self._next_prune_at:
+            return
+        self._next_prune_at = now + self._prune_interval
         prune(self._dir, self._cap)
 
     def stats(self) -> dict:

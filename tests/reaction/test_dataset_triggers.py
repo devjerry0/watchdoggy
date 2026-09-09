@@ -37,7 +37,9 @@ def _capture(tmp_path, cap=10**9, enabled=True, wall=None):
         wall_state["t"] += 1.0  # unique stems per save
         return wall_state["t"]
 
-    return DatasetCapture(tmp_path, cap, rt, wall_clock=wall or wall_clock)
+    # prune_interval=0: these tests assert per-save pruning semantics.
+    return DatasetCapture(tmp_path, cap, rt, wall_clock=wall or wall_clock,
+                          prune_interval=0.0)
 
 
 def _samples(tmp_path):
@@ -147,3 +149,24 @@ def test_prune_never_deletes_labeled_frames(tmp_path):
     c.on_frame(_img(3), _analysis(targets=[d]), 40.0, _cfg())
     survivors = {s.stem for s in _samples(tmp_path)}
     assert labeled.stem in survivors  # the labeled frame outlives the cap
+
+
+def test_prune_runs_once_per_interval_not_per_save(tmp_path, monkeypatch):
+    # Pruning stats every sample_* file (~95k on the Pi): per save it was a
+    # 2-4s CPU burst felt as an FPS dip every few minutes.
+    from doggy.reaction import dataset as ds
+    calls = []
+    monkeypatch.setattr(ds, "prune", lambda d, cap: calls.append(cap))
+    mono = {"t": 100.0}
+    rt = RuntimeSettings(TunableSettings(dataset_enabled=True))
+    c = DatasetCapture(tmp_path, 10**9, rt, clock=lambda: mono["t"],
+                       wall_clock=lambda: 1_700_000_000.0 + mono["t"],
+                       prune_interval=600.0)
+    d = Detection("dog", 0.5, (0, 0, 4, 4))
+    c.on_frame(_img(1), _analysis(targets=[d]), 10.0, _cfg())
+    mono["t"] += 30.0
+    c.on_frame(_img(2), _analysis(targets=[d]), 25.0, _cfg())
+    assert len(calls) == 1                      # second save inside the interval
+    mono["t"] += 600.0
+    c.on_frame(_img(3), _analysis(targets=[d]), 40.0, _cfg())
+    assert len(calls) == 2                      # interval elapsed -> prunes again

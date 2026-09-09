@@ -12,6 +12,7 @@ from fastapi import status as http_status
 
 from doggy.core.config import Settings
 from doggy.events.store import EventStore
+from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers.dataset.sidecars import (
     VERDICTS,
     apply_autolabel,
@@ -72,7 +73,8 @@ def _apply_label(meta: dict, verdict: str, body: dict) -> None:
     _attach_hand_boxes(meta, body)
 
 
-def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
+def build_router(settings: Settings, event_store: EventStore,
+                 index: SidecarIndex) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/dataset/label")
@@ -86,6 +88,7 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
         meta = json.loads(side.read_text())
         _apply_label(meta, verdict, body)
         side.write_text(json.dumps(meta))
+        index.invalidate()  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/prelabels")
@@ -99,6 +102,7 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
         meta = json.loads(side.read_text())
         apply_prelabels(meta, str(body.get("model", "?")), clean)
         side.write_text(json.dumps(meta))
+        index.invalidate()  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/autolabel")
@@ -116,6 +120,7 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
         if not apply_autolabel(meta, verdict, time.time()):
             return {"ok": True, "skipped": "human label wins"}
         side.write_text(json.dumps(meta))
+        index.invalidate()  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/dispute")
@@ -131,6 +136,7 @@ def build_router(settings: Settings, event_store: EventStore) -> APIRouter:
                              time.time()):
             return {"ok": True, "skipped": "human already arbitrated"}
         side.write_text(json.dumps(meta))
+        index.invalidate()  # in-place edit: the dir mtime won't move
         return {"ok": True}
 
     @router.post("/api/dataset/mark/{event_id}")

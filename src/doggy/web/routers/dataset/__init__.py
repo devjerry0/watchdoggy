@@ -22,7 +22,7 @@ def build_router(settings: Settings, event_store: EventStore,
                  index: SidecarIndex) -> APIRouter:
     router = APIRouter()
     router.include_router(browse.build_router(settings, index))
-    router.include_router(labeling.build_router(settings, event_store))
-    router.include_router(batch.build_router(settings))
+    router.include_router(labeling.build_router(settings, event_store, index))
+    router.include_router(batch.build_router(settings, index))
     router.include_router(images.build_router(settings))
     return router
