@@ -29,12 +29,23 @@ def test_one_encode_per_frame_version_shared_by_viewers(monkeypatch):
     assert v3 == v1 + 1 and j3 != j1 and len(encodes) == 2
 
 
-def test_viewer_cap_and_idempotent_release():
+def test_newest_viewer_evicts_the_oldest_and_release_is_idempotent():
     fanout = MjpegFanout(FrameBuffer(), max_viewers=2, quality=75)
     a, b = fanout.acquire(), fanout.acquire()
-    assert a is not None and b is not None
-    assert fanout.acquire() is None             # third tab refused
-    a.release()
-    a.release()                                 # generator finally + background task
+    c = fanout.acquire()                        # third tab: oldest (a) is evicted
+    assert a.evicted and not b.evicted and not c.evicted
+    assert fanout.viewers == 2
+    a.release()                                 # evicted generator's finally
+    a.release()                                 # ...and the response background task
+    assert fanout.viewers == 2                  # eviction already freed a's slot
+    b.release()
     assert fanout.viewers == 1
-    assert fanout.acquire() is not None         # slot freed exactly once
+    d = fanout.acquire()                        # room again: nobody evicted
+    assert not c.evicted and not d.evicted and fanout.viewers == 2
+
+
+def test_evicted_frame_is_a_jpeg_encoded_once(monkeypatch):
+    fanout = MjpegFanout(FrameBuffer(), max_viewers=1, quality=75)
+    first = fanout.evicted_frame()
+    assert first[:2] == b"\xff\xd8"           # JPEG SOI marker
+    assert fanout.evicted_frame() is first
