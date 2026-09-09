@@ -13,6 +13,18 @@ from doggy.core.config import Settings
 # backoff between reconnect attempts.
 _DEFAULT_MAX_RECONNECTS = 5
 _RECONNECT_BACKOFF_SECONDS = 0.5
+# The detect loop consumes ~2-3 frames/s and clips need 6; decoding the
+# webcam's default 30 fps cost ~0.2 of a core that NCNN's barrier-synced
+# threads felt as lost FPS. Buffer size 1 keeps the latest frame fresh.
+_CAMERA_FPS = 10
+_CAMERA_BUFFERSIZE = 1
+
+
+def _open_capture(index: int) -> "cv2.VideoCapture":
+    cap = cv2.VideoCapture(index)
+    cap.set(cv2.CAP_PROP_FPS, _CAMERA_FPS)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, _CAMERA_BUFFERSIZE)
+    return cap
 
 
 class Camera(Protocol):
@@ -55,7 +67,7 @@ class OpenCVCamera:
     def __init__(self, index: int, max_reconnects: int = _DEFAULT_MAX_RECONNECTS) -> None:
         self._index = index
         self._max_reconnects = max_reconnects
-        self._cap = cv2.VideoCapture(index)
+        self._cap = _open_capture(index)
 
     def frames(self) -> Iterator[np.ndarray]:
         failures = 0
@@ -67,7 +79,7 @@ class OpenCVCamera:
                     raise RuntimeError(f"camera {self._index} lost after {failures} failures")
                 self._cap.release()
                 time.sleep(_RECONNECT_BACKOFF_SECONDS)
-                self._cap = cv2.VideoCapture(self._index)
+                self._cap = _open_capture(self._index)
                 continue
             failures = 0
             yield frame

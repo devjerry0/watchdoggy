@@ -1140,9 +1140,12 @@ async function poll(){
   else if (s.undervolt_since_boot === true){ pEl.textContent = "Dipped earlier"; pEl.className = "v warn"; }
   else if (s.undervolt_now === false){ pEl.textContent = "OK"; pEl.className = "v good"; }
   else { pEl.textContent = "–"; pEl.className = "v"; }
-  document.getElementById("fps").textContent = s.fps ? s.fps + "/s" : "–";
+  // Smoothed rate: one slow iteration (a catch's snapshot + event write) is
+  // not "0.1 FPS"; the instantaneous value stays in the API for debugging.
+  const fps = s.fps_avg || s.fps;
+  document.getElementById("fps").textContent = fps ? fps + "/s" : "–";
   document.getElementById("osd_temp").textContent = s.temp_c == null ? "--" : s.temp_c.toFixed(0) + "°C";
-  document.getElementById("osd_fps").textContent = s.fps ? s.fps + " FPS" : "-- FPS";
+  document.getElementById("osd_fps").textContent = fps ? fps + " FPS" : "-- FPS";
 
   for (const k of KNOBS){
     // Hands off any knob the user touched moments ago (drag in progress or
