@@ -26,7 +26,7 @@ def client(tmp_path, saved=None):
     store = EventStore(tmp_path, 100, 0)
     gate = FireGate(runtime)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), alerter, store, gate,
-                     save_env=lambda t: saved.update(t.model_dump()) if saved is not None else None)
+                     save_env=lambda t: saved.update(t.model_dump()) if saved is not None else None, index_refresh=False)
     return TestClient(app), runtime, alerter
 
 
@@ -35,7 +35,7 @@ def _app_with_events(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store,
-                     FireGate(runtime), save_env=lambda t: None)
+                     FireGate(runtime), save_env=lambda t: None, index_refresh=False)
     return TestClient(app)
 
 
@@ -52,7 +52,7 @@ def _app_with_store(tmp_path, store):
     settings = Settings(event_log_dir=tmp_path)
     runtime = RuntimeSettings(settings.tunable())
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(), store,
-                     FireGate(runtime), save_env=lambda t: None)
+                     FireGate(runtime), save_env=lambda t: None, index_refresh=False)
     return TestClient(app)
 
 
@@ -63,7 +63,7 @@ def _sounds_client(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, FireGate(runtime), save_env=lambda t: None)
+                     store, FireGate(runtime), save_env=lambda t: None, index_refresh=False)
     return TestClient(app), sounds, runtime
 
 
@@ -81,7 +81,7 @@ def _dataset_client(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path / "events", 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, FireGate(runtime), save_env=lambda t: None)
+                     store, FireGate(runtime), save_env=lambda t: None, index_refresh=False)
     return TestClient(app), store, tmp_path / "dataset"
 
 
@@ -130,7 +130,7 @@ def _training_client(tmp_path):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path / "events", 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, FireGate(runtime), save_env=lambda t: None)
+                     store, FireGate(runtime), save_env=lambda t: None, index_refresh=False)
     return TestClient(app), tmp_path
 
 

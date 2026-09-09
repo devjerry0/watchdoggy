@@ -146,3 +146,41 @@ def test_upsert_of_a_deleted_sidecar_drops_it(tmp_path):
     (tmp_path / "sample_1.json").unlink()
     index.upsert("sample_1")
     assert index.snapshot() == []
+
+
+def test_background_refresher_builds_the_index_off_the_request_path(tmp_path):
+    import time
+    for i in range(3):
+        _write(tmp_path, f"sample_{i}", {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    index.start()
+    deadline = time.monotonic() + 10
+    while index.generation == 0 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert index.generation > 0
+    assert [s for s, _ in index.snapshot()] == ["sample_0", "sample_1", "sample_2"]
+    # A later capture is still picked up by the request-path names sync.
+    _write(tmp_path, "sample_3", {"reasons": ["periodic"]})
+    assert [s for s, _ in index.snapshot()][-1] == "sample_3"
+
+
+def test_incremental_snapshot_keeps_sorted_order(tmp_path):
+    for stem in ("sample_5", "sample_1", "sample_9"):
+        _write(tmp_path, stem, {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    assert [s for s, _ in index.snapshot()] == ["sample_1", "sample_5", "sample_9"]
+    _write(tmp_path, "sample_3", {"reasons": ["fire"]})
+    index.upsert("sample_3")                            # bisect insert, no re-sort
+    _write(tmp_path, "sample_5", {"reasons": ["fire"], "human_label": "dog"})
+    index.upsert("sample_5")                            # replace in place
+    (tmp_path / "sample_9.json").unlink()
+    index.upsert("sample_9")                            # drop
+    snap = index.snapshot()
+    assert [s for s, _ in snap] == ["sample_1", "sample_3", "sample_5"]
+    assert dict(snap)["sample_5"]["human_label"] == "dog"
+
+
+def test_lower_thread_priority_is_a_safe_noop_off_linux(monkeypatch):
+    from doggy.core import priority
+    monkeypatch.setattr(priority.sys, "platform", "darwin")
+    priority.lower_thread_priority(15)                  # must not raise

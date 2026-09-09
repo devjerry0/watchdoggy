@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from doggy.core.config import Settings
+from doggy.core.priority import WEB_WORKER_NICE, lower_thread_priority
 from doggy.web import jobqueue
 from doggy.web.sidecar_index import SidecarIndex
 
@@ -101,6 +102,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     def _counts() -> tuple[int, int]:
         index.snapshot()
         if memo["gen"] != index.generation:
+            lower_thread_priority(WEB_WORKER_NICE)  # 50k-row loop: never outrun NCNN
             memo["counts"] = _dataset_counts(index)
             memo["gen"] = index.generation
         return memo["counts"]

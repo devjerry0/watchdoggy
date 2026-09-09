@@ -27,7 +27,8 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
                annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
                event_store: EventStore, gate: FireGate,
                dataset: DatasetCapture | None = None,
-               save_env: Callable[[TunableSettings], None] = _write_env) -> FastAPI:
+               save_env: Callable[[TunableSettings], None] = _write_env,
+               index_refresh: bool = True) -> FastAPI:
     # `dataset` is unused since the web layer reads sidecars via the shared
     # SidecarIndex; the parameter stays so the composition root's (and the
     # tests') call shape is stable.
@@ -35,6 +36,11 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     # One index for every dataset/training view: per-request re-parsing of
     # thousands of sidecars is what made those pages take ~10s on the Pi.
     sidecar_index = SidecarIndex(settings.dataset_dir)
+    if index_refresh:
+        # Cold build (~15s at 50k sidecars) and the daily re-stat happen on
+        # a low-priority thread, never on a request; tests pass False so a
+        # write is visible to the very next request.
+        sidecar_index.start()
     app = FastAPI(title="doggy")
 
     @app.get("/")

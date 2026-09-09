@@ -18,7 +18,7 @@ def _client(tmp_path, limit=None):
     runtime = RuntimeSettings(settings.tunable())
     store = EventStore(tmp_path, 100, 0)
     app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
-                     store, FireGate(runtime))
+                     store, FireGate(runtime), index_refresh=False)
     return TestClient(app), soothing
 
 

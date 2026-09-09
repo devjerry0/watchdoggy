@@ -5,31 +5,40 @@ thousands of frames, re-reading each file per request took ~10s on the Pi
 (SD card + a CPU busy with inference) and the polling training page kept
 the server permanently mid-scan.
 
-At ~47k sidecars (~95k directory entries, Sep 2026) even a per-request
+At ~52k sidecars (~105k directory entries, Sep 2026) even a per-request
 re-stat of every entry cost 1-3s of Pi CPU, and with the training page
 polling that was a near-continuous core stolen from NCNN inference (~1 FPS
-while the page was open). So the index is now event-driven:
+while the page was open). So the index is event-driven and keeps bulk work
+off request threads:
 
 - In-process writers (labeling/batch endpoints) call ``upsert(stem)`` after
-  editing a sidecar in place: one stat + one parse.
+  editing a sidecar in place: one stat + one parse, inserted by bisect.
 - A directory mtime change (a frame captured, a sample pruned) triggers a
   NAMES-ONLY sync: readdir without stat, then stat + parse only new names
-  and drop vanished ones (~50ms at 95k entries).
-- A full re-stat of everything runs once per ``_FULL_RESCAN_SECONDS`` (daily)
-  or on ``invalidate()``: the safety net for anything written from outside
-  this process (a restore, a manual rsync).
+  and drop vanished ones.
+- The full re-stat of everything (startup build, then daily, or after
+  ``invalidate()``) runs on a background thread at BACKGROUND_NICE when
+  ``start()`` was called; request threads never run it, and while it is
+  building they simply see the previous (or empty) snapshot.
 """
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import threading
 import time
 from pathlib import Path
+# Bound at import: tests that fake ``threading.Thread`` to run serve()'s
+# uvicorn threads inline must not run this daemon's loop on their thread.
+from threading import Thread as _Thread
+
+from doggy.core.priority import BACKGROUND_NICE, WEB_WORKER_NICE, lower_thread_priority
 
 _SUFFIX = ".json"
 _PREFIX = "sample_"
 _FULL_RESCAN_SECONDS = 24 * 3600.0
+_REFRESH_POLL_SECONDS = 5.0
 
 Entry = tuple[tuple[int, int], "dict | None"]
 
@@ -57,18 +66,70 @@ class SidecarIndex:
         # amplified by GIL contention with the inference thread, was what
         # kept the pages slow even after parse caching.
         self._generation = 0
+        # Sorted by stem; kept incrementally (bisect), rebuilt only by a
+        # full scan. ``_stems`` mirrors ``_snapshot`` for the bisect keys.
         self._snapshot: list[tuple[str, dict]] = []
+        self._stems: list[str] = []
         self._sizes: dict[str, int] = {}  # every sample_* file name -> bytes
         self._dir_mtime_ns: int | None = None
         self._full_scanned_at = 0.0
         self._dirty = True
+        self._building = False
+        self._refresher: _Thread | None = None
+        self._stop = threading.Event()
 
     @property
     def generation(self) -> int:
         return self._generation
 
+    # -- background refresher ---------------------------------------------
+
+    def start(self) -> None:
+        """Warm the index and keep the daily full re-stat off request
+        threads: a daemon thread at BACKGROUND_NICE does both."""
+        if self._refresher is not None:
+            return
+        self._refresher = _Thread(target=self._refresh_loop,
+                                  name="sidecar-index", daemon=True)
+        self._refresher.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _refresh_loop(self) -> None:
+        lower_thread_priority(BACKGROUND_NICE)
+        while not self._stop.is_set():
+            with self._lock:
+                due = (self._dirty or time.monotonic() - self._full_scanned_at
+                       >= _FULL_RESCAN_SECONDS)
+                if due:
+                    self._building = True
+            if due:
+                try:
+                    self._run_full_scan()
+                finally:
+                    with self._lock:
+                        self._building = False
+            self._stop.wait(_REFRESH_POLL_SECONDS)
+
+    def _run_full_scan(self) -> None:
+        # The scan itself holds the lock (single writer, simple invariants);
+        # it is only ever slow on the background thread, where the priority
+        # is already lowered.
+        with self._lock:
+            dir_mtime = self._dir_mtime()
+            changed = self._full_scan()
+            self._full_scanned_at = time.monotonic()
+            self._dirty = False
+            self._dir_mtime_ns = dir_mtime
+            if changed:
+                self._rebuild_all()
+
+    # -- public API ----------------------------------------------------------
+
     def invalidate(self) -> None:
-        """Force a full re-stat on the next snapshot() (ops / restores)."""
+        """Force a full re-stat (ops / restores). Runs on the refresher when
+        started, inline on the next snapshot() otherwise."""
         with self._lock:
             self._dirty = True
 
@@ -77,27 +138,29 @@ class SidecarIndex:
         that one entry. In-place writes don't move the directory mtime, so
         without this the change would wait for the daily rescan."""
         with self._lock:
-            if self._refresh_one(stem):
-                self._rebuild_snapshot()
+            self._refresh_one(stem)
 
     def snapshot(self) -> list[tuple[str, dict]]:
         """(stem, meta) for every parseable sidecar, sorted by stem."""
         with self._lock:
-            now = time.monotonic()
+            if self._building:
+                return self._snapshot  # refresher is mid-build: don't double it
             dir_mtime = self._dir_mtime()
-            if self._dirty or now - self._full_scanned_at >= _FULL_RESCAN_SECONDS:
+            full_due = (self._dirty or time.monotonic() - self._full_scanned_at
+                        >= _FULL_RESCAN_SECONDS)
+            if full_due and self._refresher is None:
+                lower_thread_priority(WEB_WORKER_NICE)
                 changed = self._full_scan()
-                self._full_scanned_at = now
+                self._full_scanned_at = time.monotonic()
                 self._dirty = False
-            elif dir_mtime != self._dir_mtime_ns:
-                changed = self._sync_names()
-            else:
-                changed = False
+                if changed:
+                    self._rebuild_all()
+            elif not full_due and dir_mtime != self._dir_mtime_ns:
+                lower_thread_priority(WEB_WORKER_NICE)
+                self._sync_names()
             # Record the mtime seen BEFORE the work: a file landing mid-way
             # moves it again and forces the next call to sync.
             self._dir_mtime_ns = dir_mtime
-            if changed:
-                self._rebuild_snapshot()
             return self._snapshot
 
     def sample_bytes(self) -> int:
@@ -114,10 +177,27 @@ class SidecarIndex:
         except OSError:
             return None
 
-    def _rebuild_snapshot(self) -> None:
+    def _rebuild_all(self) -> None:
         self._generation += 1
-        self._snapshot = [(stem, meta) for stem, (_, meta)
-                          in sorted(self._cache.items()) if meta is not None]
+        items = sorted(self._cache.items())
+        self._stems = [stem for stem, (_, meta) in items if meta is not None]
+        self._snapshot = [(stem, meta) for stem, (_, meta) in items
+                          if meta is not None]
+
+    def _set_entry(self, stem: str, meta: dict | None) -> None:
+        """Insert/replace/remove one snapshot row in sorted position."""
+        i = bisect.bisect_left(self._stems, stem)
+        present = i < len(self._stems) and self._stems[i] == stem
+        if meta is None:
+            if present:
+                del self._stems[i]
+                del self._snapshot[i]
+        elif present:
+            self._snapshot[i] = (stem, meta)
+        else:
+            self._stems.insert(i, stem)
+            self._snapshot.insert(i, (stem, meta))
+        self._generation += 1
 
     def _refresh_one(self, stem: str) -> bool:
         """Stat + parse one sidecar (or drop it if gone). True when changed."""
@@ -128,18 +208,22 @@ class SidecarIndex:
             gone = stem in self._cache
             self._cache.pop(stem, None)
             self._sizes.pop(path.name, None)
+            if gone:
+                self._set_entry(stem, None)
             return gone
         key = (stat.st_mtime_ns, stat.st_size)
         self._sizes[path.name] = stat.st_size
         cached = self._cache.get(stem)
         if cached is not None and cached[0] == key:
             return False
-        self._cache[stem] = (key, _parse(str(path)))
+        meta = _parse(str(path))
+        self._cache[stem] = (key, meta)
+        self._set_entry(stem, meta)
         return True
 
     def _full_scan(self) -> bool:
         """Stat every sample_* entry; re-parse sidecars whose (mtime, size)
-        moved. The daily safety net and the startup build."""
+        moved. The startup build and the daily safety net."""
         if not self._dir.is_dir():
             changed = bool(self._cache)
             self._cache, self._sizes = {}, {}
@@ -175,6 +259,8 @@ class SidecarIndex:
         if not self._dir.is_dir():
             changed = bool(self._cache)
             self._cache, self._sizes = {}, {}
+            if changed:
+                self._rebuild_all()
             return changed
         seen: set[str] = set()
         changed = False
@@ -192,13 +278,16 @@ class SidecarIndex:
                 self._sizes[name] = stat.st_size
                 if name.endswith(_SUFFIX):
                     stem = name[:-len(_SUFFIX)]
-                    self._cache[stem] = ((stat.st_mtime_ns, stat.st_size),
-                                         _parse(entry.path))
+                    meta = _parse(entry.path)
+                    self._cache[stem] = ((stat.st_mtime_ns, stat.st_size), meta)
+                    self._set_entry(stem, meta)
                     changed = True
         for name in list(self._sizes):
             if name not in seen:
                 del self._sizes[name]
                 if name.endswith(_SUFFIX):
-                    self._cache.pop(name[:-len(_SUFFIX)], None)
+                    stem = name[:-len(_SUFFIX)]
+                    self._cache.pop(stem, None)
+                    self._set_entry(stem, None)
                     changed = True
         return changed
