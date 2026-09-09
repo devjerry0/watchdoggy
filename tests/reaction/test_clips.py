@@ -93,3 +93,35 @@ def test_prune_caps_clips_to_retention(tmp_path):
     rl = {e.id: e for e in reloaded.list()}
     assert rl[recs[0][0]].clip is None
     assert rl[recs[3][0]].clip == recs[3][1]
+
+
+def test_finalize_encodes_off_the_detect_thread(tmp_path):
+    # Encoding ~70 JPEGs to animated WebP takes 5-15s on a Pi; inline it froze
+    # the detect loop right after a catch. finalize_due must return without
+    # encoding, and the clip attaches once the worker finishes (drain()).
+    from doggy.core.config import Settings
+    from doggy.core.runtime import RuntimeSettings
+    from doggy.reaction.clips import ClipService
+    from doggy.reaction.hub import DogCaught
+
+    settings = Settings(clips_enabled=True, clip_window_seconds=10,
+                        clip_preroll_seconds=1.0, clip_postroll_seconds=1.0,
+                        clip_fps=6)
+    runtime = RuntimeSettings(settings.tunable())
+    store = EventStore(tmp_path, max_events=10, max_age_days=0)
+    buffer = ClipBuffer(settings.clip_window_seconds)
+    for i, color in enumerate((10, 60, 120, 180, 240)):
+        buffer.push(float(i), _jpeg(color))
+    service = ClipService(store, tmp_path, buffer, runtime)
+
+    record = store.add(_img(), 0.9, None, 2.0, 2.0)
+    service.on_dog_caught(DogCaught(record, _img(), 2.0))
+    cfg = runtime.get()
+    service.finalize_due(2.5, cfg)          # post-roll not elapsed: still pending
+    assert service._pending
+    service.finalize_due(3.5, cfg)          # elapsed: handed to a worker
+    assert not service._pending
+    service.drain(timeout=10)
+    rec = store.list()[0]
+    assert rec.clip == f"{record.id}.webp"
+    assert (tmp_path / rec.clip).is_file()
