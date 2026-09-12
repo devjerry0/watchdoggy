@@ -78,6 +78,14 @@ set -euo pipefail
 STAGING=/home/trainer/staging_ncnn_model
 LIVE=/home/doggy/doggy/models/kitchen_ncnn_model
 [ -d "$STAGING" ] || { echo "no staged bundle" >&2; exit 1; }
+# A bundle staged from a Mac (tar/scp) carries AppleDouble "._*" twins;
+# NCNN's loader globs *.param, picks the junk first ("parse magic failed")
+# and every inference child dies at load -- the detector ran blind for
+# 25 min on 2026-09-12. Strip them, then refuse anything that still is
+# not exactly one .param + one .bin.
+find "$STAGING" -name '._*' -delete
+[ "$(find "$STAGING" -maxdepth 1 -name '*.param' | wc -l)" -eq 1 ] || { echo "staged bundle must hold exactly one .param" >&2; exit 1; }
+[ "$(find "$STAGING" -maxdepth 1 -name '*.bin' | wc -l)" -eq 1 ] || { echo "staged bundle must hold exactly one .bin" >&2; exit 1; }
 rm -rf "$LIVE.prev"
 [ -d "$LIVE" ] && mv "$LIVE" "$LIVE.prev"
 cp -r "$STAGING" "$LIVE"
