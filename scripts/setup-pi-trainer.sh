@@ -90,7 +90,8 @@ sudo tee /usr/local/bin/doggy-install-code >/dev/null <<'HELPER'
 #!/usr/bin/env bash
 # Installs /home/trainer/staging_code as the appliance's code, then restarts
 # the detector. Fixed paths on purpose. Replaces ONLY code paths -- state
-# (dataset, jobs, events, models, sounds, soothing, .env) is never touched.
+# (dataset, jobs, events, models, sounds, soothing, .env, settings.json,
+# settings-changes.jsonl) is never touched.
 # --rollback restores the previous code snapshot.
 set -euo pipefail
 APP=/home/doggy/doggy
@@ -125,7 +126,7 @@ mkdir -p "$snap"
 # helper under set -e). Every copy here tolerates concurrent mutation.
 (cd "$APP/dataset" 2>/dev/null && find . -maxdepth 1 -name 'sample_*.json' -print0 \
   | tar -czf "$snap/dataset-sidecars.tgz" --null -T - 2>/dev/null) || true
-for p in jobs models .env; do
+for p in jobs models .env settings.json settings-changes.jsonl; do
   [ -e "$APP/$p" ] && cp -a "$APP/$p" "$snap/$p" 2>/dev/null || true
 done
 chown -R doggy:doggy "$SNAPS"

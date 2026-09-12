@@ -50,3 +50,13 @@ def test_live_but_ancient_run_hits_the_stale_ceiling(tmp_path, monkeypatch):
     assert daemon._reap_running() is False
     assert _result(tmp_path)["status"] == "failed"
     assert "gave up" in _result(tmp_path)["detail"]
+
+
+def test_runtime_confidence_prefers_settings_json_then_env(tmp_path, monkeypatch):
+    from trainer_daemon import runs
+    monkeypatch.setattr(runs, "DOGGY_ROOT", tmp_path)
+    assert runs.runtime_confidence() == runs.FALLBACK_FIRE_CONF
+    (tmp_path / ".env").write_text("DOGGY_CONFIDENCE=0.55\n")
+    assert runs.runtime_confidence() == 0.55
+    (tmp_path / "settings.json").write_text(json.dumps({"version": 1, "tunables": {"confidence": 0.6}}))
+    assert runs.runtime_confidence() == 0.6           # JSON wins over a stale .env line

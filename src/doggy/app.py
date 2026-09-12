@@ -23,6 +23,7 @@ from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
 from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
+from doggy.core.settings_store import load_tunables
 from doggy.core.status import FrameBuffer, StatusStore
 
 
@@ -32,7 +33,8 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
     log = logging.getLogger("doggy")
 
-    runtime = RuntimeSettings(settings.tunable())
+    # settings.json wins; the .env-derived tunables seed it on first boot.
+    runtime = RuntimeSettings(load_tunables(settings.tunable()))
     status = StatusStore()
     raw_buffer = FrameBuffer()
     annotated_buffer = FrameBuffer()

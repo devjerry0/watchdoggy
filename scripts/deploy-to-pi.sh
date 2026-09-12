@@ -34,6 +34,7 @@ echo "==> Deploying $REPO_DIR  ->  $TARGET:~/$REMOTE_DIR"
 rsync -az --delete \
   --exclude '.venv' --exclude '.git' --exclude '__pycache__' --exclude '.pytest_cache' \
   --exclude 'models' --exclude 'events' --exclude '*.mp4' --exclude '*.mp3' --exclude '.env' \
+  --exclude 'settings.json' --exclude 'settings-changes.jsonl' \
   --exclude 'dataset' --exclude 'jobs' --exclude 'soothing' --exclude 'sounds' \
   --exclude 'dataset-pull' --exclude 'training-runs' --exclude '.claude' --exclude '.DS_Store' \
   "$REPO_DIR"/ "$TARGET:$REMOTE_DIR"/

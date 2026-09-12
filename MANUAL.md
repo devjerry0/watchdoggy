@@ -64,7 +64,12 @@ device is trusted.
 
 ## Configuration
 
-Config is set with `DOGGY_*` environment variables (see `.env.example`).
+Structural config (camera, ports, paths, TLS) is set with `DOGGY_*` environment
+variables (see `.env.example`). Everything the dashboard changes live lives in
+`settings.json` next to it, written by the app; every change is appended to
+`settings-changes.jsonl` (when, which key, old, new, and the client that made
+it) and shown by `GET /api/settings/history`. The first start after upgrading
+migrates the tunables out of `.env` automatically.
 Live-tunable params are also editable from the dashboard and persist the
 moment you change them, so the appliance's own self-update restarts never
 revert a toggle. Structural params (camera, model, audio backend) need a

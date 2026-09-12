@@ -14,7 +14,7 @@ from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
 from doggy.core.status import FrameBuffer, StatusStore
 from doggy.web.door import create_door_app
-from doggy.web.envfile import write_env as _write_env
+from doggy.core.settings_store import save_tunables
 from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers import dataset as dataset_router
 from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk
@@ -27,7 +27,7 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
                annotated_buffer: FrameBuffer, status: StatusStore, alerter: Alerter,
                event_store: EventStore, gate: FireGate,
                dataset: DatasetCapture | None = None,
-               save_env: Callable[[TunableSettings], None] = _write_env,
+               save_env: Callable[..., object] = save_tunables,
                index_refresh: bool = True) -> FastAPI:
     # `dataset` is unused since the web layer reads sidecars via the shared
     # SidecarIndex; the parameter stays so the composition root's (and the

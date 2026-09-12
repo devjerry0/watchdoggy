@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 .env
+# live tunables + their change log: appliance state, never committed
+settings.json
+settings.json.bad-*
+settings-changes.jsonl
 /models/
 /events/
 /soothing/

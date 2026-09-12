@@ -168,3 +168,27 @@ def test_patch_rejects_disarming_confidence(tmp_path):
     r = c.patch("/api/settings", json={"confidence": 0.95})
     assert r.status_code == 422 and "never fire" in r.text
     assert runtime.get().confidence == 0.55          # unchanged, not persisted
+
+
+def test_patch_persists_to_settings_json_with_attribution_and_leaves_env_alone(tmp_path, monkeypatch):
+    # The real saver: settings.json + one change-log line per changed key,
+    # attributed to the client; .env is structural-only and untouched.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("DOGGY_CAMERA_INDEX=0\nDOGGY_CONFIDENCE=0.55\n")
+    from doggy.core.settings_store import save_tunables
+    settings = Settings(event_log_dir=tmp_path)
+    runtime = RuntimeSettings(settings.tunable())
+    store = EventStore(tmp_path, 100, 0)
+    app = create_app(settings, runtime, FrameBuffer(), StatusStore(), FakeAlerter(),
+                     store, FireGate(runtime), save_env=save_tunables, index_refresh=False)
+    c = TestClient(app)
+    assert c.patch("/api/settings", json={"confidence": 0.7}).status_code == 200
+    import json
+    assert json.loads((tmp_path / "settings.json").read_text())["tunables"]["confidence"] == 0.7
+    assert (tmp_path / ".env").read_text() == "DOGGY_CAMERA_INDEX=0\nDOGGY_CONFIDENCE=0.55\n"
+    hist = c.get("/api/settings/history?limit=5").json()
+    assert hist[0]["key"] == "confidence" and hist[0]["old"] == 0.55 and hist[0]["new"] == 0.7
+    assert hist[0]["by"] == "testclient"
+    # /save re-persists the same values: nothing new in the log.
+    assert c.post("/api/settings/save").status_code == 200
+    assert len(c.get("/api/settings/history?limit=50").json()) == 1
