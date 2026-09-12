@@ -24,8 +24,10 @@ LOCAL_API_TIMEOUT_S = 15
 # subprocess +30min, then systemd TimeoutStartSec / stale-reap +1h
 # (setup-pi-trainer.sh writes the systemd value).
 CLOUD_JOB_CEILING = 10 * 3600
-MODAL_SUBPROCESS_TIMEOUT = CLOUD_JOB_CEILING + 1800
-STALE_RUNNING = float(CLOUD_JOB_CEILING + 3600)
+# A nightly job runs TWO cloud phases back to back (prelabel, then
+# consensus), each under the ceiling: the wrapper must outlast both.
+MODAL_SUBPROCESS_TIMEOUT = 2 * CLOUD_JOB_CEILING + 1800
+STALE_RUNNING = float(2 * CLOUD_JOB_CEILING + 3600)
 
 # Recipe + schedule defaults; the training page's settings file overrides.
 SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,

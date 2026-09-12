@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +73,9 @@ def save_tunables(tunable: TunableSettings, *, changed_by: str,
     changelog = changelog if changelog is not None else path.with_name(CHANGELOG_FILE.name)
     payload = {"version": FORMAT_VERSION, "updated_at": _now_iso(),
                "tunables": tunable.model_dump(mode="json")}
-    tmp = path.with_name(f".{path.name}.tmp")
+    # Unique temp name per writer: two concurrent PATCHes must not promote
+    # each other's half-written file or fail each other's rename.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n",
                    encoding="utf-8")
     os.replace(tmp, path)  # readers never see a torn file

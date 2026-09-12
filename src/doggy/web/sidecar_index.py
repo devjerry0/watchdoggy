@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import logging
 import os
 import threading
 import time
@@ -107,6 +108,8 @@ class SidecarIndex:
             if due:
                 try:
                     self._run_full_scan()
+                except Exception:  # a vanished file mid-scan must not kill the thread
+                    logging.getLogger("doggy").exception("sidecar index: full scan failed; retrying next tick")
                 finally:
                     with self._lock:
                         self._building = False
@@ -185,18 +188,25 @@ class SidecarIndex:
                           if meta is not None]
 
     def _set_entry(self, stem: str, meta: dict | None) -> None:
-        """Insert/replace/remove one snapshot row in sorted position."""
+        """Insert/replace/remove one snapshot row in sorted position.
+        Copy-on-write: snapshot() hands out the list object itself and
+        callers iterate it outside the lock, so the published list is never
+        mutated in place -- a new list replaces it (O(n) copy, ~52k refs,
+        sub-millisecond; far cheaper than the re-sort it replaced)."""
         i = bisect.bisect_left(self._stems, stem)
         present = i < len(self._stems) and self._stems[i] == stem
         if meta is None:
-            if present:
-                del self._stems[i]
-                del self._snapshot[i]
+            if not present:
+                return
+            self._stems = self._stems[:i] + self._stems[i + 1:]
+            self._snapshot = self._snapshot[:i] + self._snapshot[i + 1:]
         elif present:
-            self._snapshot[i] = (stem, meta)
+            rows = list(self._snapshot)
+            rows[i] = (stem, meta)
+            self._snapshot = rows
         else:
-            self._stems.insert(i, stem)
-            self._snapshot.insert(i, (stem, meta))
+            self._stems = self._stems[:i] + [stem] + self._stems[i:]
+            self._snapshot = self._snapshot[:i] + [(stem, meta)] + self._snapshot[i:]
         self._generation += 1
 
     def _refresh_one(self, stem: str) -> bool:
@@ -275,13 +285,19 @@ class SidecarIndex:
                 if not entry.is_file():
                     continue
                 stat = entry.stat()
-                self._sizes[name] = stat.st_size
                 if name.endswith(_SUFFIX):
                     stem = name[:-len(_SUFFIX)]
                     meta = _parse(entry.path)
+                    if meta is None:
+                        # Caught mid-write (capture writes the sidecar right
+                        # after the jpg): leave it unknown so the NEXT
+                        # directory change re-stats and re-parses it, rather
+                        # than caching "unparseable" until the daily rescan.
+                        continue
                     self._cache[stem] = ((stat.st_mtime_ns, stat.st_size), meta)
                     self._set_entry(stem, meta)
                     changed = True
+                self._sizes[name] = stat.st_size
         for name in list(self._sizes):
             if name not in seen:
                 del self._sizes[name]

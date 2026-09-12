@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from doggy.core.tunables import ArmedWindow, TunableSettings
@@ -56,4 +58,30 @@ class Settings(TunableSettings, BaseSettings):
 
 
 def load_settings() -> Settings:
-    return Settings()
+    """Structural config from .env/environment. A tunable left in .env from
+    before the settings.json migration must not be able to stop boot: a
+    stale DOGGY_CONFIDENCE=0.95 (the Sep 2026 value) now fails the
+    certainty ceiling. Drop offending tunable keys and retry with defaults --
+    settings.json (or its migration) decides the live value anyway."""
+    try:
+        return Settings()
+    except ValidationError as exc:
+        # Field-level errors name the key; model-level ones (the ceiling,
+        # window_m <= window_n, ...) have an empty loc. Either way: if the
+        # .env is valid once every TUNABLE is reset to its default, the fault
+        # is a legacy tunable and boot proceeds; a structural fault re-raises.
+        structural_bad = {str(err["loc"][0]) for err in exc.errors()
+                          if err.get("loc")
+                          and str(err["loc"][0]) not in TunableSettings.model_fields}
+        if structural_bad:
+            raise
+        defaults = {k: f.default for k, f in TunableSettings.model_fields.items()}
+        try:
+            settings = Settings(**defaults)
+        except ValidationError:
+            raise exc from None
+        logging.getLogger("doggy").warning(
+            "settings: legacy .env tunables are invalid (%s); using defaults "
+            "for them -- settings.json holds the live values",
+            exc.errors()[0].get("msg", ""))
+        return settings

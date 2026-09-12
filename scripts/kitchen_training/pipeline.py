@@ -73,7 +73,10 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     run_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_stats = build(run_dir, augment=recipe["augment"])
-    corpus = dataset_stats["train"] + dataset_stats["augmented"]
+    # Every image the trainer will actually iterate per epoch: base frames,
+    # blur-augmented copies, and the extra human-weight copies.
+    corpus = (dataset_stats["train"] + dataset_stats["augmented"]
+              + dataset_stats.get("human_weighted", 0))
     ceiling = float(os.environ.get("KT_JOB_CEILING_SECONDS", 10 * 3600))
     epochs = fit_epochs(recipe["epochs"], corpus, ceiling)
     if epochs != recipe["epochs"]:

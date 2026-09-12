@@ -76,3 +76,18 @@ def test_list_valued_tunables_round_trip(tmp_path):
     back = load_tunables(TunableSettings(), path=path)
     assert back.target_labels == t.target_labels
     assert [list(p) for p in back.zone_points] == [list(p) for p in t.zone_points]
+
+
+def test_concurrent_saves_use_distinct_temp_names(tmp_path, monkeypatch):
+    # Two PATCHes racing must not promote each other's half-written temp
+    # file: the temp path is per-writer.
+    import doggy.core.settings_store as ss
+    seen = []
+    real_replace = ss.os.replace
+    def spy(src, dst):
+        seen.append(str(src)); return real_replace(src, dst)
+    monkeypatch.setattr(ss.os, "replace", spy)
+    path = tmp_path / "settings.json"
+    save_tunables(TunableSettings(confidence=0.6), changed_by="a", old=None, path=path)
+    assert ".settings.json." in seen[0] and seen[0].endswith(".tmp")
+    assert seen[0] != str(tmp_path / ".settings.json.tmp")   # not the shared name

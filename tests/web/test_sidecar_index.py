@@ -184,3 +184,48 @@ def test_lower_thread_priority_is_a_safe_noop_off_linux(monkeypatch):
     from doggy.core import priority
     monkeypatch.setattr(priority.sys, "platform", "darwin")
     priority.lower_thread_priority(15)                  # must not raise
+
+
+def test_refresher_survives_a_scan_exception(tmp_path, monkeypatch):
+    import time
+    index = SidecarIndex(tmp_path)
+    calls = {"n": 0}
+    real = index._run_full_scan
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise FileNotFoundError("vanished mid-scan")
+        return real()
+    monkeypatch.setattr(index, "_run_full_scan", flaky)
+    monkeypatch.setattr("doggy.web.sidecar_index._REFRESH_POLL_SECONDS", 0.05)
+    index.start()
+    deadline = time.monotonic() + 5
+    while calls["n"] < 2 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    index.stop()
+    assert calls["n"] >= 2                      # kept going after the failure
+
+
+def test_published_snapshot_is_never_mutated_in_place(tmp_path):
+    _write(tmp_path, "sample_1", {"reasons": ["fire"]})
+    _write(tmp_path, "sample_3", {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    handed_out = index.snapshot()
+    frozen = list(handed_out)
+    _write(tmp_path, "sample_2", {"reasons": ["fire"]})
+    index.upsert("sample_2")
+    (tmp_path / "sample_1.json").unlink()
+    index.upsert("sample_1")
+    assert handed_out == frozen                 # a reader mid-iteration sees a stable list
+    assert [s for s, _ in index.snapshot()] == ["sample_2", "sample_3"]
+
+
+def test_torn_new_sidecar_is_retried_on_next_directory_change(tmp_path):
+    _write(tmp_path, "sample_1", {"reasons": ["fire"]})
+    index = SidecarIndex(tmp_path)
+    index.snapshot()
+    (tmp_path / "sample_2.json").write_text('{"reasons": ["fi')   # mid-write
+    assert [s for s, _ in index.snapshot()] == ["sample_1"]
+    _write(tmp_path, "sample_2", {"reasons": ["fire"]})            # write completes
+    _write(tmp_path, "sample_9", {"reasons": ["periodic"]})        # any later dir change
+    assert [s for s, _ in index.snapshot()] == ["sample_1", "sample_2", "sample_9"]
