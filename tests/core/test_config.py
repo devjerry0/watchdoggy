@@ -152,3 +152,14 @@ def test_armed_windows_env_round_trip(monkeypatch, tmp_path):
     reloaded = load_settings()
     assert reloaded.schedule_enabled is True
     assert reloaded.armed_windows == tunable.armed_windows
+
+
+def test_alarm_confidence_above_ceiling_is_rejected():
+    # Sep 2026: the slider sat at 0.95 for a day -- 1,745 dog sightings, zero
+    # fires, dashboard still looked armed. Reject instead of persisting.
+    import pytest
+    from doggy.core.tunables import MAX_ALARM_CONFIDENCE, TunableSettings
+    with pytest.raises(ValueError, match="would never fire"):
+        TunableSettings(confidence=0.95)
+    assert TunableSettings(confidence=MAX_ALARM_CONFIDENCE).confidence == MAX_ALARM_CONFIDENCE
+    assert TunableSettings(confidence=0.6).confidence == 0.6

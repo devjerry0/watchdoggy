@@ -397,7 +397,10 @@
           <div class="field">
             <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
             <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
-            <input id="confidence" type="range" min="0" max="1" step="0.01" />
+            <!-- max mirrors MAX_ALARM_CONFIDENCE in core/tunables.py: above it
+                 real dogs never score high enough and the deterrent is silently
+                 off (it happened: 0.95 for a day, 1,745 sightings, zero fires). -->
+            <input id="confidence" type="range" min="0.3" max="0.85" step="0.01" />
           </div>
           <div class="field">
             <div class="row"><label>How much of the animal must be inside the area</label><span class="val" id="zone_overlap_v"></span></div>

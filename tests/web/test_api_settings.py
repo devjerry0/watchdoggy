@@ -161,3 +161,10 @@ def test_index_has_value_feature_sections(tmp_path):
     # Existing controls must still be present
     assert "Save area" in html and "Clear area" in html
     assert "Temperature" in html and "detect_interval_seconds" in html
+
+
+def test_patch_rejects_disarming_confidence(tmp_path):
+    c, runtime, _ = client(tmp_path)
+    r = c.patch("/api/settings", json={"confidence": 0.95})
+    assert r.status_code == 422 and "never fire" in r.text
+    assert runtime.get().confidence == 0.55          # unchanged, not persisted

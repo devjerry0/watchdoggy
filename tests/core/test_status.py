@@ -19,8 +19,8 @@ def test_detection_is_frozen():
 def test_runtime_settings_atomic_swap():
     rs = RuntimeSettings(TunableSettings(confidence=0.5))
     assert rs.get().confidence == 0.5
-    rs.update(TunableSettings(confidence=0.9))
-    assert rs.get().confidence == 0.9
+    rs.update(TunableSettings(confidence=0.8))
+    assert rs.get().confidence == 0.8
 
 
 def test_frame_buffer_keeps_latest():
