@@ -7,7 +7,7 @@
 # in /run and reset on reboot, which is fine for an appliance.
 #
 # This is the light-touch durability option. It does NOT freeze the filesystem, so
-# BT pairing (/var/lib/bluetooth) and live dashboard knobs (.env) stay persistent —
+# BT pairing (/var/lib/bluetooth) and live dashboard knobs (settings.json) stay persistent —
 # unlike a full read-only/overlay root, which would make both volatile.
 #
 # The real fix for card death is stable power (a proper 5V/3A supply, not a flaky
