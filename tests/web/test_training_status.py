@@ -157,3 +157,51 @@ def test_status_includes_billing_when_daemon_wrote_it(tmp_path):
     assert d["settings"]["monthly_credits"] == 30
     assert c.post("/api/training/settings",
                   json={"monthly_credits": 100}).json()["settings"]["monthly_credits"] == 100
+
+
+def _seed_job(root, job_id, kind, status):
+    jobs = root / "jobs"
+    jobs.mkdir(parents=True, exist_ok=True)
+    (jobs / f"{job_id}.json").write_text(json.dumps(
+        {"id": job_id, "kind": kind, "status": "queued",
+         "requested_at": 1.0, "updated_at": 1.0}))
+    if status != "queued":
+        (jobs / f"{job_id}.result.json").write_text(json.dumps(
+            {"status": status, "detail": "", "updated_at": 2.0}))
+
+
+def test_failure_streak_is_per_kind_not_pooled(tmp_path):
+    # 3 failed trains behind a NEWER prelabel success: the daemon is backing
+    # off train, so the banner field must still report 3 (list is newest
+    # first by filename; higher ids are newer).
+    c, root = _client(tmp_path)
+    _seed_job(root, "job_1001", "train", "failed")
+    _seed_job(root, "job_1002", "train", "failed")
+    _seed_job(root, "job_1003", "train", "failed")
+    _seed_job(root, "job_1004", "prelabel", "done")
+    d = c.get("/api/training/status").json()
+    assert d["cloud_failure_streak"] == 3
+    assert d["cloud_backoff_after"] == 3
+
+
+def test_interleaved_sub_threshold_failures_do_not_pool(tmp_path):
+    # 2 failed trains + 2 failed prelabels interleaved: neither kind reaches
+    # the daemon's threshold, so the streak must read 2, not 4.
+    c, root = _client(tmp_path)
+    _seed_job(root, "job_1001", "train", "failed")
+    _seed_job(root, "job_1002", "prelabel", "failed")
+    _seed_job(root, "job_1003", "train", "failed")
+    _seed_job(root, "job_1004", "prelabel", "failed")
+    d = c.get("/api/training/status").json()
+    assert d["cloud_failure_streak"] == 2
+
+
+def test_refused_and_running_jobs_leave_the_streak_alone(tmp_path):
+    c, root = _client(tmp_path)
+    _seed_job(root, "job_1001", "train", "failed")
+    _seed_job(root, "job_1002", "train", "failed")
+    _seed_job(root, "job_1003", "train", "failed")
+    _seed_job(root, "job_1004", "train", "refused")
+    _seed_job(root, "job_1005", "train", "running")
+    d = c.get("/api/training/status").json()
+    assert d["cloud_failure_streak"] == 3

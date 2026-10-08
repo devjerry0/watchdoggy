@@ -37,7 +37,15 @@ def run_prelabel_job(job: dict) -> str:
 
 
 def runtime_confidence() -> float:
-    """The appliance's live alarm threshold: the gate must judge there."""
+    """The appliance's live alarm threshold: the gate must judge there.
+    settings.json is the tunables' home (doggy.core.settings_store); the
+    .env line is the pre-migration fallback. Read directly, not via the
+    doggy package: the trainer venv has no doggy install."""
+    settings_file = DOGGY_ROOT / "settings.json"
+    try:
+        return float(json.loads(settings_file.read_text())["tunables"]["confidence"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     env_file = DOGGY_ROOT / ".env"
     if env_file.is_file():
         for line in env_file.read_text().splitlines():

@@ -19,3 +19,26 @@ def test_build_camera_file_backend_uses_fake(tmp_path):
     cam = build_camera(s)
     assert hasattr(cam, "frames")
     cam.close()
+
+
+def test_opencv_camera_caps_fps_and_buffer(monkeypatch):
+    # Decoding the webcam's default 30 fps cost ~0.2 core the detector never
+    # used; the capture must ask for a modest rate and a 1-frame buffer.
+    import cv2
+    from doggy.vision import camera as cam_mod
+
+    class FakeCap:
+        def __init__(self, index):
+            self.props = {}
+        def set(self, prop, value):
+            self.props[prop] = value
+            return True
+        def read(self):
+            return False, None
+        def release(self):
+            pass
+
+    monkeypatch.setattr(cam_mod.cv2, "VideoCapture", FakeCap)
+    cam = cam_mod.OpenCVCamera(0)
+    assert cam._cap.props[cv2.CAP_PROP_FPS] == cam_mod._CAMERA_FPS
+    assert cam._cap.props[cv2.CAP_PROP_BUFFERSIZE] == cam_mod._CAMERA_BUFFERSIZE

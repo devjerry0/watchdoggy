@@ -317,7 +317,9 @@
     <div class="col-live">
       <div class="card monitor-card c-mon">
         <div id="vidwrap">
-          <img id="live" src="/stream.mjpg" alt="live camera" />
+          <img id="live" src="/stream.mjpg" alt="live camera" title="click to resume the live view"
+               onclick="this.src='/stream.mjpg?' + Date.now();"
+               onerror="const el=this; setTimeout(function(){ el.src='/stream.mjpg?' + Date.now(); }, 15000);" />
           <div class="scrim top"></div>
           <div class="scrim bottom"></div>
           <span class="osd tl">CAM 01 · COUNTER</span>
@@ -395,7 +397,10 @@
           <div class="field">
             <div class="row"><label id="lbl_confidence">How sure it must be it's a dog</label><span class="val" id="confidence_v"></span></div>
             <div class="desc">Higher means fewer false alarms, but it may miss a quick visit.</div>
-            <input id="confidence" type="range" min="0" max="1" step="0.01" />
+            <!-- max mirrors MAX_ALARM_CONFIDENCE in core/tunables.py: above it
+                 real dogs never score high enough and the deterrent is silently
+                 off (it happened: 0.95 for a day, 1,745 sightings, zero fires). -->
+            <input id="confidence" type="range" min="0.3" max="0.85" step="0.01" />
           </div>
           <div class="field">
             <div class="row"><label>How much of the animal must be inside the area</label><span class="val" id="zone_overlap_v"></span></div>
@@ -1140,9 +1145,12 @@ async function poll(){
   else if (s.undervolt_since_boot === true){ pEl.textContent = "Dipped earlier"; pEl.className = "v warn"; }
   else if (s.undervolt_now === false){ pEl.textContent = "OK"; pEl.className = "v good"; }
   else { pEl.textContent = "–"; pEl.className = "v"; }
-  document.getElementById("fps").textContent = s.fps ? s.fps + "/s" : "–";
+  // Smoothed rate: one slow iteration (a catch's snapshot + event write) is
+  // not "0.1 FPS"; the instantaneous value stays in the API for debugging.
+  const fps = s.fps_avg || s.fps;
+  document.getElementById("fps").textContent = fps ? fps + "/s" : "–";
   document.getElementById("osd_temp").textContent = s.temp_c == null ? "--" : s.temp_c.toFixed(0) + "°C";
-  document.getElementById("osd_fps").textContent = s.fps ? s.fps + " FPS" : "-- FPS";
+  document.getElementById("osd_fps").textContent = fps ? fps + " FPS" : "-- FPS";
 
   for (const k of KNOBS){
     // Hands off any knob the user touched moments ago (drag in progress or

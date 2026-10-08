@@ -152,3 +152,34 @@ def test_armed_windows_env_round_trip(monkeypatch, tmp_path):
     reloaded = load_settings()
     assert reloaded.schedule_enabled is True
     assert reloaded.armed_windows == tunable.armed_windows
+
+
+def test_alarm_confidence_above_ceiling_is_rejected():
+    # Sep 2026: the slider sat at 0.95 for a day -- 1,745 dog sightings, zero
+    # fires, dashboard still looked armed. Reject instead of persisting.
+    import pytest
+    from doggy.core.tunables import MAX_ALARM_CONFIDENCE, TunableSettings
+    with pytest.raises(ValueError, match="would never fire"):
+        TunableSettings(confidence=0.95)
+    assert TunableSettings(confidence=MAX_ALARM_CONFIDENCE).confidence == MAX_ALARM_CONFIDENCE
+    assert TunableSettings(confidence=0.6).confidence == 0.6
+
+
+def test_legacy_env_tunable_over_ceiling_does_not_stop_boot(tmp_path, monkeypatch):
+    # Pre-migration .env carrying the Sep 2026 value must not crash the
+    # detector on the first boot of code that enforces the ceiling.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("DOGGY_CAMERA_INDEX=3\nDOGGY_CONFIDENCE=0.95\n")
+    from doggy.core.config import load_settings
+    s = load_settings()
+    assert s.camera_index == 3                  # structural key honored
+    assert s.confidence == 0.55                 # offending tunable -> default
+
+
+def test_invalid_structural_env_still_fails_boot(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("DOGGY_CAMERA_INDEX=notanumber\n")
+    from doggy.core.config import load_settings
+    with pytest.raises(Exception):
+        load_settings()

@@ -10,25 +10,34 @@ CONFIDENCE_DECIMALS = 3
 
 
 class FrameBuffer:
-    """Holds only the most recent frame; setters overwrite (drop-oldest)."""
+    """Holds only the most recent frame; setters overwrite (drop-oldest).
+    ``version`` counts sets, so consumers polling faster than frames arrive
+    (the MJPEG stream) can skip re-encoding a frame they already sent."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._frame: np.ndarray | None = None
+        self._version = 0
 
     def set(self, frame: np.ndarray) -> None:
         with self._lock:
             self._frame = frame
+            self._version += 1
 
     def get(self) -> np.ndarray | None:
         with self._lock:
             return self._frame
 
+    def get_versioned(self) -> tuple[np.ndarray | None, int]:
+        with self._lock:
+            return self._frame, self._version
+
 
 @dataclass
 class Status:
     state: str = "IDLE"
-    fps: float = 0.0
+    fps: float = 0.0       # instantaneous 1/dt of the last loop iteration
+    fps_avg: float = 0.0   # smoothed over recent iterations: what the dashboard shows
     confidence: float = 0.0  # highest-confidence candidate in the frame
     targets: int = 0  # watched animals in frame
     people: int = 0  # number of people detected (shown, never alerted on)

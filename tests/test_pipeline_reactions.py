@@ -46,6 +46,7 @@ def test_pipeline_finalizes_clip_after_postroll(tmp_path):
     fired = [pipe.run_once(frame) for _ in range(3)]
     assert fired[1] is True                     # fired on the 2nd sighting
 
+    clips.drain(timeout=10)                     # encoding is off-thread now
     rec = store.list()[0]
     assert rec.clip is not None                 # clip was attached to the event
     assert (tmp_path / rec.clip).is_file()       # and the clip file exists on disk

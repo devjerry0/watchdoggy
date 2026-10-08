@@ -64,7 +64,12 @@ device is trusted.
 
 ## Configuration
 
-Config is set with `DOGGY_*` environment variables (see `.env.example`).
+Structural config (camera, ports, paths, TLS) is set with `DOGGY_*` environment
+variables (see `.env.example`). Everything the dashboard changes live lives in
+`settings.json` next to it, written by the app; every change is appended to
+`settings-changes.jsonl` (when, which key, old, new, and the client that made
+it) and shown by `GET /api/settings/history`. The first start after upgrading
+migrates the tunables out of `.env` automatically.
 Live-tunable params are also editable from the dashboard and persist the
 moment you change them, so the appliance's own self-update restarts never
 revert a toggle. Structural params (camera, model, audio backend) need a
@@ -77,6 +82,12 @@ The stock COCO-trained model has never seen *your* kitchen from *your* camera
 angle. Ours kept mistaking a person loading the dishwasher for a dog. The fix
 is a closed loop that lives on the appliance:
 
+> **Privacy:** this loop is optional and only runs after cloud training is
+> enabled ([Pi guide, step 6](docs/pi/README.md#6-cloud-training-and-self-updates-optional)).
+> Live detection stays local either way. With it on, the frames saved in step 1,
+> including frames with people in them, are uploaded to the Modal volume in
+> your own account for labeling and training.
+
 1. **Capture.** The detector saves interesting frames as they happen: every
    alarm (plus the raw seconds before it), borderline detections, suppressed
    boxes, person activity, periodic background shots, and "flicker" moments
@@ -86,7 +97,7 @@ is a closed loop that lives on the appliance:
    of dogless scenes, so neither darkness nor a long cooking session can
    flood the queue. Frames containing a dog are never thinned: on a fixed
    camera the unchanging background dominates the hash, so distinct dog
-   moments look alike to it, a lesson learned by measurement. Storage is
+   moments look alike to it. Storage is
    capped, and when the cap is reached the oldest unlabeled frames go first;
    labeled frames are never deleted, the appliance warns instead.
 2. **Machine labeling, nightly.** A cloud pass runs every night: a large
@@ -107,8 +118,7 @@ is a closed loop that lives on the appliance:
    settle), Disputed, Auto (spot-check the machine's work; one tap overrules
    forever), and Needs-boxes finders. Verdicts are one keystroke; a full box
    editor handles frames needing hand-drawn truth, which then outranks every
-   model. In training, your labels also weigh double the jury's, so the human
-   voice stays the loudest as the machine-labeled share grows.
+   model. In training, your labels count double the jury's.
 
    ![Label page: filter chips, the big model's boxes, filmstrip navigation, one-tap verdicts](docs/label.png)
 4. **Train.** Every couple of days (configurable), the trainer sends one job
@@ -177,19 +187,24 @@ appliance itself current:
   dataset sidecars, job history, models, and config aside on the Pi (newest
   two snapshots kept). `scripts/pull-backup.sh` pulls the same state to your
   workstation in one command, and the cloud volume mirrors the dataset with
-  every training run, so the labels you spent evenings on exist in three
-  places.
+  every training run, so labels exist in three places.
 
 ## Privacy details
 
-- The **detector service has no internet access, enforced by the firewall**,
-  not by promises. `scripts/harden-pi.sh` sets an nftables egress lockdown
-  (LAN only).
-- Cloud training is **opt-in** and runs as a separate `trainer` user. A
-  per-UID firewall exception lets *only that user* reach the internet (DNS +
-  HTTPS), verified blocked for everything else. Frames go to your own private
-  Modal volume and nowhere else.
-- Skip `setup-pi-trainer.sh` and the appliance is 100% offline; you can still
-  run the same training pipeline manually from a workstation
+Live detection stays local. Optional cloud training sends saved camera frames
+to your own cloud account.
+
+- The detector service has no internet access, enforced by an nftables egress
+  firewall (`scripts/harden-pi.sh`, LAN only). The live stream is only served
+  on your LAN.
+- Cloud training is opt-in and runs as a separate `trainer` user. A per-UID
+  firewall exception lets only that user reach the internet (DNS + HTTPS).
+  When enabled, every frame the Pi saves for training is uploaded to your
+  Modal volume, including frames with people in them. The trainer also
+  contacts `api.github.com` for release checks and the time.
+- To stop uploads, disable `doggy-trainer.timer`. Already-uploaded frames stay
+  in your Modal volume until you delete them.
+- Skip `setup-pi-trainer.sh` and nothing leaves the Pi. You can still run the
+  same training pipeline manually from a workstation
   (`scripts/train_kitchen_model.py`, including a 10-config hyperparameter
   sweep with `--sweep`).

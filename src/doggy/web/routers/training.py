@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from doggy.core.config import Settings
+from doggy.core.priority import WEB_WORKER_NICE, lower_thread_priority
 from doggy.web import jobqueue
 from doggy.web.sidecar_index import SidecarIndex
 
@@ -36,6 +37,33 @@ def _model_summary(model_path: Path) -> dict:
             "deployed_at": deployed_at,
             "rollback_available":
                 model_path.with_name(model_path.name + ".prev").exists()}
+
+
+# Mirrors trainer_daemon.queue.BACKOFF_AFTER (not importable here: the web
+# app must not drag daemon code into the detector process). Shipped to the
+# page so the banner threshold has one source per tree, carried on the wire.
+_BACKOFF_AFTER = 3
+
+
+def _cloud_failure_streak(jobs: list[dict]) -> int:
+    """Longest per-kind run of consecutive failed cloud jobs (train,
+    prelabel), newest first -- per kind, because the daemon's backoff is
+    per kind (trainer_daemon.queue.failure_backoff): a nightly prelabel
+    success must not hide three failed trains, and interleaved sub-threshold
+    failures of both kinds must not read as one long streak. Statuses other
+    than failed/done (queued, running, refused) don't affect a streak."""
+    streaks = {"train": 0, "prelabel": 0}
+    counting = {"train": True, "prelabel": True}
+    for job in jobs:
+        kind = job.get("kind")
+        if kind not in streaks or not counting[kind]:
+            continue
+        status = job.get("status")
+        if status == "failed":
+            streaks[kind] += 1
+        elif status == "done":
+            counting[kind] = False
+    return max(streaks.values())
 
 
 def _billing(jobs_dir: Path) -> dict | None:
@@ -74,6 +102,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     def _counts() -> tuple[int, int]:
         index.snapshot()
         if memo["gen"] != index.generation:
+            lower_thread_priority(WEB_WORKER_NICE)  # 50k-row loop: never outrun NCNN
             memo["counts"] = _dataset_counts(index)
             memo["gen"] = index.generation
         return memo["counts"]
@@ -105,6 +134,8 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
              "last_train": last_train,
              "last_deploy": last_deploy,
              "next_auto_train": next_auto,
+             "cloud_failure_streak": _cloud_failure_streak(jobs),
+             "cloud_backoff_after": _BACKOFF_AFTER,
              "settings": trainer,
              "billing": _billing(Path(settings.jobs_dir)),
              "model": _model_summary(Path(settings.model_path)),

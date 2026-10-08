@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from doggy.core.config import Settings
+from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers.dataset.sidecars import (
     apply_autolabel,
     apply_dispute,
@@ -33,7 +34,7 @@ def _validated_verdicts(raw: dict) -> dict:
     return raw
 
 
-def build_router(settings: Settings) -> APIRouter:
+def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/dataset/apply-cloud-results")
@@ -65,6 +66,7 @@ def build_router(settings: Settings) -> APIRouter:
                 applied["disputes"] += apply_dispute(meta, model_says,
                                                      nano_conf, now)
             side.write_text(json.dumps(meta))
+            index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True, **applied}
 
     return router

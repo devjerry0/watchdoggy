@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from doggy.core.config import Settings
+from doggy.core.priority import WEB_WORKER_NICE, lower_thread_priority
 from doggy.web.routers.dataset.sidecars import (
     FRAME_FILTERS,
     matches,
@@ -60,6 +61,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
     def _refreshed(sidecars: list[tuple[str, dict]]) -> dict:
         if memo["gen"] == index.generation:
             return memo
+        lower_thread_priority(WEB_WORKER_NICE)  # 50k-row loops: never outrun NCNN
         by_reason: dict[str, int] = {}
         for _, meta in sidecars:
             for r in meta.get("reasons", []):

@@ -17,14 +17,20 @@ PIPELINE = DOGGY_ROOT / "scripts/modal_pipeline.py"
 LOCAL_API = "https://localhost:8443"
 LOCAL_API_TIMEOUT_S = 15
 
-# Timeout stack, outermost to innermost: systemd (4h) > this daemon's
-# subprocess (3.5h) > the Modal function (3h). Each layer outlasts the one
-# inside it, so the innermost real deadline is the one that fires.
-STALE_RUNNING = 4 * 3600.0
-MODAL_SUBPROCESS_TIMEOUT = int(3.5 * 3600)
+# ONE real deadline: every cloud job gets the same 10h ceiling
+# (CLOUD_JOB_CEILING in scripts/modal_pipeline.py -- keep these in sync).
+# The wrappers below are not extra timeouts, just the wait layers that must
+# OUTLAST that ceiling or they'd kill the wait and strand the result:
+# subprocess +30min, then systemd TimeoutStartSec / stale-reap +1h
+# (setup-pi-trainer.sh writes the systemd value).
+CLOUD_JOB_CEILING = 10 * 3600
+# A nightly job runs TWO cloud phases back to back (prelabel, then
+# consensus), each under the ceiling: the wrapper must outlast both.
+MODAL_SUBPROCESS_TIMEOUT = 2 * CLOUD_JOB_CEILING + 1800
+STALE_RUNNING = float(2 * CLOUD_JOB_CEILING + 3600)
 
 # Recipe + schedule defaults; the training page's settings file overrides.
-SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
+SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
                      "augment": True, "train_interval_hours": 48,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
                      "gpu": "auto", "auto_update": True,

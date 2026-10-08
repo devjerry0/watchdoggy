@@ -32,6 +32,7 @@ log = logging.getLogger("doggy")
 _IDLE_POLL_SECONDS = 0.01
 # Decimal places for the FPS readout (confidence uses CONFIDENCE_DECIMALS).
 _FPS_DECIMALS = 1
+_FPS_EMA_ALPHA = 0.2  # ~10-iteration memory for the smoothed FPS
 
 
 class Pipeline:
@@ -125,6 +126,7 @@ class Pipeline:
         cap = threading.Thread(target=self._capture_loop, args=(stop,), daemon=True)
         cap.start()
         last = self.clock()
+        fps_avg: float | None = None
         while not stop.is_set():
             frame = self.raw_buffer.get()
             if frame is None:
@@ -146,6 +148,12 @@ class Pipeline:
             now = self.clock()
             dt = now - last
             if dt > 0:
-                self.status.update(fps=round(1.0 / dt, _FPS_DECIMALS))
+                inst = 1.0 / dt
+                # EMA (~10-iteration memory): one slow iteration (a catch's
+                # snapshot + event write) must not read as "0.1 FPS".
+                fps_avg = inst if fps_avg is None else (
+                    fps_avg + _FPS_EMA_ALPHA * (inst - fps_avg))
+                self.status.update(fps=round(inst, _FPS_DECIMALS),
+                                   fps_avg=round(fps_avg, _FPS_DECIMALS))
             last = now
         self.camera.close()

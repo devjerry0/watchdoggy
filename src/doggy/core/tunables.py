@@ -51,6 +51,13 @@ class ArmedWindow(BaseModel):
         return v
 
 
+# Highest alarm certainty the UI/API will accept. Measured on the held-out
+# exam (2026-09-12): the deployed NCNN model catches 82/127 dogs at 0.8,
+# 30/127 at 0.9, 4/127 at 0.95 -- anything above ~0.85 is a disarmed dog
+# deterrent that still looks armed on the dashboard.
+MAX_ALARM_CONFIDENCE = 0.85
+
+
 class TunableSettings(BaseModel):
     """The subset of config that can be changed live via the web UI."""
 
@@ -175,6 +182,15 @@ class TunableSettings(BaseModel):
 
     @model_validator(mode="after")
     def _check_ranges(self) -> "TunableSettings":
+        # Real dogs score ~0.6-0.9 through the NCNN export; a threshold above
+        # this silently disarms the appliance (Sep 2026: the slider sat at
+        # 0.95 for a day, 1,745 dog detections, zero fires). Reject rather
+        # than persist -- the .env survives restarts, so a bad drag was
+        # permanent until someone noticed the dog on the counter.
+        if self.confidence > MAX_ALARM_CONFIDENCE:
+            raise ValueError(
+                f"certainty above {MAX_ALARM_CONFIDENCE:.0%} would never fire: "
+                "real dogs score below that; use 0.5-0.8")
         if self.window_m > self.window_n:
             raise ValueError("window_m must be <= window_n")
         if self.cooldown_min_seconds > self.cooldown_max_seconds:

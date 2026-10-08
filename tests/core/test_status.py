@@ -19,8 +19,8 @@ def test_detection_is_frozen():
 def test_runtime_settings_atomic_swap():
     rs = RuntimeSettings(TunableSettings(confidence=0.5))
     assert rs.get().confidence == 0.5
-    rs.update(TunableSettings(confidence=0.9))
-    assert rs.get().confidence == 0.9
+    rs.update(TunableSettings(confidence=0.8))
+    assert rs.get().confidence == 0.8
 
 
 def test_frame_buffer_keeps_latest():
@@ -47,3 +47,23 @@ def test_status_has_thermal_fields():
     s.update(temp_c=76.5, detect_interval_effective=1.0)
     assert s.snapshot().temp_c == 76.5
     assert s.snapshot().detect_interval_effective == 1.0
+
+
+def test_frame_buffer_versions_each_set():
+    # The MJPEG stream polls faster than frames arrive; the version lets it
+    # skip re-encoding a frame it already sent.
+    import numpy as np
+    from doggy.core.status import FrameBuffer
+    b = FrameBuffer()
+    assert b.get_versioned() == (None, 0)
+    b.set(np.zeros((2, 2), np.uint8))
+    _, v1 = b.get_versioned()
+    b.set(np.ones((2, 2), np.uint8))
+    frame, v2 = b.get_versioned()
+    assert v2 == v1 + 1 and frame[0, 0] == 1
+
+
+def test_status_carries_smoothed_fps():
+    from doggy.core.status import Status
+    s = Status()
+    assert s.fps == 0.0 and s.fps_avg == 0.0

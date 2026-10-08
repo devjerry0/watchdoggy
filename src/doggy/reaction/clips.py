@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import deque
 from io import BytesIO
 from pathlib import Path
@@ -91,6 +92,7 @@ class ClipService:
         # exactly where the pipeline read cfg on the fire frame.
         self._runtime = runtime
         self._pending: list[dict] = []
+        self._workers: list[threading.Thread] = []
 
     def on_frame(self, annotated: np.ndarray, now: float, cfg: TunableSettings) -> None:
         if cfg.clips_enabled:
@@ -109,7 +111,12 @@ class ClipService:
                  "end": event.mono_ts + cfg.clip_postroll_seconds})
 
     def finalize_due(self, now: float, cfg: TunableSettings) -> None:
-        """Encode any pending clips whose post-roll window has elapsed."""
+        """Hand any pending clip whose post-roll window has elapsed to a
+        background encode. Encoding ~70 JPEGs into an animated WebP takes
+        5-15s on a Pi 4; done inline it froze the detect loop (FPS read
+        0.1) for exactly the seconds after a catch when the dog is still
+        there. The frame slice is a private copy, and EventStore.attach_clip
+        takes the store lock, so the worker needs no further coordination."""
         if not self._pending:
             return
         still_pending = []
@@ -119,9 +126,26 @@ class ClipService:
                 continue
             frames = self._buffer.slice(p["fire_ts"] - cfg.clip_preroll_seconds, p["end"])
             if frames:
-                try:
-                    path = encode_clip(frames, cfg.clip_fps, self._event_dir / f"{p['id']}.webp")
-                    self._store.attach_clip(p["id"], path.name)
-                except Exception:
-                    log.exception("failed to encode clip for %s", p["id"])
+                worker = threading.Thread(
+                    target=self._encode_and_attach,
+                    args=(p["id"], frames, cfg.clip_fps),
+                    name=f"clip-{p['id']}", daemon=True,
+                )
+                worker.start()
+                self._workers.append(worker)
         self._pending = still_pending
+        self._workers = [w for w in self._workers if w.is_alive()]
+
+    def drain(self, timeout: float | None = None) -> None:
+        """Wait for in-flight encodes (shutdown, tests)."""
+        for worker in self._workers:
+            worker.join(timeout)
+        self._workers = [w for w in self._workers if w.is_alive()]
+
+    def _encode_and_attach(self, event_id: str, frames: list[bytes],
+                           fps: int) -> None:
+        try:
+            path = encode_clip(frames, fps, self._event_dir / f"{event_id}.webp")
+            self._store.attach_clip(event_id, path.name)
+        except Exception:
+            log.exception("failed to encode clip for %s", event_id)

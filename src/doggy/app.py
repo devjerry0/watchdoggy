@@ -23,6 +23,7 @@ from doggy.events.store import EventStore
 from doggy.pipeline import Pipeline
 from doggy.decision.gate import FireGate
 from doggy.core.runtime import RuntimeSettings
+from doggy.core.settings_store import load_tunables
 from doggy.core.status import FrameBuffer, StatusStore
 
 
@@ -32,7 +33,15 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
     log = logging.getLogger("doggy")
 
-    runtime = RuntimeSettings(settings.tunable())
+    # settings.json wins; the .env-derived tunables seed it on first boot.
+    # Everything below that reads a TUNABLE at construction (retention, clip
+    # window, log level) must read the merged value, not the .env one --
+    # otherwise a dashboard change to those would only apply on the next
+    # boot after someone also edited .env.
+    tunables = load_tunables(settings.tunable())
+    settings = settings.model_copy(update=tunables.model_dump())
+    logging.getLogger().setLevel(settings.log_level)
+    runtime = RuntimeSettings(tunables)
     status = StatusStore()
     raw_buffer = FrameBuffer()
     annotated_buffer = FrameBuffer()
@@ -89,6 +98,10 @@ def main() -> None:
     log.info("doggy starting")
     soothing.start()
     pipeline.run(stop)
+    # A catch seconds before SIGTERM may still be encoding its clip on a
+    # worker thread: give it a bounded moment so the event log isn't left
+    # with a dangling clip reference.
+    clip_service.drain(timeout=20)
     log.info("doggy stopped")
 
 

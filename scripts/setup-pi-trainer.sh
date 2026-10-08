@@ -78,6 +78,14 @@ set -euo pipefail
 STAGING=/home/trainer/staging_ncnn_model
 LIVE=/home/doggy/doggy/models/kitchen_ncnn_model
 [ -d "$STAGING" ] || { echo "no staged bundle" >&2; exit 1; }
+# A bundle staged from a Mac (tar/scp) carries AppleDouble "._*" twins;
+# NCNN's loader globs *.param, picks the junk first ("parse magic failed")
+# and every inference child dies at load -- the detector ran blind for
+# 25 min on 2026-09-12. Strip them, then refuse anything that still is
+# not exactly one .param + one .bin.
+find "$STAGING" -name '._*' -delete
+[ "$(find "$STAGING" -maxdepth 1 -name '*.param' | wc -l)" -eq 1 ] || { echo "staged bundle must hold exactly one .param" >&2; exit 1; }
+[ "$(find "$STAGING" -maxdepth 1 -name '*.bin' | wc -l)" -eq 1 ] || { echo "staged bundle must hold exactly one .bin" >&2; exit 1; }
 rm -rf "$LIVE.prev"
 [ -d "$LIVE" ] && mv "$LIVE" "$LIVE.prev"
 cp -r "$STAGING" "$LIVE"
@@ -90,7 +98,8 @@ sudo tee /usr/local/bin/doggy-install-code >/dev/null <<'HELPER'
 #!/usr/bin/env bash
 # Installs /home/trainer/staging_code as the appliance's code, then restarts
 # the detector. Fixed paths on purpose. Replaces ONLY code paths -- state
-# (dataset, jobs, events, models, sounds, soothing, .env) is never touched.
+# (dataset, jobs, events, models, sounds, soothing, .env, settings.json,
+# settings-changes.jsonl) is never touched.
 # --rollback restores the previous code snapshot.
 set -euo pipefail
 APP=/home/doggy/doggy
@@ -125,7 +134,7 @@ mkdir -p "$snap"
 # helper under set -e). Every copy here tolerates concurrent mutation.
 (cd "$APP/dataset" 2>/dev/null && find . -maxdepth 1 -name 'sample_*.json' -print0 \
   | tar -czf "$snap/dataset-sidecars.tgz" --null -T - 2>/dev/null) || true
-for p in jobs models .env; do
+for p in jobs models .env settings.json settings-changes.jsonl; do
   [ -e "$APP/$p" ] && cp -a "$APP/$p" "$snap/$p" 2>/dev/null || true
 done
 chown -R doggy:doggy "$SNAPS"
@@ -184,7 +193,16 @@ Type=oneshot
 User=trainer
 WorkingDirectory=/home/doggy/doggy
 ExecStart=/home/trainer/modal-env/bin/python /home/doggy/doggy/scripts/pi_trainer.py
-TimeoutStartSec=14400
+# Outermost wait layer (see trainer_daemon/env.py): two 10h cloud phases
+# (nightly prelabel + consensus) + 1h, so systemd never kills a legitimate wait.
+TimeoutStartSec=75600
+# The detector's NCNN threads sync per layer, so any co-running CPU load
+# gates all of them: trainer passes yield the cores (FPS stays ~2 instead
+# of dropping to ~1 whenever the trainer wakes up).
+Nice=10
+CPUWeight=20
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 UNIT
 sudo tee /etc/systemd/system/doggy-trainer.timer >/dev/null <<'UNIT'
 [Unit]

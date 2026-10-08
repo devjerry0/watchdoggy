@@ -12,6 +12,49 @@ from trainer_daemon.update import update_due
 SECONDS_PER_HOUR = 3600.0
 SECONDS_PER_DAY = 24 * 3600
 
+# Auto jobs pause after this many consecutive failures of a kind, waiting
+# 1h, then doubling up to 24h. Born from the Sep 2026 outage: a full Volume
+# failed every run in 90s and the daemon re-queued one per tick for six
+# days (~$13 of credits, silently). Manual jobs from the web UI bypass this
+# entirely -- they never pass through synthesize_job.
+BACKOFF_AFTER = 3
+BACKOFF_BASE_SECONDS = SECONDS_PER_HOUR
+BACKOFF_CAP_SECONDS = SECONDS_PER_DAY
+# A single failure this expensive arms the backoff on its own: three
+# back-to-back 10h hang-failures would otherwise burn ~the whole monthly
+# budget before the third strike. (Duration uses requested_at, so a manual
+# job that sat queued while the timer was down can trip this early -- cheap
+# false positive, manual retries bypass the backoff anyway.)
+LONG_FAILURE_SECONDS = 4 * SECONDS_PER_HOUR
+
+
+def failure_backoff(existing: list[dict], kind: str, now: float) -> float | None:
+    """Seconds until auto jobs of `kind` may run again, or None when clear.
+    Counts the newest streak of failed results; any success resets it.
+    Refusals (credit gate) carry status "refused" and never count."""
+    finished = sorted((j for j in existing if j.get("kind") == kind
+                       and j.get("status") in ("done", "failed")),
+                      key=lambda j: j.get("updated_at", 0.0), reverse=True)
+    streak = 0
+    for job in finished:
+        if job.get("status") != "failed":
+            break
+        streak += 1
+    if streak:
+        newest = finished[0]
+        duration = newest.get("updated_at", 0.0) - newest.get("requested_at", 0.0)
+        if newest.get("requested_at") and duration >= LONG_FAILURE_SECONDS:
+            streak = max(streak, BACKOFF_AFTER)
+    if streak < BACKOFF_AFTER:
+        return None
+    wait = min(BACKOFF_BASE_SECONDS * 2 ** min(streak - BACKOFF_AFTER, 5),
+               BACKOFF_CAP_SECONDS)
+    # Clamp a future-reading stamp (Pi clock regressed after the failure was
+    # written): never let skew stretch the window beyond `wait` from now.
+    newest_at = min(finished[0].get("updated_at", 0.0), now)
+    remaining = newest_at + wait - now
+    return remaining if remaining > 0 else None
+
 
 def jobs() -> list[dict]:
     found = []
@@ -91,8 +134,13 @@ def synthesize_job(existing: list[dict]) -> dict | None:
     new_labels = labels_since(last_train)
     if (now - last_train >= conf["train_interval_hours"] * SECONDS_PER_HOUR
             and new_labels >= conf["min_new_labels"]):
-        return queue_auto("train",
-                          f"auto: {new_labels} new labels since last run")
+        wait = failure_backoff(existing, "train", now)
+        if wait is None:
+            return queue_auto("train",
+                              f"auto: {new_labels} new labels since last run")
+        log(f"auto-train due but backing off after repeated failures "
+            f"({wait / SECONDS_PER_HOUR:.1f}h left); fix the cause or queue "
+            f"a manual run from /training")
     missing, _, _ = sidecar_stats()
     last_prelabel = newest_done("prelabel")
     # Nightly ONLY: after the configured hour, prelabel + auto-label every
@@ -100,8 +148,12 @@ def synthesize_job(existing: list[dict]) -> dict | None:
     # don't trigger extra cloud passes (user-decided); the training page's
     # "Fetch boxes now" button covers the on-demand case.
     if missing > 0 and last_prelabel < last_nightly_slot(conf["nightly_prelabel_hour"]):
-        return queue_auto("prelabel",
-                          f"nightly: {missing} new frames to prelabel")
+        wait = failure_backoff(existing, "prelabel", now)
+        if wait is None:
+            return queue_auto("prelabel",
+                              f"nightly: {missing} new frames to prelabel")
+        log(f"nightly prelabel due but backing off after repeated failures "
+            f"({wait / SECONDS_PER_HOUR:.1f}h left)")
     return _update_job(now)
 
 
