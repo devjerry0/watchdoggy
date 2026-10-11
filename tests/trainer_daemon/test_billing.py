@@ -80,3 +80,58 @@ def test_compare_flag_reaches_the_cloud_run(monkeypatch):
     monkeypatch.setattr(runs, "runtime_confidence", lambda: 0.6)
     assert "--compare-init" in runs.recipe_arguments({"params": {"compare_init": True}})
     assert "--compare-init" not in runs.recipe_arguments({"params": {}})
+
+
+def _fake_modal(monkeypatch, tmp_path, fail_first: bool, write_call: bool):
+    import subprocess
+    from trainer_daemon import cloud
+    monkeypatch.setattr(cloud, "JOBS_DIR", tmp_path)
+    monkeypatch.setattr(cloud, "gpu", lambda: "L40S")
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        if "--call-file" in cmd and write_call:
+            (tmp_path / "job_1.call").write_text("fc-123")
+        if fail_first and len(calls) == 1:
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(cloud.subprocess, "run", run)
+    return cloud, calls
+
+
+def test_dropped_connection_collects_the_result_by_call_id(monkeypatch, tmp_path):
+    cloud, calls = _fake_modal(monkeypatch, tmp_path, fail_first=True, write_call=True)
+    cloud.modal_run("kickoff", ["--out-dir", "/tmp/x"], "job_1")
+    assert "--detach" in calls[0]
+    assert calls[1][1:3] == ["run", f"{cloud.PIPELINE}::collect"]
+    assert calls[1][calls[1].index("--call-id") + 1] == "fc-123"
+    assert calls[1][calls[1].index("--kind") + 1] == "train"
+    assert not (tmp_path / "job_1.call").exists()   # cleaned up after success
+
+
+def test_failure_before_the_cloud_call_still_fails(monkeypatch, tmp_path):
+    import subprocess
+    import pytest
+    cloud, calls = _fake_modal(monkeypatch, tmp_path, fail_first=True, write_call=False)
+    with pytest.raises(subprocess.CalledProcessError):
+        cloud.modal_run("kickoff_prelabels", ["--out-dir", "/tmp/x"], "job_1")
+    assert len(calls) == 1                           # no collect attempt
+
+
+def test_hung_client_timeout_also_collects(monkeypatch, tmp_path):
+    import subprocess
+    from trainer_daemon import cloud
+    monkeypatch.setattr(cloud, "JOBS_DIR", tmp_path)
+    monkeypatch.setattr(cloud, "gpu", lambda: "L40S")
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        if len(calls) == 1:
+            (tmp_path / "job_2.call").write_text("fc-9")
+            raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(cloud.subprocess, "run", run)
+    cloud.modal_run("kickoff_prelabels", ["--out-dir", "/tmp/y"], "job_2")
+    assert calls[1][calls[1].index("--kind") + 1] == "label"

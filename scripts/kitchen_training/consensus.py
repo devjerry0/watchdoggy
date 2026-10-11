@@ -129,14 +129,12 @@ def _needs_judging_entry(entry: list, x_entry: dict, no_action: set[str],
     return stem not in no_action
 
 
-def judge_frames(stems: list[str], cache: dict,
-                 deployed_dir: Path) -> tuple[dict, dict]:
-    """(auto_verdicts, disputes) judged by the deployed nano + the big-model
-    cache. Without a deployed nano there is no second juror, so nothing is
-    auto-labeled or disputed. Frames this jury already declined stay
-    declined without re-scoring (see JURY_MEMORY)."""
+def jury_plan(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
+    """Which frames this jury still has to judge. Frames it already declined
+    stay declined without re-scoring (see JURY_MEMORY). No deployed nano
+    means no second juror: nothing to judge."""
     if not deployed_dir.is_dir():
-        return {}, {}
+        return {"jury": None, "no_action": [], "todo": []}
     jury = _jury_id(deployed_dir)
     no_action = _load_no_action(jury)
     entries = _entries(stems)
@@ -146,32 +144,64 @@ def judge_frames(stems: list[str], cache: dict,
     print(f"[pipeline] jury {jury}: judging {len(todo)} frames, "
           f"{len(stems) - len(todo)} skipped (labeled, settled, or already "
           f"declined by this jury)", flush=True)
+    return {"jury": jury, "no_action": sorted(no_action), "todo": todo}
+
+
+def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
+    """Judge these frames with the deployed nano + the big-model cache.
+
+    One frame per call on purpose: ultralytics' NCNN backend reads only
+    im[0] of a batch, so batching the nano would silently drop frames. The
+    cloud parallelizes across containers instead (modal_pipeline)."""
+    from ultralytics import YOLO  # deferred, like the whole package
+    entries = _entries(stems)
+    nano = YOLO(str(deployed_dir), task="detect")
     auto_verdicts: dict = {}
     disputes: dict = {}
-    if todo:
-        from ultralytics import YOLO  # deferred, like the whole package
-        nano = YOLO(str(deployed_dir), task="detect")
-        for stem, _, image in read_frames(todo):
-            if image is None:  # empty/corrupt file: nothing to judge
+    declined: list[str] = []
+    for stem, _, image in read_frames(stems):
+        if image is None:  # empty/corrupt file: nothing to judge
+            continue
+        nano_dog, nano_person = _nano_scores(nano, image)
+        if not entries[stem][0]:  # no human label: the consensus path
+            verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
+            if verdict:
+                auto_verdicts[stem] = verdict
                 continue
-            nano_dog, nano_person = _nano_scores(nano, image)
-            if not entries[stem][0]:  # no human label: the consensus path
-                verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
-                if verdict:
-                    auto_verdicts[stem] = verdict
-                    continue
-                no_action.add(stem)
-                continue
-            # Audit path: the prefilter already established eligibility
-            # (non-dog human label, unsettled, undisputed, X sees a dog).
-            if nano_dog >= AUDIT_DOG_NANO_CONF and cache[stem]["dogs"]:
-                disputes[stem] = {"model_says": "dog",
-                                  "nano_conf": round(nano_dog, 3)}
-                continue
-            no_action.add(stem)
-    JURY_MEMORY.write_text(json.dumps({"jury": jury,
-                                       "stems": sorted(no_action)}))
+            declined.append(stem)
+            continue
+        # Audit path: the prefilter already established eligibility
+        # (non-dog human label, unsettled, undisputed, X sees a dog).
+        if nano_dog >= AUDIT_DOG_NANO_CONF and cache[stem]["dogs"]:
+            disputes[stem] = {"model_says": "dog",
+                              "nano_conf": round(nano_dog, 3)}
+            continue
+        declined.append(stem)
+    return {"auto_verdicts": auto_verdicts, "disputes": disputes,
+            "declined": declined}
+
+
+def finish_jury(plan: dict, parts: list[dict]) -> tuple[dict, dict]:
+    """Merge judged chunks and remember what this jury declined."""
+    auto_verdicts: dict = {}
+    disputes: dict = {}
+    no_action = set(plan["no_action"])
+    for part in parts:
+        auto_verdicts.update(part["auto_verdicts"])
+        disputes.update(part["disputes"])
+        no_action.update(part["declined"])
+    if plan["jury"]:
+        JURY_MEMORY.write_text(json.dumps({"jury": plan["jury"],
+                                           "stems": sorted(no_action)}))
     print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
           f"unlabeled frames; disputed {len(disputes)} existing labels",
           flush=True)
     return auto_verdicts, disputes
+
+
+def judge_frames(stems: list[str], cache: dict,
+                 deployed_dir: Path) -> tuple[dict, dict]:
+    """(auto_verdicts, disputes) in one process: plan, judge, finish."""
+    plan = jury_plan(stems, cache, deployed_dir)
+    parts = [judge_stems(plan["todo"], cache, deployed_dir)] if plan["todo"] else []
+    return finish_jury(plan, parts)

@@ -17,7 +17,7 @@ from pathlib import Path
 from kitchen_training.build import build
 from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, PRELABEL_CACHE,
                                      RUNS, mirror_glob)
-from kitchen_training.consensus import judge_frames
+from kitchen_training.consensus import finish_jury, judge_stems, jury_plan
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
 from kitchen_training.export import export
@@ -198,17 +198,23 @@ def prelabel_phase(run_name: str, run_root: Path | None = None) -> dict:
     return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before)}
 
 
-def consensus_phase(run_name: str, run_root: Path) -> dict:
-    """CPU phase: consensus auto-verdicts and label-audit disputes when a
-    deployed nano provides the second juror. Runs without a GPU -- holding
-    one through the judging loop was most of a pass's bill."""
-    # Nightly janitor pass: prelabel jobs leave kickoff upload dirs too, and
+def jury_plan_phase(run_name: str, run_root: Path) -> dict:
+    """CPU: which frames the jury still has to judge (after labeling)."""
+    # Weekly janitor pass: labeling jobs leave kickoff upload dirs too, and
     # on bad weeks (every run failing) nothing else would ever clean up.
     for stale in janitor(RUNS, KEEP_RUNS, run_name, run_root.parent):
         print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     stems = _mirror_stems()
-    cache = prelabel(stems)  # fully cached by the prelabel phase
-    auto_verdicts, disputes = judge_frames(stems, cache,
-                                           run_root / "deployed_ncnn_model")
+    cache = prelabel(stems)  # fully cached by the labeling phase
+    return jury_plan(stems, cache, run_root / "deployed_ncnn_model")
+
+
+def judge_chunk_phase(run_root: Path, stems: list[str]) -> dict:
+    """CPU: judge one chunk of the plan (many containers run in parallel)."""
+    return judge_stems(stems, prelabel(stems), run_root / "deployed_ncnn_model")
+
+
+def finish_jury_phase(run_name: str, plan: dict, parts: list[dict]) -> dict:
+    auto_verdicts, disputes = finish_jury(plan, parts)
     return {"run_name": run_name, "auto_verdicts": auto_verdicts,
             "disputes": disputes}

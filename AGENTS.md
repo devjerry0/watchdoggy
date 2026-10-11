@@ -259,3 +259,16 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   in ~80 s (the v1 limit is per container), vs ~4.5 h re-uploading from
   the Pi. The Pi's upload manifest stayed valid. v2 is beta: the Pi holds
   the originals, so the worst case is a re-sync. Old volume kept briefly.
+- **2026-10-11 — Cloud runs survive a dropped Pi; the jury batches across
+  containers.** Kickoffs `spawn()` their cloud call, write its id to
+  `jobs/<job>.call` (`--call-file`), then wait; the trainer runs
+  `modal run --detach`, and on a non-zero exit or a hung-client timeout it
+  runs `modal_pipeline.py::collect --call-id` (Modal keeps results 7
+  days). Labeling is ONE cloud call (`run_label_pass`: GPU labeling, jury
+  plan, `run_consensus_chunk.map` over 4,000-frame chunks, merge) so a
+  disconnect can't strand the jury step. **Never batch an NCNN model in
+  ultralytics:** its NCNN backend reads only `im[0]` of a batch and
+  silently drops the rest; the jury and every gate/eval score bundles one
+  frame per call and parallelize across containers instead. Not covered
+  yet: a Pi reboot mid-run (the tmp out dir is gone; the next pass redoes
+  the work, mostly cached).
