@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from doggy.core.config import Settings
+from doggy.core.priority import WEB_WORKER_NICE, lower_thread_priority
 from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers.dataset.sidecars import (
     apply_autolabel,
@@ -39,6 +40,7 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
 
     @router.post("/api/dataset/apply-cloud-results")
     def api_apply_cloud_results(body: dict) -> dict:
+        lower_thread_priority(WEB_WORKER_NICE)  # 1k-sidecar writes: never outrun NCNN
         now = time.time()
         model = str(body.get("model", "?"))
         prelabels = {stem: parse_boxes(raw)
