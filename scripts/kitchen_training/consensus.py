@@ -152,6 +152,8 @@ def judge_frames(stems: list[str], cache: dict,
         from ultralytics import YOLO  # deferred, like the whole package
         nano = YOLO(str(deployed_dir), task="detect")
         for stem, _, image in read_frames(todo):
+            if image is None:  # empty/corrupt file: nothing to judge
+                continue
             nano_dog, nano_person = _nano_scores(nano, image)
             if not entries[stem][0]:  # no human label: the consensus path
                 verdict = consensus_verdict(cache[stem], nano_dog, nano_person)

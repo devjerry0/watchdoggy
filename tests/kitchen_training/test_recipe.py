@@ -140,3 +140,17 @@ def test_mirror_files_live_in_day_folders_on_the_volume(monkeypatch, tmp_path):
     assert [p.name for p in config.mirror_glob("sample_*.jpg")] == ["sample_1791739648418.jpg"]
     monkeypatch.setattr(config, "MIRROR_SHARDED", False)
     assert config.mirror_path("sample_1791739648418.jpg") == tmp_path / "sample_1791739648418.jpg"
+
+
+def test_empty_or_corrupt_frames_read_as_none(monkeypatch, tmp_path):
+    # A 0-byte jpg from a power cut crashed labeling at frame 46,000
+    # (imdecode asserts on an empty buffer); it must come back as None.
+    dataset = importlib.import_module("kitchen_training.dataset")
+    config = importlib.import_module("kitchen_training.config")
+    monkeypatch.setattr(config, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(config, "MIRROR_SHARDED", False)
+    (tmp_path / "sample_1.jpg").write_bytes(b"")
+    (tmp_path / "sample_2.jpg").write_bytes(b"not a jpeg")
+    assert dataset._read_frame("sample_1") == (b"", None)
+    assert dataset._read_frame("sample_2")[1] is None
+    assert dataset._read_frame("sample_missing") == (b"", None)
