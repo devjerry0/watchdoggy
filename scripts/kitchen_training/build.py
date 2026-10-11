@@ -31,8 +31,10 @@ HUMAN_WEIGHT_COPIES = 1  # one extra copy = human frames weigh 2x
 # Augmentation modes (training page setting). "all" writes every variant per
 # train frame -- the recipe that won on the 168-frame set (Aug 2026) and the
 # right call for a new install with little data. At 14k frames it made 75%
-# of every epoch copies (the run's biggest cost), so "auto" switches to ONE
-# variant per frame once the dataset is past AUTO_ALL_VARIANTS_BELOW.
+# of every epoch copies (the run's biggest cost), and real footage from the
+# camera itself covers night and motion blur by then (user-decided), so
+# "auto" turns copies OFF past AUTO_ALL_VARIANTS_BELOW. "one" stays a manual
+# option if the report's stress row (blur/dark robustness) ever slips.
 AUGMENT_MODES = ("auto", "all", "one", "off")
 AUTO_ALL_VARIANTS_BELOW = 3000  # verdicted frames
 
@@ -80,7 +82,7 @@ def augment_mode(augment: bool | str, verdicted: int) -> str:
     """Resolve the setting to "all", "one" or "off". Legacy booleans: True
     meant "augment" and now means auto, False means off."""
     if augment is True or augment == "auto":
-        return "all" if verdicted < AUTO_ALL_VARIANTS_BELOW else "one"
+        return "all" if verdicted < AUTO_ALL_VARIANTS_BELOW else "off"
     if augment is False:
         return "off"
     return augment

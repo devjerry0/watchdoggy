@@ -193,6 +193,12 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   copy its best.pt to pipeline/models/champion.pt**, or the next run warm-
   starts from a stale model. Robustness (stress row) is an indicator, not a
   gate: if "one" copy weakens it, set augment to "all".
+- **2026-10-11 — Augment copies are for small datasets only.** `augment`
+  auto = all 3 copies below `AUTO_ALL_VARIANTS_BELOW` (3,000 verdicted
+  frames), OFF above (user-decided: 30k+ real camera frames cover night and
+  blur; ultralytics' hsv_v covers brightness but nothing synthesizes blur).
+  Watch the report's stress row (new vs deployed under blur/dark/shift):
+  if blur catches slip, set augment to "one".
 - **2026-10-11 — Warm start trains on ALL the data; gate on hand + auto
   labels (user-decided).** Training only on frames newer than the champion
   (plus 1:1 replay) was built and dropped the same day: after one copy per

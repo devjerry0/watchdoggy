@@ -23,7 +23,7 @@ SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
                      "auto_update": True}  # daily GitHub release check
 _GPU_CHOICES = {"auto", "T4", "L4", "L40S", "A10G", "A100"}
 _BATCH_CHOICES = {"auto", 8, 16, 32, 64, 128}
-# auto = all 3 photometric copies per frame while the dataset is small, one
+# auto = all 3 photometric copies per frame while the dataset is small, none
 # once it's big; legacy booleans (pre-modes settings files) still validate.
 _AUGMENT_MODES = ("auto", "all", "one", "off")
 _INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),

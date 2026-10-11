@@ -17,12 +17,13 @@ training = importlib.import_module("kitchen_training.training")
 def test_auto_keeps_all_three_copies_while_the_dataset_is_small():
     small, big = build.AUTO_ALL_VARIANTS_BELOW - 1, build.AUTO_ALL_VARIANTS_BELOW
     assert build.augment_mode("auto", small) == "all"
-    assert build.augment_mode("auto", big) == "one"
+    assert build.augment_mode("auto", big) == "off"
     # Legacy settings files: True meant "augment" -> auto, False -> off.
-    assert build.augment_mode(True, big) == "one"
+    assert build.augment_mode(True, big) == "off"
     assert build.augment_mode(False, small) == "off"
     # Explicit choices are honored at any size.
     assert build.augment_mode("all", big) == "all"
+    assert build.augment_mode("one", big) == "one"
     assert build.augment_mode("off", small) == "off"
 
 
