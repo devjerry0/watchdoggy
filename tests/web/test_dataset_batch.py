@@ -66,3 +66,14 @@ def test_batch_counts_missing_and_guards_traversal(tmp_path):
                       "../../etc/passwd": []},
     }).json()
     assert d["prelabels"] == 1 and d["missing"] == 2
+
+
+def test_batch_skips_an_empty_sidecar_and_applies_the_rest(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1")
+    _seed_full(ddir, "sample_2")
+    (ddir / "sample_1.json").write_text("")            # power cut mid-write
+    d = c.post("/api/dataset/apply-cloud-results", json={
+        "auto_verdicts": {"sample_1": "dog", "sample_2": "empty"}}).json()
+    assert d["auto_verdicts"] == 1 and d["missing"] == 1
+    assert json.loads((ddir / "sample_2.json").read_text())["auto_label"]["verdict"] == "empty"

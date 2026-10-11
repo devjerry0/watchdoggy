@@ -118,7 +118,7 @@ def _entries(stems: list[str]) -> dict[str, list]:
 
 def _needs_judging_entry(entry: list, x_entry: dict, no_action: set[str],
                          stem: str) -> bool:
-    human, auto, settled, disputed = entry
+    human, auto, settled, disputed = entry[:4]
     if human:
         return (human in ("person", "empty", "no_dog")
                 and not settled and not disputed
