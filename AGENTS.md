@@ -272,3 +272,15 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   frame per call and parallelize across containers instead. Not covered
   yet: a Pi reboot mid-run (the tmp out dir is gone; the next pass redoes
   the work, mostly cached).
+- **2026-10-11 — Applying a big labeling pass on the Pi must be chunked
+  and niced.** The month-backlog jury returned 38,927 auto-labels; the
+  trainer posted them in ONE `apply-cloud-results` request (180 s
+  timeout). The server needed ~17 min, the client timed out, and the
+  per-frame fallback re-posted every frame over HTTPS at ~4/s (hours)
+  while the server was still applying the batch; detector FPS fell to
+  0.7-0.9 for the duration. Now `trainer_daemon/apply.py` sends
+  `APPLY_CHUNK` (1,000) frames per request and falls back per-frame only
+  for a failed chunk, and the handler lowers its thread to
+  `WEB_WORKER_NICE`. A FastAPI sync handler keeps running after its
+  client times out: check sidecar mtimes before assuming a timed-out
+  write did nothing.
