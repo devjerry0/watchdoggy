@@ -11,6 +11,13 @@ from trainer_daemon.update import update_due
 
 SECONDS_PER_HOUR = 3600.0
 SECONDS_PER_DAY = 24 * 3600
+# Schedules run at fixed hours, so "a week since the last pass" must allow
+# for the pass having finished a little after the hour it started.
+SCHEDULE_SLACK = 12 * SECONDS_PER_HOUR
+# Training runs on the pass right after a labeling pass; labels older than
+# this mean that pass was missed (e.g. refused for credits) -- wait for the
+# next one.
+FRESH_LABELS_SECONDS = 12 * SECONDS_PER_HOUR
 
 # Auto jobs pause after this many consecutive failures of a kind, waiting
 # 1h, then doubling up to 24h. Born from the Sep 2026 outage: a full Volume
@@ -130,9 +137,33 @@ def synthesize_job(existing: list[dict]) -> dict | None:
     # be refused every pass; self-updates still run (GitHub, not Modal).
     if credit_refusal("train") is not None:
         return _update_job(now)
+    missing, _, _ = sidecar_stats()
+    last_prelabel = newest_done("prelabel")
+    label_wait = failure_backoff(existing, "prelabel", now)
+    # Labeling at most every label_interval_hours (weekly, user-decided), at
+    # the configured hour; SCHEDULE_SLACK lets a pass that finished at 02:40
+    # come due again at 02:00 a week later. Labeling goes FIRST.
+    label_due = (missing > 0
+                 and last_prelabel < last_nightly_slot(conf["nightly_prelabel_hour"])
+                 and now - last_prelabel >= conf["label_interval_hours"]
+                 * SECONDS_PER_HOUR - SCHEDULE_SLACK)
+    if label_due:
+        if label_wait is None:
+            return queue_auto("prelabel",
+                              f"weekly: {missing} new frames to label")
+        log(f"weekly labeling due but backing off after repeated failures "
+            f"({label_wait / SECONDS_PER_HOUR:.1f}h left)")
     last_train = newest_done("train")
     new_labels = labels_since(last_train)
-    if (now - last_train >= conf["train_interval_hours"] * SECONDS_PER_HOUR
+    # Training only on the pass right after a labeling pass (user-decided:
+    # every run trains on fresh auto-labels), so it lands on every other
+    # weekly labeling day. Exceptions so it can never deadlock: nothing
+    # awaits labels, or the labeler is stuck in failure backoff.
+    just_labeled = (last_prelabel > last_train
+                    and now - last_prelabel < FRESH_LABELS_SECONDS)
+    if ((just_labeled or missing == 0 or label_wait is not None)
+            and now - last_train >= conf["train_interval_hours"]
+            * SECONDS_PER_HOUR - SCHEDULE_SLACK
             and new_labels >= conf["min_new_labels"]):
         wait = failure_backoff(existing, "train", now)
         if wait is None:
@@ -141,19 +172,6 @@ def synthesize_job(existing: list[dict]) -> dict | None:
         log(f"auto-train due but backing off after repeated failures "
             f"({wait / SECONDS_PER_HOUR:.1f}h left); fix the cause or queue "
             f"a manual run from /training")
-    missing, _, _ = sidecar_stats()
-    last_prelabel = newest_done("prelabel")
-    # Nightly ONLY: after the configured hour, prelabel + auto-label every
-    # new frame once, so the morning's label queue is stocked. Heavy days
-    # don't trigger extra cloud passes (user-decided); the training page's
-    # "Fetch boxes now" button covers the on-demand case.
-    if missing > 0 and last_prelabel < last_nightly_slot(conf["nightly_prelabel_hour"]):
-        wait = failure_backoff(existing, "prelabel", now)
-        if wait is None:
-            return queue_auto("prelabel",
-                              f"nightly: {missing} new frames to prelabel")
-        log(f"nightly prelabel due but backing off after repeated failures "
-            f"({wait / SECONDS_PER_HOUR:.1f}h left)")
     return _update_job(now)
 
 

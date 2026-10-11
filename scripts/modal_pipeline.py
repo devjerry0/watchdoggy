@@ -42,6 +42,9 @@ CLOUD_JOB_CEILING = 10 * 60 * MINUTES
 # Read on the launching machine only: inside the container this env var is
 # absent, so the GPU travels to the run in the recipe (kickoff).
 GPU = os.environ.get("DOGGY_TRAIN_GPU", "L40S")
+# Labeling (yolo26x inference) has its own best GPU; see
+# trainer_daemon/env.py AUTO_LABEL_GPU for the measurement.
+LABEL_GPU = os.environ.get("DOGGY_LABEL_GPU", "L40S")
 VOL = Path("/vol")
 PIPELINE_ROOT = VOL / "pipeline"
 
@@ -104,7 +107,7 @@ def run_pipeline(run_name: str, recipe: dict,
     return results, bundle_tar
 
 
-@app.function(image=image, gpu=GPU, cpu=4, memory=8192,
+@app.function(image=image, gpu=LABEL_GPU, cpu=4, memory=8192,
               volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
 def run_prelabels(run_name: str) -> dict:
     """GPU phase of the nightly pass: big-model boxes for new frames only."""

@@ -30,8 +30,11 @@ MODAL_SUBPROCESS_TIMEOUT = 2 * CLOUD_JOB_CEILING + 1800
 STALE_RUNNING = float(2 * CLOUD_JOB_CEILING + 3600)
 
 # Recipe + schedule defaults; the training page's settings file overrides.
+# Schedule (user-decided 2026-10-11): label weekly, train every other
+# labeling pass (~twice a month).
 SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
-                     "augment": True, "train_interval_hours": 48,
+                     "augment": True, "train_interval_hours": 336,
+                     "label_interval_hours": 168,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
                      "gpu": "auto", "auto_update": True,
                      "monthly_credits": 30}
@@ -40,6 +43,12 @@ SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
 # 445-478; more CPU changed nothing. L40S is ~2.3x faster than L4 AND ~20%
 # cheaper per trained image ($1.60 vs $2.02 per million incl. cpu/memory).
 AUTO_GPU = "L40S"
+# Labeling GPU, measured separately (yolo26x inference on real mirror
+# frames, cpu=4, one frame per call): T4 21 frames/s, L4 38, L40S 81.5 --
+# L40S matches L4 per frame ($0.0075 vs $0.0077 per 1k) at 2x the speed;
+# T4 is the priciest per frame. Same card as training today, but the two
+# workloads differ, so they are chosen independently.
+AUTO_LABEL_GPU = "L40S"
 # batch grows with data but stays small enough for ~30+ optimizer
 # steps/epoch.
 BATCH_TIERS = ((2500, 64), (800, 32), (0, 16))

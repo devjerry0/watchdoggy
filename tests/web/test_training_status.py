@@ -65,7 +65,7 @@ def test_status_reports_last_done_train_and_next_auto(tmp_path):
          "requested_at": 300.0, "updated_at": 400.0, "detail": ""}))
     d = c.get("/api/training/status").json()
     assert d["last_train"]["id"] == "job_1"
-    assert d["next_auto_train"] == 200.0 + 48 * 3600
+    assert d["next_auto_train"] == 200.0 + 336 * 3600  # default: every 2 weeks
     # done jobs don't block new requests
     again = c.post("/api/training/request", json={"kind": "train"}).json()
     assert not again["already_pending"]
