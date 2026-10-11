@@ -210,8 +210,11 @@ def jury_plan_phase(run_name: str, run_root: Path) -> dict:
 
 
 def judge_chunk_phase(run_root: Path, stems: list[str]) -> dict:
-    """CPU: judge one chunk of the plan (many containers run in parallel)."""
-    return judge_stems(stems, prelabel(stems), run_root / "deployed_ncnn_model")
+    """CPU: judge one chunk of the plan (many containers run in parallel).
+    The plan only lists frames the labeling phase already cached, so read
+    the cache directly (prelabel() would log a line per container)."""
+    cache = json.loads(PRELABEL_CACHE.read_text())
+    return judge_stems(stems, cache, run_root / "deployed_ncnn_model")
 
 
 def finish_jury_phase(run_name: str, plan: dict, parts: list[dict]) -> dict:
