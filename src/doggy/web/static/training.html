@@ -420,10 +420,7 @@ function renderRuns(){
           + (v.false_fires ? "(" + v.false_fires + "FP)" : "")).join("  ")]);
       if (s.dataset) rows.push(["dataset", s.dataset.train + " train (+"
         + (s.dataset.augmented || 0) + " aug) / " + s.dataset.val + " held out"
-        + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")
-        + (s.dataset.already_learned ? " · " + s.dataset.new + " new + "
-           + s.dataset.replay + " replay (" + s.dataset.already_learned
-           + " already learned)" : "")]);
+        + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")]);
       if (s.recipe) rows.push(["recipe", s.recipe.epochs + " epochs · batch "
         + s.recipe.batch + " · freeze " + s.recipe.freeze
         + (s.recipe.augment_mode && s.recipe.augment_mode !== "off"

@@ -21,12 +21,12 @@ RUNS = _path_from_env("KT_RUNS_DIR", REPO / "training-runs")
 PRELABEL_CACHE = RUNS / "prelabel-cache.json"
 
 BASE_MODEL = _path_from_env("KT_BASE_MODEL", REPO / "models/yolo26n.pt")
-# Weights of the deployed model: every training run starts here instead of
-# re-learning from BASE_MODEL (user-decided 2026-10-11), and a run the gate
-# deploys replaces it. Missing -> BASE_MODEL (fresh run).
+# Weights of the deployed model: every training run starts here, on the FULL
+# dataset, instead of re-learning from BASE_MODEL (user-decided 2026-10-11;
+# training only on frames newer than the champion was tried and dropped --
+# it saved ~$1-3/run for a forgetting risk and extra bookkeeping), and a run
+# the gate deploys replaces it. Missing -> BASE_MODEL (fresh run).
 CHAMPION_MODEL = _path_from_env("KT_CHAMPION_MODEL", REPO / "models/champion.pt")
-# {"data_cutoff": newest label time it trained on, "run": run name}
-CHAMPION_META = CHAMPION_MODEL.with_suffix(".json")
 PRELABEL_MODEL = _path_from_env("KT_PRELABEL_MODEL", REPO / "models/yolo26x.pt")
 
 PRELABEL_CONF = 0.45      # big-model boxes below this aren't trusted as labels
