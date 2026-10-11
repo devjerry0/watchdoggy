@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import time
 from pathlib import Path
 
@@ -25,12 +26,29 @@ CHUNK_RETRIES = 5
 CHUNK_RETRY_WAIT_S = 20
 
 
+def shard_of(name: str) -> str:
+    """The day folder a mirror file lives in on the cloud volume: the first
+    5 digits of its sample_ millisecond timestamp (~1.16 days per folder, a
+    few thousand files each). One flat folder of ~192k files made the v1
+    volume ~100x slower, and v2 caps a folder at 262,144 files. Non-sample
+    files (the index) stay at the mirror root ("")."""
+    if not name.startswith("sample_"):
+        return ""
+    digits = name[len("sample_"):][:5]
+    return digits if len(digits) == 5 and digits.isdigit() else ""
+
+
+def mirror_key(name: str) -> str:
+    """Volume path of a mirror file."""
+    return posixpath.join(MIRROR, shard_of(name), name)
+
+
 def _put_chunk(volume, dataset_dir: Path, chunk: list[str]) -> None:
     for attempt in range(CHUNK_RETRIES):
         try:
             with volume.batch_upload(force=True) as up:
                 for name in chunk:
-                    up.put_file(str(dataset_dir / name), f"{MIRROR}/{name}")
+                    up.put_file(str(dataset_dir / name), mirror_key(name))
             return
         except Exception as exc:
             if attempt == CHUNK_RETRIES - 1:
@@ -60,7 +78,7 @@ def _write_index(volume, dataset_dir: Path) -> None:
     local = _state_dir(dataset_dir) / ".labeled-index.json"
     local.write_text(json.dumps(index))
     with volume.batch_upload(force=True) as up:
-        up.put_file(str(local), f"{MIRROR}/.labeled-index.json")
+        up.put_file(str(local), mirror_key(".labeled-index.json"))
     print(f"[pipeline] index shipped: {len(index)} frames", flush=True)
 
 
@@ -109,7 +127,7 @@ def sync_mirror(volume, dataset_dir: Path) -> None:
               flush=True)
     for name in deleted:
         try:
-            volume.remove_file(f"{MIRROR}/{name}")
+            volume.remove_file(mirror_key(name))
         except Exception:
             pass  # already gone is fine; the mirror only needs to converge
     manifest_file.write_text(json.dumps(current))

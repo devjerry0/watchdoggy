@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE,
+from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE, mirror_glob, mirror_path,
                                      PRELABEL_CACHE, PRELABEL_CONF,
                                      PRELABEL_MODEL, RUNS, device, log, sh)
 
@@ -24,7 +24,7 @@ PRELABEL_PROGRESS_EVERY = 2000  # log + checkpoint the cache this often
 def _read_frame(stem: str):
     import cv2
     import numpy as np
-    data = (DATASET_MIRROR / f"{stem}.jpg").read_bytes()
+    data = mirror_path(f"{stem}.jpg").read_bytes()
     return data, cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
 
 
@@ -78,10 +78,10 @@ def labeled_sidecars(include_auto: bool = False) -> list[tuple[str, str, dict]]:
     """
     stems = _labeled_stems(include_auto)
     if stems is None:
-        stems = sorted(p.stem for p in DATASET_MIRROR.glob("sample_*.json"))
+        stems = sorted(p.stem for p in mirror_glob("sample_*.json"))
     out = []
     for stem in stems:
-        sidecar = DATASET_MIRROR / f"{stem}.json"
+        sidecar = mirror_path(f"{stem}.json")
         if not sidecar.is_file():
             continue
         meta = json.loads(sidecar.read_text())
@@ -156,7 +156,7 @@ def prelabel_push(pi_url: str) -> None:
     import ssl
     import urllib.request
 
-    stems = [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))
+    stems = [jpg.stem for jpg in sorted(mirror_glob("sample_*.jpg"))
              if jpg.with_suffix(".json").is_file()]
     cache = prelabel(stems)
     context = ssl.create_default_context()  # household CA isn't in the system store

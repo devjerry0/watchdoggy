@@ -17,6 +17,22 @@ def _path_from_env(name: str, default: Path) -> Path:
 
 REPO = Path(__file__).resolve().parents[2]
 DATASET_MIRROR = _path_from_env("KT_DATASET_DIR", REPO / "dataset-pull")
+# The cloud volume keeps mirror files in day folders (mirror_sync.shard_of);
+# a local pull (Mac) is one flat folder, exactly as rsync'd from the Pi.
+MIRROR_SHARDED = os.environ.get("KT_MIRROR_SHARDED") == "1"
+
+
+def mirror_path(name: str) -> Path:
+    """A file in the dataset mirror, wherever this layout keeps it."""
+    if not MIRROR_SHARDED:
+        return DATASET_MIRROR / name
+    from mirror_sync import shard_of  # scripts/ sibling, no ML deps
+    return DATASET_MIRROR / shard_of(name) / name
+
+
+def mirror_glob(pattern: str):
+    """Mirror files matching a sample_* pattern across the layout."""
+    return DATASET_MIRROR.glob(f"*/{pattern}" if MIRROR_SHARDED else pattern)
 RUNS = _path_from_env("KT_RUNS_DIR", REPO / "training-runs")
 PRELABEL_CACHE = RUNS / "prelabel-cache.json"
 

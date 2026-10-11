@@ -6,8 +6,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from kitchen_training.config import (CLASS_IDS, DATASET_MIRROR,
-                                     VAL_FRACTION_MOD, log)
+from kitchen_training.config import CLASS_IDS, VAL_FRACTION_MOD, log
 from kitchen_training.dataset import labeled_sidecars, prelabel, read_frames
 from kitchen_training.fusion import fuse
 from kitchen_training.perturb import TRAIN_VARIANTS, train_variants

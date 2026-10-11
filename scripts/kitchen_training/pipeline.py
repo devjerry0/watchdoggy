@@ -15,8 +15,8 @@ import shutil
 from pathlib import Path
 
 from kitchen_training.build import build
-from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
-                                     PRELABEL_CACHE, RUNS)
+from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, PRELABEL_CACHE,
+                                     RUNS, mirror_glob)
 from kitchen_training.consensus import judge_frames
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -183,7 +183,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
 
 
 def _mirror_stems() -> list[str]:
-    return [jpg.stem for jpg in sorted(DATASET_MIRROR.glob("sample_*.jpg"))]
+    return [jpg.stem for jpg in sorted(mirror_glob("sample_*.jpg"))]
 
 
 def prelabel_phase(run_name: str, run_root: Path | None = None) -> dict:

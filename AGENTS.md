@@ -248,6 +248,14 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   ("Modal Client -> Modal Worker ... Deadline exceeded", UTC stamps, i.e.
   container-side) during the read storms. `dataset.read_frames` now reads
   ahead in parallel (prelabel, jury, build) and prelabel logs progress and
-  checkpoints the cache every 2,000 frames. Real fix pending: v2 volume
-  (no total cap, but 262,144 files per directory) with sharded folders, or
-  packed shards (Modal's advice for many small files).
+  checkpoints the cache every 2,000 frames. FIXED same day: pipeline now
+  uses watchdoggy-train-3, a v2 volume (`modal volume create --version=2`;
+  `Volume.from_name(..., version=2)`, never create_if_missing which makes
+  v1), mirror files in day folders (`mirror_sync.shard_of` = first 5
+  timestamp digits, ~1.16 days; v2 caps a folder at 262,144 files; readers
+  go through `config.mirror_path`/`mirror_glob`, flat on a Mac pull).
+  v2 read 8k sharded files at 1,120/s serial. Migration: Modal has no
+  v1->v2 tool; a 48-container parallel copy moved 191,991 files (9.2 GB)
+  in ~80 s (the v1 limit is per container), vs ~4.5 h re-uploading from
+  the Pi. The Pi's upload manifest stayed valid. v2 is beta: the Pi holds
+  the originals, so the worst case is a re-sync. Old volume kept briefly.

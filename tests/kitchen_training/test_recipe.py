@@ -120,3 +120,23 @@ def test_frames_are_read_ahead_in_order(monkeypatch):
     assert [img for _, _, img in out] == [f"img-{s}" for s in stems]
     assert peak[0] > 1                      # really parallel
     assert list(dataset.read_frames([])) == []
+
+
+def test_mirror_files_live_in_day_folders_on_the_volume(monkeypatch, tmp_path):
+    # One flat folder of ~192k files made the v1 volume ~100x slower, and v2
+    # caps a folder at 262,144 files: the cloud mirror shards by the first 5
+    # timestamp digits (~1.16 days); a local pull stays flat.
+    from mirror_sync import mirror_key, shard_of
+    config = importlib.import_module("kitchen_training.config")
+    assert shard_of("sample_1791739648418.jpg") == "17917"
+    assert shard_of(".labeled-index.json") == ""
+    assert mirror_key("sample_1791739648418.json") == "pipeline/mirror/17917/sample_1791739648418.json"
+    assert mirror_key(".labeled-index.json") == "pipeline/mirror/.labeled-index.json"
+    monkeypatch.setattr(config, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(config, "MIRROR_SHARDED", True)
+    assert config.mirror_path("sample_1791739648418.jpg") == tmp_path / "17917" / "sample_1791739648418.jpg"
+    (tmp_path / "17917").mkdir()
+    (tmp_path / "17917" / "sample_1791739648418.jpg").write_bytes(b"x")
+    assert [p.name for p in config.mirror_glob("sample_*.jpg")] == ["sample_1791739648418.jpg"]
+    monkeypatch.setattr(config, "MIRROR_SHARDED", False)
+    assert config.mirror_path("sample_1791739648418.jpg") == tmp_path / "sample_1791739648418.jpg"

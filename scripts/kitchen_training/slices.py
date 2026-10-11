@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 
-from kitchen_training.config import DATASET_MIRROR, Frame
+from kitchen_training.config import Frame, mirror_path
 
 DARK_MEAN = 60.0        # dim evening scenes (pitch-black never gets captured)
 EDGE_MARGIN_FRAC = 0.05  # a dog box touching the frame edge = half-out dog
@@ -65,7 +65,7 @@ def _tags(frame: Frame, meta: dict) -> set[str]:
 
 
 def _meta(frame: Frame) -> dict:
-    side = DATASET_MIRROR / f"{frame.stem}.json"
+    side = mirror_path(f"{frame.stem}.json")
     try:
         return json.loads(side.read_text())
     except (OSError, ValueError):

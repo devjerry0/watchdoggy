@@ -14,7 +14,7 @@ in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
 review page), and kitchen_ncnn_model/ when the gate passes.
 
-The Volume ("watchdoggy-train-2") holds the model weights (seed once with
+The Volume ("watchdoggy-train-3", v2) holds the model weights (seed once with
 kickoff --seed-models, from a machine that has models/yolo26?.pt), the
 prelabel cache, and the last few run directories.
 """
@@ -55,14 +55,16 @@ image = (
     .apt_install("libgl1", "libglib2.0-0")
     .uv_pip_install("ultralytics==8.4.88", "opencv-python~=4.10",
                     "ncnn", "pnnx")
-    .add_local_python_source("kitchen_training")
+    .add_local_python_source("kitchen_training", "mirror_sync")
 )
 
-# watchdoggy-train-2: the original volume accumulated ~10 days of unpruned
-# full-mirror copies from failed runs and degraded server-side until every
-# operation (even ls) hit Modal's edge timeout. A fresh volume took the same
-# upload in 1 second. Migrated 2026-08-25; the old volume is expendable.
-volume = modal.Volume.from_name("watchdoggy-train-2", create_if_missing=True)
+# watchdoggy-train-3, a v2 volume (2026-10-11). watchdoggy-train-2 (v1) held
+# ~192k mirror files in one folder; Modal's v1 guidance is under 50k files
+# and per-file reads ran ~100x slower than a fresh volume (5-14 frames/s).
+# v2 read the same files at ~1,100/s. The mirror lives in day folders
+# (mirror_sync.shard_of; v2 caps a folder at 262,144 files). Never
+# create_if_missing: that would make a v1 volume.
+volume = modal.Volume.from_name("watchdoggy-train-3", version=2)
 
 
 def _tar_bytes(directory: Path) -> bytes:
@@ -83,6 +85,7 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     # The deployed model's weights; training starts here (fresh from
     # yolo26n when absent) and a deployed run replaces them.
     os.environ["KT_CHAMPION_MODEL"] = str(PIPELINE_ROOT / "models/champion.pt")
+    os.environ["KT_MIRROR_SHARDED"] = "1"  # day folders on the volume
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
     # The ceiling-fit epoch cap (kitchen_training.hygiene.fit_epochs) must
     # know the real function timeout so a run never overruns it.
