@@ -100,8 +100,9 @@ is a closed loop that lives on the appliance:
    moments look alike to it. Storage is
    capped, and when the cap is reached the oldest unlabeled frames go first;
    labeled frames are never deleted, the appliance warns instead.
-2. **Machine labeling, nightly.** A cloud pass runs every night: a large
-   model (yolo26x) draws `·x` boxes for every new frame, and a **two-model
+2. **Machine labeling, weekly.** A cloud pass runs once a week (at 2am by
+   default): a large model (yolo26x) draws `·x` boxes for every new frame,
+   and a **two-model
    jury** (the deployed fine-tune plus the big model) auto-labels the frames
    it can vouch for. The jury's thresholds are not guesses: they are
    backtested against the full human-labeled corpus with the current champion
@@ -121,13 +122,23 @@ is a closed loop that lives on the appliance:
    model. In training, your labels count double the jury's.
 
    ![Label page: filter chips, the big model's boxes, filmstrip navigation, one-tap verdicts](docs/label.png)
-4. **Train.** Every couple of days (configurable), the trainer sends one job
-   to a Modal cloud GPU: label fusion, near-duplicate pruning of dogless
-   frames, blur/dark augmentation, training (GPU tier and batch size
-   auto-scale with dataset size), frame-level evaluation scored the way the
-   alarm actually fires, NCNN export, and a robustness stress test (blur,
-   darkness, overexposure, compression, camera shift). Auto-labeled frames
-   train but never enter the exam.
+4. **Train.** Every two weeks (configurable), right after a labeling pass
+   and only once at least 1,000 frames have been labeled since the last run
+   (yours and the jury's together), the trainer sends one job to a Modal
+   cloud GPU: label fusion, near-duplicate pruning of dogless frames,
+   training, frame-level evaluation scored the way the alarm actually fires,
+   NCNN export, and a robustness stress test (blur, darkness, overexposure,
+   compression, camera shift). Auto-labeled frames train but never enter
+   the exam.
+
+   Each run starts from the model that is currently deployed and fine-tunes
+   it on the whole dataset, so it never re-learns the kitchen from scratch;
+   early stopping ends the run once the frames it already knows stop
+   improving. A brand-new install, with no model of its own yet, starts from
+   the stock weights. Blur, motion and darkness copies of every frame are
+   added only while the dataset is small (under 3,000 labeled frames); after
+   that the camera's own footage covers those conditions and the copies
+   would mostly cost time.
 5. **Gate.** Challenger and incumbent sit the **identical, 100%
    human-verified held-out exam**, judged at the appliance's actual runtime
    threshold, and **the best model wins**: fewest total errors (missed dogs
@@ -143,8 +154,31 @@ is a closed loop that lives on the appliance:
    the exam grows harder as the dataset grows.
 
 Your only job is a few minutes of arbitration on the Label page now and then.
-Everything else (nightly prelabels, consensus auto-labeling, label audits,
+Everything else (weekly prelabels, consensus auto-labeling, label audits,
 scheduled training, evaluation, gated deployment) happens on its own.
+
+### What a run costs, and why
+
+Cloud cost is GPU time, and GPU time is images processed divided by speed.
+The defaults come from benchmarks at this project's exact settings, not from
+price lists:
+
+- **GPU: L40S, for training and labeling.** It trained about 420 images a
+  second against 180 on an L4, and labeled about 81 frames a second against
+  38, at the same or lower cost per image. A faster H100 was only slightly
+  quicker and about 1.7 times the price per image; an A100 was no faster
+  than an L4. Adding CPU cores changed nothing.
+- **Batch 128.** The GPUs spend much of each step on fixed overhead, so a
+  bigger batch gets more done per step. 128 was about a quarter faster than
+  32; going to 256 gained nothing more. Tiny first datasets keep a small
+  batch.
+- **No re-learning, no copies.** Starting from the deployed model and
+  skipping the augmentation copies on a big dataset are what cut a run from
+  an estimated $18 to about $2-3.
+
+The training page can override the GPU, batch and copies settings, for
+example "all 3 copies" if the robustness table ever shows blur handling
+slipping.
 
 ## The training console
 
@@ -155,6 +189,19 @@ the cloud run's stages and log streaming live while it works, recipe and
 schedule knobs, and every run's full report (threshold curves, gate
 comparison, robustness table, failure-mode slices).
 
+The knobs, with their defaults:
+
+| Setting | Default | What it does |
+|---|---|---|
+| label every (h) | 168 (weekly) | How often the labeling pass runs |
+| labeling at (h) | 2 | Hour of day the labeling pass starts |
+| train every (h, after labeling) | 336 (two weeks) | Minimum gap between training runs; a run only starts right after a labeling pass |
+| min new labels (hand + auto) | 1000 | New labels needed since the last run before training starts |
+| blur/dark copies | auto | auto = 3 copies per frame under 3,000 labeled frames, none after; or all 3, 1 per frame, off |
+| batch | auto | auto = 128 (16 for a tiny first dataset) |
+| training gpu | auto | auto = L40S; labeling also uses L40S |
+| monthly credits ($) | 30 | Hard stop for cloud spend (see below) |
+
 ![Training console: live model score, dataset composition, cloud budget, and the improvement chart](docs/training.png)
 
 Billing is pulled straight from Modal and every run records its true cost.
@@ -163,6 +210,12 @@ anything has been billed beyond credits, the trainer refuses to start cloud
 jobs and says so, both on the budget card and in the refused job's history
 entry. Self-updates still run (they come from GitHub, not Modal), and cloud
 jobs resume by themselves when the billing cycle resets.
+
+Modal requires a payment method on file before it runs any GPU job, even
+inside the free credits. The trainer's stop works between jobs, so a run
+that starts just under the limit can still finish a few dollars over it;
+setting a workspace spending limit in Modal's own billing settings is a
+good backstop.
 
 ## It maintains itself
 
