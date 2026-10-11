@@ -128,8 +128,10 @@ persist across reboots.
 > `api.github.com` for releases and the current time. Nothing else is reachable.
 > Skip this step and nothing leaves the Pi.
 
-Run this after hardening. It needs a [Modal](https://modal.com) account and copies
-your local `~/.modal.toml` to the Pi.
+Run this after hardening. It needs a [Modal](https://modal.com) account with a
+payment method on file (Modal requires one for any GPU, even within its free
+monthly credits) and copies your local `~/.modal.toml` to the Pi. Setting a
+spending limit in Modal's billing settings is a good backstop.
 
 ```sh
 ./scripts/setup-pi-trainer.sh doggy@doggypi.local
@@ -139,8 +141,8 @@ This creates a separate `trainer` user. A per-user firewall rule allows only tha
 user out to the internet, over DNS and HTTPS. The detector stays offline. The
 trainer handles:
 
-- scheduled cloud training, gated deployment of new models, and the
-  `/training` page,
+- weekly auto-labeling and training every two weeks, gated deployment of new
+  models, and the `/training` page,
 - daily self-updates from GitHub releases, with a health check and automatic
   rollback,
 - clock sync. The firewall blocks NTP and the Pi has no battery-backed clock, so

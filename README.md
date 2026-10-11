@@ -28,9 +28,10 @@ where the model is retrained.
 With the optional `trainer` user set up (`scripts/setup-pi-trainer.sh`):
 
 - **Self-training.** The Pi saves hard frames and uploads them to your Modal
-  account. There they're auto-labeled overnight and used to retrain the model
-  on a schedule. A new model is installed only if it beats the current one on a
-  held-out set of human-verified frames.
+  account. There they're auto-labeled once a week, and every two weeks the
+  current model is fine-tuned on everything labeled so far. A new model is
+  installed only if it beats the current one on a held-out set of
+  human-verified frames.
 - **Self-updates.** The Pi checks for new GitHub releases once a day, installs
   them, and rolls back if the detector doesn't come back up healthy.
 
@@ -69,8 +70,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the code layout.
 | 1080p USB webcam (e.g. Logitech C922) | $15 |
 
 You also need a Bluetooth or USB speaker (this build uses a JBL Go) and a 5V/3A
-power supply. Cloud training is optional and needs a Modal account. A training
-run costs well under $2.
+power supply. Cloud training is optional and needs a Modal account with a
+payment method on file (Modal requires one for any GPU). A training run is
+expected to cost about $2-3 and a weekly labeling pass cents, which normally
+fits inside Modal's free $30 of monthly credits.
 
 ## Getting started
 
