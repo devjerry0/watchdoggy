@@ -33,7 +33,7 @@ from kitchen_training.training import start_weights, train
 # EPOCH_IMAGE_BUDGET is anchored to 80 x ~2.7k and caps the effective epochs
 # anyway). The training page can override per run; the 10-config sweep stays
 # available manually via train_kitchen_model.py --sweep.
-DEFAULT_RECIPE = {"epochs": 80, "batch": 16, "freeze": 10, "augment": "auto"}
+DEFAULT_RECIPE = {"epochs": 120, "batch": 16, "freeze": 10, "augment": "auto"}
 KEEP_RUNS = 5
 
 
@@ -69,6 +69,29 @@ def promote_champion(best: Path) -> None:
     print(f"[pipeline] champion updated from {best}", flush=True)
 
 
+def pick_start(run_dir: Path, warm_best: Path, recipe: dict,
+               deployed_dir: Path, fire_conf: float) -> tuple[Path, dict]:
+    """Warm start vs fresh-from-base on the SAME dataset (Ash & Adams 2020:
+    warm-started nets can generalize worse). Both sit the exam; the one with
+    fewer errors (then fewer false fires; ties keep warm) goes on to the
+    normal gate. Both scores ride along in the recipe."""
+    fresh_best = train(run_dir, "local", epochs=recipe["epochs"],
+                       batch=recipe["batch"], freeze=recipe["freeze"],
+                       init=BASE_MODEL, tag="_fresh")
+    scores = {}
+    for name, weights in (("warm", warm_best), ("fresh", fresh_best)):
+        gate = deploy_gate(run_dir, export(run_dir, weights, f"{name}_ncnn_model"),
+                           deployed_dir, fire_conf)
+        scores[name] = {"errors": gate["new_errors"], "caught": gate["new"]["caught"],
+                        "false_fires": gate["new"]["false_fires"]}
+    picked = min(scores, key=lambda n: (scores[n]["errors"], scores[n]["false_fires"]))
+    print(f"[pipeline] start compare: warm {scores['warm']} vs fresh "
+          f"{scores['fresh']} -> {picked}", flush=True)
+    weights = fresh_best if picked == "fresh" else warm_best
+    return weights, {**recipe, "init_compare": {**scores, "picked": picked},
+                     "init": (BASE_MODEL if picked == "fresh" else CHAMPION_MODEL).name}
+
+
 def full_run(run_name: str, recipe: dict, fire_conf: float,
              run_root: Path) -> tuple[dict, Path | None]:
     """Build -> train -> evaluate -> export -> gate -> report. Returns the
@@ -89,8 +112,10 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     corpus = (dataset_stats["train"] + dataset_stats["augmented"]
               + dataset_stats.get("human_weighted", 0))
     ceiling = float(os.environ.get("KT_JOB_CEILING_SECONDS", 10 * 3600))
-    epochs = fit_epochs(recipe["epochs"], corpus, ceiling,
-                        recipe.get("gpu", ""), recipe["batch"])
+    # One-off experiment: a fresh model trains beside the warm start.
+    compare = bool(recipe.get("compare_init")) and CHAMPION_MODEL.is_file()
+    epochs = fit_epochs(recipe["epochs"], corpus * (2 if compare else 1),
+                        ceiling, recipe.get("gpu", ""), recipe["batch"])
     if epochs != recipe["epochs"]:
         print(f"[pipeline] {corpus} train images cannot finish "
               f"{recipe['epochs']} epochs inside the {ceiling / 3600:.0f}h "
@@ -101,6 +126,9 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
               "init": start_weights().name}
     best = train(run_dir, "local", epochs=recipe["epochs"],
                  batch=recipe["batch"], freeze=recipe["freeze"])
+    if compare:
+        best, recipe = pick_start(run_dir, best, recipe,
+                                  run_root / "deployed_ncnn_model", fire_conf)
     metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
     bundle = export(run_dir, best)
     metrics["ncnn_truth"] = ncnn_truth(run_dir, bundle)

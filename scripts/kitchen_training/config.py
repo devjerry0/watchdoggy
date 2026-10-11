@@ -43,8 +43,6 @@ MIXED_IOU_DROP = 0.6      # dog box overlapping a person this much is the person
 
 CLASS_IDS = {"person": 0, "dog": 1}
 
-MIN_PATIENCE = 10         # early stopping never gets twitchier than this
-PATIENCE_DIVISOR = 4      # patience = max(MIN_PATIENCE, epochs / this)
 
 # Hyperparameter sweep, dispatched to Modal in parallel (<=10 concurrent).
 # Base recipe (the proven anchor): epochs 80, patience 20, imgsz 640,

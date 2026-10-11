@@ -46,7 +46,7 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   probe, not `du -h`. Guards now in `scripts/kitchen_training/hygiene.py`
   (start-of-run janitor + dataset strip + `.completed` markers + a
   ceiling-fit epoch cap — epochs are NEVER scaled down just because data
-  grew, user-decided; early stopping owns convergence) and
+  grew, user-decided; the full schedule always runs, see 2026-10-11) and
   `scripts/trainer_daemon/queue.py` (per-kind failure
   backoff; one >4h failure arms it alone). Cleanup must run at the START
   of a run — a full volume prevents the success that end-of-run cleanup
@@ -207,8 +207,7 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   (plus 1:1 replay) was built and dropped the same day: after one copy per
   frame, batch 128 and the warm start, it saved ~$1-3 per run for a
   forgetting risk and cutoff bookkeeping. Every run fine-tunes
-  `champion.pt` on the full dataset; early stopping ends it once the
-  known frames stop improving. The auto-train gate `min_new_labels` counts
+  `champion.pt` on the full dataset for the full schedule. The auto-train gate `min_new_labels` counts
   hand + auto labels (`queue.labels_since`), default 1000: hand labels
   alone run ~100 a month.
 - **2026-10-11 — NCNN bundles export at the camera shape (480, 640); never
@@ -223,3 +222,18 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   `consensus._nano_scores` predict without imgsz (the jury runs the
   DEPLOYED bundle, so this fix had to reach the Pi before any 640x480
   model did); the Pi detector never passed one.
+- **2026-10-11 — Full 120-epoch schedule, no early stopping
+  (research-backed, user-decided).** `patience=epochs` in
+  `training._train_local`: ultralytics' own default is epochs 100 /
+  patience 100 (never fires); the gains come from the final phase
+  (lr decays to lrf=1%, close_mosaic=10, the YOLOX recipe) and can appear
+  after a plateau (epoch-wise double descent); our old patience 20 on a
+  379-frame val quit before it. Epochs 80 -> 120: ultralytics accumulates
+  to nbs=64 but never scales lr with batch, so batch 128 halves updates per
+  epoch; 120 x ~29k / 128 ~= 27k updates, like the Sep 7 run that was still
+  improving at its end. Auto optimizer is MuSGD (lr0 0.01) above 10k
+  iterations, AdamW below. One-off experiment: train job param
+  `compare_init` (job-only, never a setting) trains fresh-from-yolo26n
+  beside the warm start on the same build, gates both, keeps the better
+  (`pipeline.pick_start`, Ash & Adams 2020 warm-start gap); both scores
+  land in recipe.init_compare.

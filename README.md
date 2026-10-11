@@ -71,7 +71,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the code layout.
 You also need a Bluetooth or USB speaker (this build uses a JBL Go) and a 5V/3A
 power supply. Cloud training is optional and needs a Modal account with a
 payment method on file (Modal requires one for any GPU). A training run is
-expected to cost about $2-3 and a weekly labeling pass cents, which normally
+expected to cost about $6 and a weekly labeling pass under $1, which normally
 fits inside Modal's free $30 of monthly credits.
 
 ## Getting started

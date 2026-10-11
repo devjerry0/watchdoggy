@@ -62,7 +62,8 @@ def recipe_arguments(job: dict) -> list[str]:
     return ["--epochs", str(recipe["epochs"]), "--batch", str(batch(job)),
             "--freeze", str(recipe["freeze"]),
             "--fire-conf", str(runtime_confidence()),
-            "--augment", augment_mode(recipe["augment"])]
+            "--augment", augment_mode(recipe["augment"])] + (
+                ["--compare-init"] if recipe.get("compare_init") is True else [])
 
 
 def augment_mode(value: bool | str) -> str:

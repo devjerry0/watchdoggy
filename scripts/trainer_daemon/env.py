@@ -32,7 +32,7 @@ STALE_RUNNING = float(2 * CLOUD_JOB_CEILING + 3600)
 # Recipe + schedule defaults; the training page's settings file overrides.
 # Schedule (user-decided 2026-10-11): label weekly, train every other
 # labeling pass (~twice a month).
-SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
+SETTINGS_DEFAULTS = {"epochs": 120, "batch": "auto", "freeze": 10,
                      "augment": "auto", "train_interval_hours": 336,
                      "label_interval_hours": 168,
                      "min_new_labels": 1000, "nightly_prelabel_hour": 2,

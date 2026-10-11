@@ -4,7 +4,7 @@ from .conftest import _training_client as _client
 def test_settings_roundtrip_and_validation(tmp_path):
     c, _ = _client(tmp_path)
     d = c.get("/api/training/settings").json()
-    assert d["epochs"] == 200 and d["augment"] == "auto" and d["batch"] == "auto"
+    assert d["epochs"] == 120 and d["augment"] == "auto" and d["batch"] == "auto"
     r = c.post("/api/training/settings",
                json={"epochs": 120, "augment": False, "nightly_prelabel_hour": 3})
     assert r.json()["settings"]["epochs"] == 120
@@ -86,3 +86,13 @@ def test_min_new_labels_allows_thousands(tmp_path):
                   json={"min_new_labels": 5000}).status_code == 200
     assert c.post("/api/training/settings",
                   json={"min_new_labels": 200000}).status_code == 422
+
+
+def test_compare_init_is_a_train_job_flag_only(tmp_path):
+    c, _ = _client(tmp_path)
+    job = c.post("/api/training/request",
+                 json={"kind": "train", "params": {"compare_init": True}}).json()["job"]
+    assert job["params"]["compare_init"] is True
+    # Never a saved setting: it would double every run's training.
+    c.post("/api/training/settings", json={"compare_init": True})
+    assert "compare_init" not in c.get("/api/training/settings").json()

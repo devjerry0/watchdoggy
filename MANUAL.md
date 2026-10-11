@@ -131,9 +131,9 @@ is a closed loop that lives on the appliance:
    the exam.
 
    Each run starts from the model that is currently deployed and fine-tunes
-   it on the whole dataset, so it never re-learns the kitchen from scratch;
-   early stopping ends the run once the frames it already knows stop
-   improving. A brand-new install, with no model of its own yet, starts from
+   it on the whole dataset, so it never re-learns the kitchen from scratch.
+   Every run goes the full 120 epochs and keeps its best epoch. A
+   brand-new install, with no model of its own yet, starts from
    the stock weights. Blur, motion and darkness copies of every frame are
    added only while the dataset is small (under 3,000 labeled frames); after
    that the camera's own footage covers those conditions and the copies
@@ -190,7 +190,20 @@ The defaults come from benchmarks at this project's exact training settings:
   32; going to 256 gained nothing more. Tiny first datasets keep a small
   batch.
 - **Fine-tuning the deployed model, without copies on a big dataset.**
-  Together these cut a run from an estimated $18 to about $2-3.
+  Together these cut the cost of each epoch by about four times.
+- **120 epochs, always run to the end.** Ultralytics lowers the learning
+  rate over the planned epochs and switches mosaic off for the last 10;
+  that last stretch is where late gains come from (it is the YOLOX
+  recipe), and models can keep improving after an apparent plateau
+  ("epoch-wise double descent", Nakkiran et al. 2020). Stopping early on
+  the small exam quit before it. Batch 128 also halves the weight updates
+  per epoch, so 120 epochs gives about as many updates as the September
+  run that was still improving when it ended. A run costs about $6.
+
+Starting each run from the deployed model can generalize slightly worse
+than training fresh on everything (Ash and Adams 2020). The first run after
+this change trains both from the same data and keeps whichever scores
+better on the exam, to measure it here.
 
 The training page can override the GPU, batch and copies settings, for
 example "all 3 copies" if the robustness table ever shows blur handling

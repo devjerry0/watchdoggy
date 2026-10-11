@@ -158,6 +158,11 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
             raise HTTPException(status_code=422,
                                 detail="kind must be train or prelabel")
         params = jobqueue.validated(body.get("params") or {})
+        # One-off experiment flag, accepted on a train JOB only and never as a
+        # saved setting (it doubles that run's training): train a fresh model
+        # beside the warm start and keep the better one.
+        if kind == "train" and (body.get("params") or {}).get("compare_init") is True:
+            params["compare_init"] = True
         pending = [j for j in jobqueue.list_jobs(Path(settings.jobs_dir))
                    if j.get("kind") == kind
                    and j.get("status") in ("queued", "running")]
