@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
+SETTINGS_DEFAULTS = {"epochs": 120, "batch": "auto", "freeze": 10,
                      "augment": "auto",  # auto | all | one | off (build.py)
                      "train_interval_hours": 336, "label_interval_hours": 168,
                      "min_new_labels": 1000, "nightly_prelabel_hour": 2,

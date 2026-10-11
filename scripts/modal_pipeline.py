@@ -172,7 +172,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
 @app.local_entrypoint()
 def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
             seed_models: str = "", epochs: int = 200, batch: int = 16,
-            freeze: int = 10, augment: str = "auto",
+            freeze: int = 10, augment: str = "auto", compare_init: bool = False,
             fire_conf: float = 0.7) -> None:
     """Full pipeline run. --seed-models <dir> uploads yolo26n/x.pt first
     (one-time, from a machine that has them). --fire-conf is the appliance's
@@ -181,7 +181,7 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
                        Path(deployed_dir) if deployed_dir else None,
                        Path(seed_models) if seed_models else None)
     recipe = {"epochs": epochs, "batch": batch, "freeze": freeze,
-              "augment": augment, "gpu": GPU}
+              "augment": augment, "gpu": GPU, "compare_init": compare_init}
     print(f"[pipeline] running the full pipeline in the cloud "
           f"(gate @ {fire_conf}) ...")
     results, bundle_tar = run_pipeline.remote(run_name, recipe, fire_conf)

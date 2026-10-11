@@ -8,8 +8,7 @@ import sys
 from pathlib import Path
 
 from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, IMAGE_SIZE,
-                                     MIN_PATIENCE, PATIENCE_DIVISOR, REPO,
-                                     SWEEP_CONFIGS, device, log, sh)
+                                     REPO, SWEEP_CONFIGS, device, log, sh)
 
 MODAL_SCRIPT = REPO / "scripts/modal_train.py"
 MODAL_SETUP_HINT = "Modal job failed. First time? Run: uv run modal setup"
@@ -20,9 +19,10 @@ def start_weights() -> Path:
     return CHAMPION_MODEL if CHAMPION_MODEL.is_file() else BASE_MODEL
 
 
-def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
+def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int,
+                 init: Path | None = None, tag: str = "") -> None:
     from ultralytics import YOLO
-    init = start_weights()
+    init = init or start_weights()
     log(f"training from {init.name} locally: epochs<={epochs}, "
         f"freeze={freeze}, device={device()}")
     model = YOLO(str(init))
@@ -30,19 +30,26 @@ def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
     # -- a 200-epoch run reads the dataset 200x otherwise.
     model.train(data=str(run_dir / "dataset/data.yaml"),
                 epochs=epochs,
-                patience=max(MIN_PATIENCE, epochs // PATIENCE_DIVISOR),
+                # The full schedule, always (user-decided): ultralytics decays
+                # the learning rate over the configured epochs and switches
+                # mosaic off for the last 10, and that final phase is where
+                # late gains come from. Early stopping on a noisy 379-frame val
+                # set quit before it. best.pt is still the best epoch.
+                patience=epochs,
                 imgsz=IMAGE_SIZE, batch=batch, freeze=freeze, device=device(),
-                cache=True, project=str(run_dir), name="train", exist_ok=True,
+                cache=True, project=str(run_dir), name=f"train{tag}", exist_ok=True,
                 verbose=False, plots=True)
     # Ultralytics decides the save dir (its settings can reroute project
     # paths); ask the trainer where it actually wrote instead of guessing.
     produced = Path(model.trainer.save_dir) / "weights/best.pt"
     if not produced.is_file():
         return
-    shutil.copyfile(produced, run_dir / "best.pt")
+    shutil.copyfile(produced, run_dir / f"best{tag}.pt")
 
 
-def _train_modal(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
+def _train_modal(run_dir: Path, epochs: int, batch: int, freeze: int,
+                 init: Path | None = None, tag: str = "") -> None:
+    # Mac-side legacy backend: always the stock base, one output.
     log(f"dispatching training job to Modal: epochs<={epochs}, freeze={freeze}")
     try:
         sh(["uv", "run", "modal", "run", str(MODAL_SCRIPT),
@@ -57,11 +64,13 @@ TRAIN_BACKENDS = {"local": _train_local, "modal": _train_modal}
 
 
 def train(run_dir: Path, backend: str, epochs: int, batch: int,
-          freeze: int) -> Path:
+          freeze: int, init: Path | None = None, tag: str = "") -> Path:
+    """init = starting weights (default: champion, else base); tag keeps a
+    second training's output apart (best{tag}.pt, train{tag}/)."""
     # Both backends land the weights at run_dir/best.pt -- the one contract
     # eval/export rely on, wherever the GPU actually was.
-    TRAIN_BACKENDS[backend](run_dir, epochs, batch, freeze)
-    best = run_dir / "best.pt"
+    TRAIN_BACKENDS[backend](run_dir, epochs, batch, freeze, init, tag)
+    best = run_dir / f"best{tag}.pt"
     if not best.is_file():
         sys.exit("[train] FAILED: no best.pt produced")
     log(f"best weights: {best}")

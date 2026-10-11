@@ -72,3 +72,11 @@ def test_augment_setting_maps_legacy_booleans_to_modes():
     assert runs.augment_mode(True) == "auto"
     assert runs.augment_mode(False) == "off"
     assert runs.augment_mode("one") == "one"
+
+
+def test_compare_flag_reaches_the_cloud_run(monkeypatch):
+    from trainer_daemon import runs
+    monkeypatch.setattr(runs, "batch", lambda job: 128)
+    monkeypatch.setattr(runs, "runtime_confidence", lambda: 0.6)
+    assert "--compare-init" in runs.recipe_arguments({"params": {"compare_init": True}})
+    assert "--compare-init" not in runs.recipe_arguments({"params": {}})

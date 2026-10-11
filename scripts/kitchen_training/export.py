@@ -7,13 +7,13 @@ from pathlib import Path
 from kitchen_training.config import EXPORT_SHAPE, log
 
 
-def export(run_dir: Path, best: Path) -> Path:
+def export(run_dir: Path, best: Path, name: str = "kitchen_ncnn_model") -> Path:
     from ultralytics import YOLO
     log("exporting NCNN bundle for the Pi ...")
     YOLO(str(best)).export(format="ncnn", imgsz=EXPORT_SHAPE)
     # ultralytics writes <stem>_ncnn_model next to the weights file
     exported = best.with_name(best.stem + "_ncnn_model")
-    bundle = run_dir / "kitchen_ncnn_model"
+    bundle = run_dir / name
     if bundle.exists():
         shutil.rmtree(bundle)
     shutil.move(str(exported), bundle)
