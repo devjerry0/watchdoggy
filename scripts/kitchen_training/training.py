@@ -7,19 +7,25 @@ import subprocess
 import sys
 from pathlib import Path
 
-from kitchen_training.config import (BASE_MODEL, IMAGE_SIZE, MIN_PATIENCE,
-                                     PATIENCE_DIVISOR, REPO, SWEEP_CONFIGS,
-                                     device, log, sh)
+from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, IMAGE_SIZE,
+                                     MIN_PATIENCE, PATIENCE_DIVISOR, REPO,
+                                     SWEEP_CONFIGS, device, log, sh)
 
 MODAL_SCRIPT = REPO / "scripts/modal_train.py"
 MODAL_SETUP_HINT = "Modal job failed. First time? Run: uv run modal setup"
 
 
+def start_weights() -> Path:
+    """The deployed model's weights when they exist, else the stock base."""
+    return CHAMPION_MODEL if CHAMPION_MODEL.is_file() else BASE_MODEL
+
+
 def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int) -> None:
     from ultralytics import YOLO
-    log(f"training {BASE_MODEL.name} locally: epochs<={epochs}, "
+    init = start_weights()
+    log(f"training from {init.name} locally: epochs<={epochs}, "
         f"freeze={freeze}, device={device()}")
-    model = YOLO(str(BASE_MODEL))
+    model = YOLO(str(init))
     # cache=True decodes each image once into RAM instead of once per epoch
     # -- a 200-epoch run reads the dataset 200x otherwise.
     model.train(data=str(run_dir / "dataset/data.yaml"),

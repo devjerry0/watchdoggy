@@ -65,3 +65,10 @@ def test_zero_budget_means_no_cloud(tmp_path, monkeypatch):
           {"metered_cost": 0.0, "billed_cost": 0.0, "credits_used": 0.0},
           budget=0)
     assert billing.credit_refusal("train") is not None
+
+
+def test_augment_setting_maps_legacy_booleans_to_modes():
+    from trainer_daemon import runs
+    assert runs.augment_mode(True) == "auto"
+    assert runs.augment_mode(False) == "off"
+    assert runs.augment_mode("one") == "one"

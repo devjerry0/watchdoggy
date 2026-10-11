@@ -80,6 +80,9 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     os.environ["KT_DATASET_DIR"] = str(PIPELINE_ROOT / "mirror")
     os.environ["KT_RUNS_DIR"] = str(PIPELINE_ROOT / "training-runs")
     os.environ["KT_BASE_MODEL"] = str(PIPELINE_ROOT / "models/yolo26n.pt")
+    # The deployed model's weights; training starts here (fresh from
+    # yolo26n when absent) and a deployed run replaces them.
+    os.environ["KT_CHAMPION_MODEL"] = str(PIPELINE_ROOT / "models/champion.pt")
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
     # The ceiling-fit epoch cap (kitchen_training.hygiene.fit_epochs) must
     # know the real function timeout so a run never overruns it.
@@ -169,7 +172,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
 @app.local_entrypoint()
 def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
             seed_models: str = "", epochs: int = 200, batch: int = 16,
-            freeze: int = 10, augment: bool = True,
+            freeze: int = 10, augment: str = "auto",
             fire_conf: float = 0.7) -> None:
     """Full pipeline run. --seed-models <dir> uploads yolo26n/x.pt first
     (one-time, from a machine that has them). --fire-conf is the appliance's

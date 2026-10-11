@@ -4,7 +4,7 @@ from .conftest import _training_client as _client
 def test_settings_roundtrip_and_validation(tmp_path):
     c, _ = _client(tmp_path)
     d = c.get("/api/training/settings").json()
-    assert d["epochs"] == 200 and d["augment"] is True and d["batch"] == "auto"
+    assert d["epochs"] == 200 and d["augment"] == "auto" and d["batch"] == "auto"
     r = c.post("/api/training/settings",
                json={"epochs": 120, "augment": False, "nightly_prelabel_hour": 3})
     assert r.json()["settings"]["epochs"] == 120
@@ -67,3 +67,13 @@ def test_batch_setting_accepts_auto_and_tiers_only(tmp_path):
     assert c.post("/api/training/request",
                   json={"kind": "train",
                         "params": {"batch": "auto"}}).json()["job"]["params"]["batch"] == "auto"
+
+
+def test_augment_modes_and_batch_128_validated(tmp_path):
+    c, _ = _client(tmp_path)
+    for mode in ("auto", "all", "one", "off", True, False):
+        assert c.post("/api/training/settings",
+                      json={"augment": mode}).status_code == 200
+    assert c.post("/api/training/settings", json={"augment": 1}).status_code == 422
+    assert c.post("/api/training/settings",
+                  json={"batch": 128}).json()["settings"]["batch"] == 128

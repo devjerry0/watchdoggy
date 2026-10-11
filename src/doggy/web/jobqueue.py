@@ -15,14 +15,17 @@ from pathlib import Path
 from fastapi import HTTPException
 
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
-                     "augment": True,
+                     "augment": "auto",  # auto | all | one | off (build.py)
                      "train_interval_hours": 336, "label_interval_hours": 168,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
                      "monthly_credits": 30,  # Modal starter free tier
                      "gpu": "auto",  # auto = trainer_daemon.env.AUTO_GPU (L40S)
                      "auto_update": True}  # daily GitHub release check
 _GPU_CHOICES = {"auto", "T4", "L4", "L40S", "A10G", "A100"}
-_BATCH_CHOICES = {"auto", 8, 16, 32, 64}
+_BATCH_CHOICES = {"auto", 8, 16, 32, 64, 128}
+# auto = all 3 photometric copies per frame while the dataset is small, one
+# once it's big; legacy booleans (pre-modes settings files) still validate.
+_AUGMENT_MODES = ("auto", "all", "one", "off")
 _INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),
                "train_interval_hours": (6, 720), "label_interval_hours": (24, 720),
                "min_new_labels": (1, 100),
@@ -86,12 +89,16 @@ def validated(body: dict) -> dict:
             raise HTTPException(status_code=422,
                                 detail=f"{key} must be {low}..{high}")
         clean[key] = value
-    for flag in ("augment", "auto_update"):
-        if flag not in body:
-            continue
-        if not isinstance(body[flag], bool):
-            raise HTTPException(status_code=422, detail=f"{flag} must be bool")
-        clean[flag] = body[flag]
+    if "auto_update" in body:
+        if not isinstance(body["auto_update"], bool):
+            raise HTTPException(status_code=422, detail="auto_update must be bool")
+        clean["auto_update"] = body["auto_update"]
+    if "augment" in body:
+        value = body["augment"]
+        if not (isinstance(value, bool) or value in _AUGMENT_MODES):
+            raise HTTPException(status_code=422,
+                                detail="augment must be auto, all, one, or off")
+        clean["augment"] = body["augment"]
     if "gpu" in body:
         if body["gpu"] not in _GPU_CHOICES:
             raise HTTPException(status_code=422,
@@ -100,7 +107,7 @@ def validated(body: dict) -> dict:
     if "batch" in body:
         if body["batch"] not in _BATCH_CHOICES:
             raise HTTPException(status_code=422,
-                                detail="batch must be auto, 8, 16, 32, or 64")
+                                detail="batch must be auto, 8, 16, 32, 64, or 128")
         clean["batch"] = body["batch"]
     return clean
 

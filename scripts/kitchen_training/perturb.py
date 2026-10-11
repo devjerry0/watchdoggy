@@ -54,12 +54,15 @@ def shift(image: np.ndarray) -> np.ndarray:
     return cv2.resize(cropped, (width, height))
 
 
-def train_variants(image: np.ndarray) -> dict[str, np.ndarray]:
-    """Photometric variants that keep every box valid: motion blur (a dog
-    trotting through a 2fps exposure), defocus, and a dusk-dark kitchen."""
-    return {"mblur": motion_blur(image),
-            "gblur": defocus(image),
-            "dark": darken(image)}
+# Photometric variants that keep every box valid: motion blur (a dog
+# trotting through a 2fps exposure), defocus, and a dusk-dark kitchen.
+TRAIN_VARIANTS = {"mblur": motion_blur, "gblur": defocus, "dark": darken}
+
+
+def train_variants(image: np.ndarray,
+                   tags: tuple[str, ...] = tuple(TRAIN_VARIANTS)) -> dict[str, np.ndarray]:
+    """The requested variants (all three by default), computed lazily."""
+    return {tag: TRAIN_VARIANTS[tag](image) for tag in tags}
 
 
 def stress_variants(image: np.ndarray) -> dict[str, np.ndarray]:
