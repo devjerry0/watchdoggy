@@ -15,16 +15,31 @@ PUSH_WARNINGS_SHOWN = 3   # after this many, failures are only counted
 # Reading frames off the Modal Volume one at a time ran ~6 frames/s (each
 # read ~150 ms) with the GPU 95% idle: 46k frames took ~2h. Reads are
 # latency-bound and parallelize well, so READ_WORKERS threads fetch ahead,
-# at most two chunks in flight (bounded memory), yielded in order.
-READ_WORKERS = 32
+# at most two chunks in flight (bounded memory), yielded in order. 8 is
+# plenty: on L40S the real labeling loop ran 62 frames/s with 8 readers and
+# 59 with 32 (yolo26x itself is the limit), and on the v2 volume 8 readers
+# fetched ~1,900 frames/s.
+READ_WORKERS = 8
 READ_CHUNK = 256
 PRELABEL_PROGRESS_EVERY = 2000  # log + checkpoint the cache this often
+
+
+# A frame being written when the Pi loses power is left as a 0-byte file
+# (2026-10-11: two at 13:23, right after an unplug); imdecode asserts on an
+# empty buffer and took the whole labeling job down at frame 46,000.
+# Unreadable frames come back as image=None and every consumer skips them.
+UNREADABLE = {"dogs": [], "people": [], "shape": None, "unreadable": True}
 
 
 def _read_frame(stem: str):
     import cv2
     import numpy as np
-    data = mirror_path(f"{stem}.jpg").read_bytes()
+    try:
+        data = mirror_path(f"{stem}.jpg").read_bytes()
+    except OSError:
+        return b"", None
+    if not data:
+        return data, None
     return data, cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
 
 
@@ -140,11 +155,18 @@ def prelabel(stems: list[str]) -> dict:
         log(f"prelabeling {len(todo)} new frames with {PRELABEL_MODEL.name} ...")
         model = YOLO(str(PRELABEL_MODEL))
         started = time.monotonic()
+        unreadable = 0
         for done, (stem, _, image) in enumerate(read_frames(todo), 1):
-            cache[stem] = _prelabel_one(model, image)
+            unreadable += image is None
+            # Cached as "no boxes, unreadable" so later phases never KeyError
+            # on it and no pass re-reads it.
+            cache[stem] = (_prelabel_one(model, image) if image is not None
+                           else dict(UNREADABLE))
             if done % PRELABEL_PROGRESS_EVERY == 0:
                 _checkpoint(cache, done, len(todo), started)
         _save_cache(cache)
+        if unreadable:
+            log(f"skipped {unreadable} unreadable frames (empty or corrupt files)")
     log(f"prelabels ready ({len(stems)} frames, {len(todo)} newly computed)")
     return cache
 

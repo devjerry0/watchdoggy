@@ -179,6 +179,9 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
     ordered = sorted(samples, key=lambda s: not s[2].get("human_label"))
     frames = read_frames([stem for stem, _, _ in ordered])
     for (stem, verdict, meta), (_, data, image) in zip(ordered, frames):
+        if image is None:  # empty or corrupt file (see dataset.UNREADABLE)
+            stats["dropped"].append((stem, "unreadable image file"))
+            continue
         stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
         lines, source = fuse(stem, verdict, meta, prelabels_by_stem[stem])
         if lines is None:
