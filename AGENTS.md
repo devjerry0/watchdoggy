@@ -296,3 +296,9 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   pairs (two on 2026-10-11 13:23): every reader must skip an empty file,
   and `apply-cloud-results` counts one as missing instead of failing the
   batch.
+- **2026-10-11 — Mirror uploads are sized by bytes.** Every label change
+  edits a sidecar, so the sync after a big labeling pass re-uploads tens of
+  thousands of 1-3 KB json files. At a flat 100 files per request (plus a
+  10 MB manifest rewrite per request on the SD card) 39k sidecars took
+  ~20 min of a 26 min pass. `mirror_sync.upload_chunks` caps a request at
+  8 MB or 2,000 files, which keeps jpg requests the same size.

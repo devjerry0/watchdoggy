@@ -215,3 +215,14 @@ def test_index_records_which_sidecars_have_boxes(tmp_path):
     index = json.loads((tmp_path / ".labeled-index.json").read_text())
     assert index == {"sample_1": [None, None, 0, 0, 1],
                      "sample_2": ["dog", None, 0, 0, 0]}
+
+
+def test_uploads_are_sized_by_bytes():
+    from mirror_sync import UPLOAD_CHUNK_MAX_FILES, upload_chunks
+    jpgs = {f"sample_{i}.jpg": 100_000 for i in range(200)}      # ~19 MB
+    assert [len(c) for c in upload_chunks(list(jpgs), jpgs)] == [83, 83, 34]
+    sidecars = {f"sample_{i}.json": 2_000 for i in range(5000)}
+    assert [len(c) for c in upload_chunks(list(sidecars), sidecars)] == \
+        [UPLOAD_CHUNK_MAX_FILES, UPLOAD_CHUNK_MAX_FILES, 1000]
+    huge = {"sample_big.jpg": 20 << 20, "sample_a.json": 10}
+    assert list(upload_chunks(list(huge), huge)) == [["sample_big.jpg"], ["sample_a.json"]]
