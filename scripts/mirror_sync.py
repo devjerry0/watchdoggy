@@ -21,7 +21,12 @@ import time
 from pathlib import Path
 
 MIRROR = "pipeline/mirror"
-UPLOAD_CHUNK_FILES = 100
+# Requests are sized by bytes: ~80 jpgs or up to 2,000 small sidecars.
+# A flat 100 files per request made a 39k-sidecar resync (after a big
+# labeling pass) take ~20 min of per-request overhead and manifest rewrites.
+UPLOAD_CHUNK_BYTES = 8 << 20
+UPLOAD_CHUNK_MAX_FILES = 2000
+PROGRESS_EVERY_S = 10
 CHUNK_RETRIES = 5
 CHUNK_RETRY_WAIT_S = 20
 
@@ -41,6 +46,21 @@ def shard_of(name: str) -> str:
 def mirror_key(name: str) -> str:
     """Volume path of a mirror file."""
     return posixpath.join(MIRROR, shard_of(name), name)
+
+
+def upload_chunks(names: list[str], sizes: dict[str, int]):
+    """Consecutive runs of names under UPLOAD_CHUNK_BYTES (a single bigger
+    file goes alone) and UPLOAD_CHUNK_MAX_FILES."""
+    chunk, total = [], 0
+    for name in names:
+        if chunk and (total + sizes[name] > UPLOAD_CHUNK_BYTES
+                      or len(chunk) >= UPLOAD_CHUNK_MAX_FILES):
+            yield chunk
+            chunk, total = [], 0
+        chunk.append(name)
+        total += sizes[name]
+    if chunk:
+        yield chunk
 
 
 def _put_chunk(volume, dataset_dir: Path, chunk: list[str]) -> None:
@@ -118,15 +138,16 @@ def sync_mirror(volume, dataset_dir: Path) -> None:
     print(f"[pipeline] mirror sync: {len(changed)} to upload, "
           f"{len(deleted)} to delete, {len(current) - len(changed)} unchanged",
           flush=True)
-    for start in range(0, len(changed), UPLOAD_CHUNK_FILES):
-        chunk = changed[start:start + UPLOAD_CHUNK_FILES]
+    done, last_print = 0, time.monotonic()
+    for chunk in upload_chunks(changed, {n: current[n][1] for n in changed}):
         _put_chunk(volume, dataset_dir, chunk)
         for name in chunk:
             old[name] = current[name]
         manifest_file.write_text(json.dumps(old))  # resume point
-        print(f"[pipeline]   uploaded "
-              f"{min(start + UPLOAD_CHUNK_FILES, len(changed))}/{len(changed)}",
-              flush=True)
+        done += len(chunk)
+        if done == len(changed) or time.monotonic() - last_print >= PROGRESS_EVERY_S:
+            print(f"[pipeline]   uploaded {done}/{len(changed)}", flush=True)
+            last_print = time.monotonic()
     for name in deleted:
         try:
             volume.remove_file(mirror_key(name))
