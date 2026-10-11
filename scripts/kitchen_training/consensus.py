@@ -36,10 +36,9 @@ AUTO_PERSON_NANO_CONF = 0.5
 # labels, and lowering it re-litigates frames the human had right.
 AUDIT_DOG_NANO_CONF = 0.6
 
-# The nano jury scan: sweep low so quietness is measurable, at the
-# appliance's inference size.
+# The nano jury scan: sweep low so quietness is measurable, at the deployed
+# bundle's own export shape (no imgsz, exactly as the appliance runs it).
 NANO_SCAN_CONF = 0.1
-NANO_IMAGE_SIZE = 640
 
 
 def consensus_verdict(x_entry: dict, nano_dog: float,
@@ -65,8 +64,8 @@ def _sidecar_meta(stem: str) -> dict:
 def _nano_scores(nano, stem: str) -> tuple[float, float]:
     """(max dog conf, max person conf) from the deployed nano on one frame."""
     prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
-                              conf=NANO_SCAN_CONF, imgsz=NANO_IMAGE_SIZE,
-                              device="cpu", verbose=False)[0]
+                              conf=NANO_SCAN_CONF, device="cpu",
+                              verbose=False)[0]
     nano_dog, nano_person = 0.0, 0.0
     for box in prediction.boxes:
         label = prediction.names[int(box.cls[0])]

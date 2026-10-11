@@ -33,7 +33,11 @@ PRELABEL_CONF = 0.45      # big-model boxes below this aren't trusted as labels
 FIRE_CONF = 0.7           # the appliance's default alarm threshold
 EVAL_CONF_FLOOR = 0.25    # predict floor: low enough to score every threshold
 THRESHOLDS = (0.5, 0.6, 0.7, 0.8)  # the eval scores the whole curve
-IMAGE_SIZE = 640          # train/predict input size (matches the Pi's export)
+IMAGE_SIZE = 640          # train/prelabel input size
+# The NCNN bundle's input (h, w) = the camera frame, so the Pi skips the 25%
+# letterbox padding a square export needs (1.30x faster per frame; exam:
+# same accuracy, 5-vs-3 discordant dog frames). Score bundles WITHOUT imgsz.
+EXPORT_SHAPE = (480, 640)
 VAL_FRACTION_MOD = 4      # stem-hash % 4 == 0 -> val (~25%)
 MIXED_IOU_DROP = 0.6      # dog box overlapping a person this much is the person
 
