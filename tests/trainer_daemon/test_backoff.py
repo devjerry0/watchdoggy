@@ -153,3 +153,65 @@ def test_synthesize_queues_again_once_backoff_expires(tmp_path, monkeypatch):
              "updated_at": time.time() - 172_800 - i}))  # 2 days ago
     job = q.synthesize_job(q.jobs())
     assert job is not None and job["kind"] == "train"
+
+
+def test_synthesize_labels_before_training(tmp_path, monkeypatch):
+    # Both due: the nightly auto-labeling goes first so the next training
+    # run sees its labels (user-decided order).
+    jobs_dir = _seed_queue_env(tmp_path, monkeypatch, failures=0)
+    (tmp_path / "ds" / "sample_new.json").write_text(json.dumps({}))
+    job = q.synthesize_job(q.jobs())
+    assert job is not None and job["kind"] == "prelabel"
+    assert (jobs_dir / f"{job['id']}.json").is_file()
+
+
+def test_failing_labeler_never_blocks_training(tmp_path, monkeypatch):
+    import time
+    jobs_dir = _seed_queue_env(tmp_path, monkeypatch, failures=0)
+    (tmp_path / "ds" / "sample_new.json").write_text(json.dumps({}))
+    for i in range(BACKOFF_AFTER):
+        jid = f"job_{3000 + i}"
+        (jobs_dir / f"{jid}.json").write_text(json.dumps(
+            {"id": jid, "kind": "prelabel", "status": "queued",
+             "requested_at": time.time() - 400 - i}))
+        (jobs_dir / f"{jid}.result.json").write_text(json.dumps(
+            {"status": "failed", "detail": "boom",
+             "updated_at": time.time() - 300 - i}))
+    job = q.synthesize_job(q.jobs())
+    assert job is not None and job["kind"] == "train"
+
+
+def _done_prelabel(jobs_dir, hours_ago):
+    import time
+    stamp = time.time() - hours_ago * 3600
+    (jobs_dir / "job_4000.json").write_text(json.dumps(
+        {"id": "job_4000", "kind": "prelabel", "status": "queued",
+         "requested_at": stamp - 600}))
+    (jobs_dir / "job_4000.result.json").write_text(json.dumps(
+        {"status": "done", "detail": "", "updated_at": stamp}))
+
+
+def test_labeling_waits_out_its_week(tmp_path, monkeypatch):
+    # Labeled 3 days ago, new frames waiting: no labeling yet (weekly), and
+    # no training either -- that pass is too old to count as fresh labels.
+    jobs_dir = _seed_queue_env(tmp_path, monkeypatch, failures=0)
+    (tmp_path / "ds" / "sample_new.json").write_text(json.dumps({}))
+    _done_prelabel(jobs_dir, hours_ago=72)
+    assert q.synthesize_job(q.jobs()) is None
+
+
+def test_training_runs_right_after_a_labeling_pass(tmp_path, monkeypatch):
+    jobs_dir = _seed_queue_env(tmp_path, monkeypatch, failures=0)
+    (tmp_path / "ds" / "sample_new.json").write_text(json.dumps({}))
+    _done_prelabel(jobs_dir, hours_ago=1)
+    job = q.synthesize_job(q.jobs())
+    assert job is not None and job["kind"] == "train"
+
+
+def test_labeling_comes_due_again_after_a_week(tmp_path, monkeypatch):
+    jobs_dir = _seed_queue_env(tmp_path, monkeypatch, failures=0)
+    (tmp_path / "ds" / "sample_new.json").write_text(json.dumps({}))
+    _done_prelabel(jobs_dir, hours_ago=7 * 24 + 1)
+    monkeypatch.setattr(q, "last_nightly_slot", lambda hour: __import__("time").time() - 60)
+    job = q.synthesize_job(q.jobs())
+    assert job is not None and job["kind"] == "prelabel"

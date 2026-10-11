@@ -164,3 +164,15 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   functions", policy change between Sep 7 and Oct 11). A Pi without
   internet can't refresh `jobs/billing.json`, so a stale "credits spent"
   file silently keeps the credit gate closed (Sep 13 - Oct 11: zero jobs).
+- **2026-10-11 — Schedule + labeling GPU (user-decided).** Label weekly
+  (`label_interval_hours` 168, at `nightly_prelabel_hour`); train every
+  `train_interval_hours` 336 but ONLY on the pass right after a labeling
+  pass (`FRESH_LABELS_SECONDS`), so every run trains on fresh auto-labels
+  (~twice a month). Escapes so it can't deadlock: nothing awaits labels, or
+  the labeler is in failure backoff (`trainer_daemon/queue.py`
+  synthesize_job, labeling checked first). Labeling GPU is chosen
+  separately (`AUTO_LABEL_GPU` -> `DOGGY_LABEL_GPU` -> `run_prelabels`):
+  yolo26x one-frame-per-call on real mirror frames, cpu=4: T4 21 frames/s,
+  L4 38, L40S 81.5 -> L40S same $/frame as L4 at 2x speed, T4 priciest per
+  frame. Batched ultralytics predict over a path list OOMs (17.6 GiB ask at
+  batch 8 or 32) -- not worth chasing at ~10 min per 46k frames.

@@ -187,15 +187,17 @@
         <div class="field check">
           <input id="f_augment" type="checkbox">
           <label for="f_augment">blur/dark augmentation</label></div>
-        <div class="field"><label for="f_interval">train every (h)</label>
-          <input id="f_interval" type="number" min="6" max="336"></div>
+        <div class="field"><label for="f_interval">train every (h, after labeling)</label>
+          <input id="f_interval" type="number" min="6" max="720"></div>
+        <div class="field"><label for="f_labelint">label every (h)</label>
+          <input id="f_labelint" type="number" min="24" max="720"></div>
         <div class="field"><label for="f_minlabels">min new labels</label>
           <input id="f_minlabels" type="number" min="1" max="100"></div>
-        <div class="field"><label for="f_nightly">nightly ·x at (h)</label>
+        <div class="field"><label for="f_nightly">labeling at (h)</label>
           <input id="f_nightly" type="number" min="0" max="23"></div>
         <div class="field"><label for="f_credits">monthly credits ($)</label>
           <input id="f_credits" type="number" min="0" max="100000"></div>
-        <div class="field"><label for="f_gpu">cloud gpu</label>
+        <div class="field"><label for="f_gpu">training gpu</label>
           <select id="f_gpu">
             <option value="auto">auto (L40S)</option>
             <option>T4</option><option>L4</option><option>L40S</option>
@@ -461,7 +463,8 @@ async function showReport(jobId){
 
 // -- settings + actions -----------------------------------------------------
 const FIELDS = {epochs:"f_epochs", freeze:"f_freeze",
-                train_interval_hours:"f_interval", min_new_labels:"f_minlabels",
+                train_interval_hours:"f_interval", label_interval_hours:"f_labelint",
+                min_new_labels:"f_minlabels",
                 nightly_prelabel_hour:"f_nightly", monthly_credits:"f_credits"};
 function fillSettings(s){
   for (const [key, id] of Object.entries(FIELDS))
@@ -561,11 +564,11 @@ async function refresh(){
     ? "a " + active.kind + " job is " + active.status
     : (d.next_auto_train
        ? (d.next_auto_train < Date.now()/1000
-          ? "next auto training: on the trainer's next pass (needs "
+          ? "next auto training: right after the next labeling pass (needs "
             + d.settings.min_new_labels + "+ new labels)"
-          : "next auto training in ~"
+          : "next auto training: after the first labeling pass in ~"
             + Math.max(1, Math.round((d.next_auto_train - Date.now()/1000)/3600))
-            + "h if " + d.settings.min_new_labels + "+ new labels exist")
+            + "h, if " + d.settings.min_new_labels + "+ new labels exist")
        : "first training run hasn't happened yet");
   renderSoftware(d);
 }

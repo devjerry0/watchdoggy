@@ -7,6 +7,7 @@ import subprocess
 
 from trainer_daemon.env import (
     AUTO_GPU,
+    AUTO_LABEL_GPU,
     BATCH_TIERS,
     DATASET_DIR,
     DOGGY_ROOT,
@@ -36,12 +37,18 @@ def batch(job: dict) -> int:
 def modal_run(entrypoint: str, arguments: list[str], job_id: str) -> None:
     # The full cloud-run output streams into the job's log file, which the
     # training page tails live via /api/training/log/{job_id}.
+    # Training and labeling are different workloads with different best
+    # GPUs: the pipeline reads DOGGY_TRAIN_GPU for the train container and
+    # DOGGY_LABEL_GPU for the prelabel container.
     chosen_gpu = gpu()
-    log(f"cloud GPU: {chosen_gpu}")
+    labeling = entrypoint == "kickoff_prelabels"
+    log(f"cloud GPU: {AUTO_LABEL_GPU if labeling else chosen_gpu} "
+        f"({'labeling' if labeling else 'training'})")
     with open(JOBS_DIR / f"{job_id}.log", "ab") as log_file:
         subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
                         "--dataset-dir", str(DATASET_DIR)] + arguments,
                        check=True, cwd=DOGGY_ROOT,
                        timeout=MODAL_SUBPROCESS_TIMEOUT,
                        stdout=log_file, stderr=subprocess.STDOUT,
-                       env={**os.environ, "DOGGY_TRAIN_GPU": chosen_gpu})
+                       env={**os.environ, "DOGGY_TRAIN_GPU": chosen_gpu,
+                            "DOGGY_LABEL_GPU": AUTO_LABEL_GPU})
