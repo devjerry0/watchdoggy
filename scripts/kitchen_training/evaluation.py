@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from kitchen_training.config import (DATASET_MIRROR, EVAL_CONF_FLOOR, FIRE_CONF,
-                                     IMAGE_SIZE, THRESHOLDS, Frame, device, log)
+                                     THRESHOLDS, Frame, device, log)
 from kitchen_training.dataset import labeled_sidecars
 
 CONF_DECIMALS = 3
@@ -29,8 +29,12 @@ def eval_frames(run_dir: Path) -> list[Frame]:
 
 
 def _max_dog_conf(model, source, run_device: str) -> float:
-    """Max dog confidence in one image (a path or a decoded array)."""
-    prediction = model.predict(source, conf=EVAL_CONF_FLOOR, imgsz=IMAGE_SIZE,
+    """Max dog confidence in one image (a path or a decoded array).
+
+    No imgsz: an NCNN bundle must run at its own export shape, as the Pi
+    runs it. Forcing 640 squares a 640x480 frame for a 640x480 graph and
+    wrecks the score (exam 135 -> 109 caught). .pt models default to 640."""
+    prediction = model.predict(source, conf=EVAL_CONF_FLOOR,
                                device=run_device, verbose=False)[0]
     return round(max(
         (float(box.conf[0]) for box in prediction.boxes

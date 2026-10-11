@@ -56,3 +56,39 @@ def test_promote_champion_replaces_it_atomically(tmp_path, monkeypatch):
     pipeline.promote_champion(best)
     assert champion.read_bytes() == b"new weights"
     assert not champion.with_suffix(".pt.tmp").exists()
+
+
+class _RecordingModel:
+    """Captures predict() kwargs; returns one empty result."""
+
+    def __init__(self):
+        self.kwargs = None
+
+    def predict(self, source, **kwargs):
+        self.kwargs = kwargs
+
+        class _Boxes(list):
+            pass
+
+        class _Result:
+            boxes = _Boxes()
+            names = {0: "person", 1: "dog"}
+        return [_Result()]
+
+
+def test_bundles_are_scored_at_their_own_export_shape():
+    # Forcing imgsz=640 on a 640x480 bundle squared every frame and dropped
+    # the exam from 135 to 109 caught; the Pi never passes imgsz.
+    evaluation = importlib.import_module("kitchen_training.evaluation")
+    consensus = importlib.import_module("kitchen_training.consensus")
+    model = _RecordingModel()
+    evaluation._max_dog_conf(model, "frame.jpg", "cpu")
+    assert "imgsz" not in model.kwargs
+    model = _RecordingModel()
+    consensus._nano_scores(model, "sample_1")
+    assert "imgsz" not in model.kwargs
+
+
+def test_export_matches_the_camera_frame():
+    config = importlib.import_module("kitchen_training.config")
+    assert config.EXPORT_SHAPE == (480, 640)  # (h, w) of the C922's 640x480

@@ -211,10 +211,15 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   known frames stop improving. The auto-train gate `min_new_labels` counts
   hand + auto labels (`queue.labels_since`), default 1000: hand labels
   alone run ~100 a month.
-- **2026-10-11 — Do not export the NCNN bundle at 640x480 (yet).** It would
-  skip 25% letterbox padding (160 of 640 rows are grey) for 1.30x speed, but
-  the pnnx conversion at non-square input lost 28 of 153 exam dogs (137/3 ->
-  109/7 at 0.6) while the same weights in PyTorch at 480x640 scored 137/3
-  (136/4 on the NCNN fallback head). Keep `export.py` at square
-  `IMAGE_SIZE`; retry only with a newer pnnx and the exam as judge (see
-  skill yolo26-ncnn-export-head-swap).
+- **2026-10-11 — NCNN bundles export at the camera shape (480, 640); never
+  pass imgsz when scoring a bundle.** The square export spent 25% of every
+  inference on letterbox padding (160 of 640 rows grey); `EXPORT_SHAPE`
+  is 1.30x faster per frame. Scored correctly it matches the square bundle
+  on the exam (135/4 vs 137/3; 5-vs-3 discordant dog frames = noise) and
+  PyTorch at that shape (136/4). Passing `imgsz=640` to a 640x480 bundle
+  makes ultralytics square the frame for a graph built for 640x480 and the
+  score collapses (109/7) -- that first looked like a pnnx bug; pnnx
+  20260526 and 20260704 export identically. `evaluation._max_dog_conf` and
+  `consensus._nano_scores` predict without imgsz (the jury runs the
+  DEPLOYED bundle, so this fix had to reach the Pi before any 640x480
+  model did); the Pi detector never passed one.
