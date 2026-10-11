@@ -161,7 +161,16 @@ def run_label_pass(run_name: str) -> dict:
     todo = plan["todo"]
     chunks = [todo[i:i + JURY_CHUNK] for i in range(0, len(todo), JURY_CHUNK)]
     print(f"[pipeline] jury fanned out over {len(chunks)} containers", flush=True)
-    parts = list(run_consensus_chunk.map([run_name] * len(chunks), chunks))
+    parts, judged, started = [], 0, time.monotonic()
+    # Unordered: report each chunk as it lands (the merge doesn't care).
+    for part in run_consensus_chunk.map([run_name] * len(chunks), chunks,
+                                        order_outputs=False):
+        parts.append(part)
+        judged += len(part["auto_verdicts"]) + len(part["disputes"]) \
+            + len(part["declined"])
+        print(f"[pipeline] jury {len(parts)}/{len(chunks)} chunks done "
+              f"({judged}/{len(todo)} frames, "
+              f"{(time.monotonic() - started) / 60:.1f} min)", flush=True)
     results.update(finish_jury_phase(run_name, plan, parts))
     volume.commit()
     return results

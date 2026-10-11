@@ -164,7 +164,7 @@ def prelabel(stems: list[str]) -> dict:
         model = YOLO(str(PRELABEL_MODEL))
         started = time.monotonic()
         unreadable = 0
-        stems, images = [], []
+        batch_stems, images = [], []
         for done, (stem, _, image) in enumerate(read_frames(todo), 1):
             if image is None:
                 # Cached as "no boxes, unreadable" so later phases never
@@ -172,15 +172,15 @@ def prelabel(stems: list[str]) -> dict:
                 cache[stem] = dict(UNREADABLE)
                 unreadable += 1
             else:
-                stems.append(stem)
+                batch_stems.append(stem)
                 images.append(image)
             if len(images) == PRELABEL_BATCH:
-                _label_batch(model, stems, images, cache)
-                stems, images = [], []
+                _label_batch(model, batch_stems, images, cache)
+                batch_stems, images = [], []
             if done % PRELABEL_PROGRESS_EVERY == 0:
                 _checkpoint(cache, done, len(todo), started)
         if images:
-            _label_batch(model, stems, images, cache)
+            _label_batch(model, batch_stems, images, cache)
         _save_cache(cache)
         if unreadable:
             log(f"skipped {unreadable} unreadable frames (empty or corrupt files)")

@@ -156,7 +156,7 @@ def test_empty_or_corrupt_frames_read_as_none(monkeypatch, tmp_path):
     assert dataset._read_frame("sample_missing") == (b"", None)
 
 
-def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path):
+def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path, capsys):
     dataset = importlib.import_module("kitchen_training.dataset")
     calls = []
 
@@ -175,3 +175,4 @@ def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path):
     cache = dataset.prelabel([s for s, _, _ in frames])
     assert calls == [16, 16, 7]                       # 39 readable frames in batches
     assert cache["s5"]["unreadable"] is True and len(cache) == 40
+    assert "prelabels ready (40 frames, 40 newly computed)" in capsys.readouterr().out
