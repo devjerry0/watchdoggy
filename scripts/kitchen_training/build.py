@@ -8,7 +8,7 @@ from pathlib import Path
 
 from kitchen_training.config import (CLASS_IDS, DATASET_MIRROR,
                                      VAL_FRACTION_MOD, log)
-from kitchen_training.dataset import labeled_sidecars, prelabel
+from kitchen_training.dataset import labeled_sidecars, prelabel, read_frames
 from kitchen_training.fusion import fuse
 from kitchen_training.perturb import TRAIN_VARIANTS, train_variants
 
@@ -118,18 +118,18 @@ def _count_boxes(lines: list[str], into: dict) -> None:
 
 
 def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: str,
-                 stats: dict, split: str, human: bool, image) -> None:
+                 stats: dict, split: str, human: bool, image, data: bytes) -> None:
+    """data = the original JPEG bytes (already read): written as-is, so the
+    mirror is never read twice."""
     label_text = "\n".join(lines) + ("\n" if lines else "")
-    shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg",
-                    dataset_dir / f"images/{split}/{stem}.jpg")
+    (dataset_dir / f"images/{split}/{stem}.jpg").write_bytes(data)
     (dataset_dir / f"labels/{split}/{stem}.txt").write_text(label_text)
     stats[split] += 1
     _count_boxes(lines, stats["boxes"][split])
     if split != "train":
         return
     for n in range(HUMAN_WEIGHT_COPIES if human else 0):
-        shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg",
-                        dataset_dir / f"images/train/{stem}_w{n + 2}.jpg")
+        (dataset_dir / f"images/train/{stem}_w{n + 2}.jpg").write_bytes(data)
         (dataset_dir / f"labels/train/{stem}_w{n + 2}.txt").write_text(label_text)
         stats["human_weighted"] += 1
     _write_augmented(dataset_dir, stem, label_text, image, stats, augment)
@@ -158,7 +158,6 @@ def _log_build(stats: dict) -> None:
 
 
 def build(run_dir: Path, augment: bool | str = False) -> dict:
-    import cv2
     samples = labeled_sidecars(include_auto=True)
     mode = augment_mode(augment, len(samples))
     log(f"building dataset from {len(samples)} verdicted frames "
@@ -179,7 +178,8 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
     # Humans first: with dedup active, a human-labeled frame must never be
     # the one dropped when an auto near-duplicate exists.
     ordered = sorted(samples, key=lambda s: not s[2].get("human_label"))
-    for stem, verdict, meta in ordered:
+    frames = read_frames([stem for stem, _, _ in ordered])
+    for (stem, verdict, meta), (_, data, image) in zip(ordered, frames):
         stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
         lines, source = fuse(stem, verdict, meta, prelabels_by_stem[stem])
         if lines is None:
@@ -191,14 +191,13 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
             stats[source_counters[source]] += 1
         is_auto = not meta.get("human_label")
         split = _split(stem, meta, is_auto)
-        image = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
         if (split == "train" and verdict in DEDUP_VERDICTS
                 and _near_duplicate(image, seen_hashes)):
             stats["dedup_dropped"] += 1
             continue
         stats["auto_labeled"] += is_auto
         _write_frame(dataset_dir, stem, lines, mode, stats, split,
-                     human=not is_auto, image=image)
+                     human=not is_auto, image=image, data=data)
 
     (dataset_dir / "data.yaml").write_text(
         f"path: {dataset_dir.resolve()}\ntrain: images/train\nval: images/val\n"
