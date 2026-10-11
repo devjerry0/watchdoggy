@@ -62,7 +62,16 @@ def recipe_arguments(job: dict) -> list[str]:
     return ["--epochs", str(recipe["epochs"]), "--batch", str(batch(job)),
             "--freeze", str(recipe["freeze"]),
             "--fire-conf", str(runtime_confidence()),
-            "--augment" if recipe["augment"] else "--no-augment"]
+            "--augment", augment_mode(recipe["augment"])]
+
+
+def augment_mode(value: bool | str) -> str:
+    """Settings files written before the modes existed hold a boolean."""
+    if value is True:
+        return "auto"
+    if value is False:
+        return "off"
+    return value
 
 
 def _scorecard(summary: dict, started: float, before: dict | None) -> dict:

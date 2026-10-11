@@ -176,3 +176,20 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   L4 38, L40S 81.5 -> L40S same $/frame as L4 at 2x speed, T4 priciest per
   frame. Batched ultralytics predict over a path list OOMs (17.6 GiB ask at
   batch 8 or 32) -- not worth chasing at ~10 min per 46k frames.
+- **2026-10-11 — Training cost is the recipe, not the GPU.** The Sep 7
+  run's epoch was 13,929 real frames + 41,787 pre-written blur/motion/dark
+  copies (75% copies) and every run re-learned from stock yolo26n. Now:
+  `augment` = auto|all|one|off (`build.augment_mode`; auto = all 3 copies
+  below `AUTO_ALL_VARIANTS_BELOW` verdicted frames -- the new-install case --
+  then ONE copy per frame, picked by a stable stem hash); auto batch 128
+  (`BATCH_TIERS`; L40S 32->422, 64->468, 128->532, 256->540 img/s, so 128
+  is the ceiling; ultralytics accumulates to an effective batch of 64, so 128
+  also halves the optimizer steps); every run starts from the deployed
+  model's weights `pipeline/models/champion.pt` (`training.start_weights`,
+  fresh from yolo26n when absent) and a gate-deployed run replaces it
+  (`pipeline.promote_champion`, copy-then-rename). Seeded from
+  training-runs/20260907-011158/best.pt (NCNN md5 matched the Pi's model;
+  backup in ~/watchdoggy-backups/). **A manual/Mac-side deploy must also
+  copy its best.pt to pipeline/models/champion.pt**, or the next run warm-
+  starts from a stale model. Robustness (stress row) is an indicator, not a
+  gate: if "one" copy weakens it, set augment to "all".

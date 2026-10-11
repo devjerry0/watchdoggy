@@ -10,7 +10,7 @@ from kitchen_training.config import (CLASS_IDS, DATASET_MIRROR,
                                      VAL_FRACTION_MOD, log)
 from kitchen_training.dataset import labeled_sidecars, prelabel
 from kitchen_training.fusion import fuse
-from kitchen_training.perturb import train_variants
+from kitchen_training.perturb import TRAIN_VARIANTS, train_variants
 
 # Near-duplicate control (train split only; the exam is never thinned):
 # a cooking session yields dozens of frames of the same scene. NON-DOG
@@ -28,6 +28,13 @@ _DHASH_SIDE = 8
 # down-weighting (0.3-0.5x is the field range), implemented as up-weighting
 # human frames by duplication since YOLO has no per-sample loss weights.
 HUMAN_WEIGHT_COPIES = 1  # one extra copy = human frames weigh 2x
+# Augmentation modes (training page setting). "all" writes every variant per
+# train frame -- the recipe that won on the 168-frame set (Aug 2026) and the
+# right call for a new install with little data. At 14k frames it made 75%
+# of every epoch copies (the run's biggest cost), so "auto" switches to ONE
+# variant per frame once the dataset is past AUTO_ALL_VARIANTS_BELOW.
+AUGMENT_MODES = ("auto", "all", "one", "off")
+AUTO_ALL_VARIANTS_BELOW = 3000  # verdicted frames
 
 
 def split_for(stem: str) -> str:
@@ -69,11 +76,33 @@ def _near_duplicate(image, seen: list[int]) -> bool:
     return False
 
 
+def augment_mode(augment: bool | str, verdicted: int) -> str:
+    """Resolve the setting to "all", "one" or "off". Legacy booleans: True
+    meant "augment" and now means auto, False means off."""
+    if augment is True or augment == "auto":
+        return "all" if verdicted < AUTO_ALL_VARIANTS_BELOW else "one"
+    if augment is False:
+        return "off"
+    return augment
+
+
+def variant_tags(stem: str, mode: str) -> tuple[str, ...]:
+    """Which variants a train frame gets. "one" picks by a stable hash of the
+    stem, so a rebuild writes the same copies and the three kinds stay evenly
+    spread over the dataset."""
+    tags = tuple(TRAIN_VARIANTS)
+    if mode == "all":
+        return tags
+    if mode == "one":
+        return (tags[int(hashlib.md5(stem.encode()).hexdigest(), 16) % len(tags)],)
+    return ()
+
+
 def _write_augmented(dataset_dir: Path, stem: str, label_text: str,
-                     image, stats: dict) -> None:
+                     image, stats: dict, mode: str) -> None:
     """Train-split only -- the held-out exam stays pristine originals."""
     import cv2
-    for tag, variant in train_variants(image).items():
+    for tag, variant in train_variants(image, variant_tags(stem, mode)).items():
         cv2.imwrite(str(dataset_dir / f"images/train/{stem}_{tag}.jpg"), variant)
         (dataset_dir / f"labels/train/{stem}_{tag}.txt").write_text(label_text)
         stats["augmented"] += 1
@@ -86,7 +115,7 @@ def _count_boxes(lines: list[str], into: dict) -> None:
         into[key] += 1
 
 
-def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: bool,
+def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: str,
                  stats: dict, split: str, human: bool, image) -> None:
     label_text = "\n".join(lines) + ("\n" if lines else "")
     shutil.copyfile(DATASET_MIRROR / f"{stem}.jpg",
@@ -101,8 +130,7 @@ def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: bool,
                         dataset_dir / f"images/train/{stem}_w{n + 2}.jpg")
         (dataset_dir / f"labels/train/{stem}_w{n + 2}.txt").write_text(label_text)
         stats["human_weighted"] += 1
-    if augment:
-        _write_augmented(dataset_dir, stem, label_text, image, stats)
+    _write_augmented(dataset_dir, stem, label_text, image, stats, augment)
 
 
 def _new_stats() -> dict:
@@ -127,10 +155,12 @@ def _log_build(stats: dict) -> None:
         log(f"  NEEDS BOXES: {stem} ({why})")
 
 
-def build(run_dir: Path, augment: bool = False) -> dict:
+def build(run_dir: Path, augment: bool | str = False) -> dict:
     import cv2
     samples = labeled_sidecars(include_auto=True)
-    log(f"building dataset from {len(samples)} verdicted frames")
+    mode = augment_mode(augment, len(samples))
+    log(f"building dataset from {len(samples)} verdicted frames "
+        f"(augmentation: {mode})")
     prelabels_by_stem = prelabel([stem for stem, _, _ in samples])
 
     dataset_dir = run_dir / "dataset"
@@ -165,11 +195,12 @@ def build(run_dir: Path, augment: bool = False) -> dict:
             stats["dedup_dropped"] += 1
             continue
         stats["auto_labeled"] += is_auto
-        _write_frame(dataset_dir, stem, lines, augment, stats, split,
+        _write_frame(dataset_dir, stem, lines, mode, stats, split,
                      human=not is_auto, image=image)
 
     (dataset_dir / "data.yaml").write_text(
         f"path: {dataset_dir.resolve()}\ntrain: images/train\nval: images/val\n"
         "names:\n  0: person\n  1: dog\n")
+    stats["augment_mode"] = mode
     _log_build(stats)
     return stats

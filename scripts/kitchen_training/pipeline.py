@@ -15,7 +15,8 @@ import shutil
 from pathlib import Path
 
 from kitchen_training.build import build
-from kitchen_training.config import BASE_MODEL, DATASET_MIRROR, PRELABEL_CACHE, RUNS
+from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
+                                     PRELABEL_CACHE, RUNS)
 from kitchen_training.consensus import judge_frames
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -25,14 +26,14 @@ from kitchen_training.hygiene import (fit_epochs, janitor, mark_completed,
                                       strip_dataset)
 from kitchen_training.report import report
 from kitchen_training.slices import calibration, slice_report
-from kitchen_training.training import train
+from kitchen_training.training import start_weights, train
 
 # The proven recipe on the grown corpus: 80 epochs (the old 300-frame-era
 # "long" 200-epoch sweep winner predates the v1.0.17 retune; hygiene's
 # EPOCH_IMAGE_BUDGET is anchored to 80 x ~2.7k and caps the effective epochs
 # anyway). The training page can override per run; the 10-config sweep stays
 # available manually via train_kitchen_model.py --sweep.
-DEFAULT_RECIPE = {"epochs": 80, "batch": 16, "freeze": 10, "augment": True}
+DEFAULT_RECIPE = {"epochs": 80, "batch": 16, "freeze": 10, "augment": "auto"}
 KEEP_RUNS = 5
 
 
@@ -56,6 +57,16 @@ def prune_old_runs(runs_dir: Path) -> None:
     run_dirs = sorted(p for p in runs_dir.glob("*") if p.is_dir())
     for stale in run_dirs[:-KEEP_RUNS]:
         shutil.rmtree(stale, ignore_errors=True)
+
+
+def promote_champion(best: Path) -> None:
+    """The deployed bundle's weights become the next run's starting point.
+    Copy-then-rename: a crash mid-copy never leaves a torn champion."""
+    CHAMPION_MODEL.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CHAMPION_MODEL.with_suffix(".pt.tmp")
+    shutil.copyfile(best, tmp)
+    os.replace(tmp, CHAMPION_MODEL)
+    print(f"[pipeline] champion updated from {best}", flush=True)
 
 
 def full_run(run_name: str, recipe: dict, fire_conf: float,
@@ -86,6 +97,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
               f"ceiling: capping to {epochs}", flush=True)
         recipe = {**recipe, "epochs_requested": recipe["epochs"],
                   "epochs": epochs}
+    recipe = {**recipe, "augment_mode": dataset_stats["augment_mode"],
+              "init": start_weights().name}
     best = train(run_dir, "local", epochs=recipe["epochs"],
                  batch=recipe["batch"], freeze=recipe["freeze"])
     metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
@@ -128,6 +141,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "ncnn_heldout": gate["new"],
         "exam_suspects": suspects,
     }
+    if gate["deploy"]:
+        promote_champion(best)
     # The built dataset (2+ files per frame) is what hit the Volume's
     # 500k-inode limit; the bundle, weights and report stay for forensics.
     strip_dataset(run_dir)

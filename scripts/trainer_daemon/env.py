@@ -33,7 +33,7 @@ STALE_RUNNING = float(2 * CLOUD_JOB_CEILING + 3600)
 # Schedule (user-decided 2026-10-11): label weekly, train every other
 # labeling pass (~twice a month).
 SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
-                     "augment": True, "train_interval_hours": 336,
+                     "augment": "auto", "train_interval_hours": 336,
                      "label_interval_hours": 168,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
                      "gpu": "auto", "auto_update": True,
@@ -49,9 +49,10 @@ AUTO_GPU = "L40S"
 # T4 is the priciest per frame. Same card as training today, but the two
 # workloads differ, so they are chosen independently.
 AUTO_LABEL_GPU = "L40S"
-# batch grows with data but stays small enough for ~30+ optimizer
-# steps/epoch.
-BATCH_TIERS = ((2500, 64), (800, 32), (0, 16))
+# auto batch. Benchmarked 2026-10-11 on L40S: batch 32 422 img/s, 64 468,
+# 128 532, 256 540 -- 128 is the ceiling (+26%, -21% cost per image). Tiny
+# first-day datasets keep 16 so an epoch still has ~30+ optimizer steps.
+BATCH_TIERS = ((800, 128), (0, 16))
 
 
 def settings() -> dict:
