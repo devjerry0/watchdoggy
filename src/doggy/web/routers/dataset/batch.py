@@ -55,7 +55,13 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
             if not safe.startswith("sample_") or not side.is_file():
                 applied["missing"] += 1
                 continue
-            meta = json.loads(side.read_text())
+            try:
+                meta = json.loads(side.read_text())
+            except ValueError:
+                # A power cut mid-write leaves an empty sidecar (Oct 2026);
+                # one bad file must not drop the rest of the batch.
+                applied["missing"] += 1
+                continue
             if safe in prelabels:
                 apply_prelabels(meta, model, prelabels[safe])
                 applied["prelabels"] += 1

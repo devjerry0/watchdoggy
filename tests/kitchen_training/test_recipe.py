@@ -176,3 +176,42 @@ def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path, ca
     assert calls == [16, 16, 7]                       # 39 readable frames in batches
     assert cache["s5"]["unreadable"] is True and len(cache) == 40
     assert "prelabels ready (40 frames, 40 newly computed)" in capsys.readouterr().out
+
+
+def test_boxes_the_pi_lacks_are_resent_even_when_cached(monkeypatch, tmp_path):
+    import json
+    cache = {"sample_new": {"dogs": [[1, 1, 5, 5]], "people": []},
+             "sample_lost": {"dogs": [], "people": [[2, 2, 6, 6]]},
+             "sample_had": {"dogs": [], "people": []},
+             "sample_old_index": {"dogs": [], "people": []}}
+    (tmp_path / "cache.json").write_text(json.dumps(cache))
+    (tmp_path / ".labeled-index.json").write_text(json.dumps({
+        "sample_lost": [None, None, 0, 0, 0],      # cached, Pi never got boxes
+        "sample_had": [None, None, 0, 0, 1],
+        "sample_old_index": [None, None, 0, 0]}))  # pre-field index: leave it
+    monkeypatch.setattr(pipeline, "PRELABEL_CACHE", tmp_path / "cache.json")
+    monkeypatch.setattr(pipeline, "DATASET_MIRROR", tmp_path)
+    sent = pipeline.fresh_prelabels({"sample_lost", "sample_had", "sample_old_index"})
+    assert sorted(sent) == ["sample_lost", "sample_new"]
+    assert sent["sample_lost"] == [{"label": "person", "box": [2, 2, 6, 6]}]
+
+
+def test_index_records_which_sidecars_have_boxes(tmp_path):
+    import json
+    from mirror_sync import _write_index
+
+    class FakeVolume:
+        def batch_upload(self, force=False):
+            class Up:
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+                def put_file(self, *a): pass
+            return Up()
+
+    (tmp_path / "sample_1.json").write_text(json.dumps({"prelabels": {"boxes": []}}))
+    (tmp_path / "sample_2.json").write_text(json.dumps({"human_label": "dog"}))
+    (tmp_path / "sample_3.json").write_text("")    # power cut mid-write
+    _write_index(FakeVolume(), tmp_path)
+    index = json.loads((tmp_path / ".labeled-index.json").read_text())
+    assert index == {"sample_1": [None, None, 0, 0, 1],
+                     "sample_2": ["dog", None, 0, 0, 0]}

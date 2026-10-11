@@ -284,3 +284,15 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   `WEB_WORKER_NICE`. A FastAPI sync handler keeps running after its
   client times out: check sidecar mtimes before assuming a timed-out
   write did nothing.
+- **2026-10-11 — Machine boxes reach the Pi by "what the Pi lacks", not
+  "what this pass computed".** The labeling pass that computed 46k boxes
+  died on the empty jpg after its cache checkpoints; the rerun found them
+  cached, so `fresh_prelabels` never sent them and 46,188 sidecars had no
+  boxes on the label page (the jury and training read the cloud cache and
+  were fine). The shipped index now carries a 5th field, `has_boxes`
+  (`mirror_sync._write_index`); `pipeline.fresh_prelabels` sends new boxes
+  plus every cached frame the index marks as lacking them. Index readers
+  take `entry[:4]`. Unplugging the Pi mid-write leaves 0-byte jpg + json
+  pairs (two on 2026-10-11 13:23): every reader must skip an empty file,
+  and `apply-cloud-results` counts one as missing instead of failing the
+  batch.

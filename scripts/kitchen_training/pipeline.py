@@ -15,8 +15,8 @@ import shutil
 from pathlib import Path
 
 from kitchen_training.build import build
-from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, PRELABEL_CACHE,
-                                     RUNS, mirror_glob)
+from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
+                                     PRELABEL_CACHE, RUNS, mirror_glob)
 from kitchen_training.consensus import finish_jury, judge_stems, jury_plan
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -43,9 +43,17 @@ def cached_stems() -> set[str]:
 
 
 def fresh_prelabels(cache_before: set[str]) -> dict:
+    """Boxes for the Pi: this pass's new ones, plus cached frames the Pi's
+    index says still lack boxes. A pass that dies before its results reach
+    the Pi has already cached its boxes, so they never count as new again
+    (Oct 2026: 46k frames went missing that way)."""
     cache = json.loads(PRELABEL_CACHE.read_text())
+    index_file = DATASET_MIRROR / ".labeled-index.json"
+    index = json.loads(index_file.read_text()) if index_file.is_file() else {}
+    lacking = {stem for stem, entry in index.items()
+               if len(entry) > 4 and not entry[4]}
     fresh = {}
-    for stem in set(cache) - cache_before:
+    for stem in (set(cache) - cache_before) | (lacking & set(cache)):
         entry = cache[stem]
         fresh[stem] = ([{"label": "dog", "box": box} for box in entry["dogs"]]
                        + [{"label": "person", "box": box}

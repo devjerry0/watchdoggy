@@ -78,12 +78,12 @@ def _labeled_stems(include_auto: bool) -> list[str] | None:
     the mirror ({stem: [human, auto, settled, disputed]}). On a Volume's
     network filesystem, globbing and reading tens of thousands of sidecars
     to find the labeled few took the better part of an hour; the uploader
-    already knows and says so in one file."""
+    already knows and says so in one file. Later fields are ignored."""
     index = DATASET_MIRROR / ".labeled-index.json"
     if not index.is_file():
         return None  # local/dev mirrors: fall back to the full scan
     entries = json.loads(index.read_text())
-    return sorted(stem for stem, (human, auto, _, _) in entries.items()
+    return sorted(stem for stem, (human, auto, *_) in entries.items()
                   if human or (include_auto and auto))
 
 
