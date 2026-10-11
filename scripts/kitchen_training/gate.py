@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR
+from kitchen_training.config import mirror_path
 from kitchen_training.evaluation import curve, dog_confs, eval_frames, score
 
 # The exam's own audit: yesterday's jurors can't catch label errors that only
@@ -61,7 +61,7 @@ def exam_suspects(run_dir: Path, bundle: Path) -> dict:
     confs = dog_confs(model, frames, "cpu")
     suspects = {}
     for frame in frames:
-        meta = json.loads((DATASET_MIRROR / f"{frame.stem}.json").read_text())
+        meta = json.loads(mirror_path(f"{frame.stem}.json").read_text())
         if meta.get("dispute_settled_at"):
             continue  # a human already arbitrated this one
         conf = confs[frame.stem]

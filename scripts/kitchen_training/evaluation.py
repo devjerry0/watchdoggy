@@ -11,8 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from kitchen_training.config import (DATASET_MIRROR, EVAL_CONF_FLOOR, FIRE_CONF,
-                                     THRESHOLDS, Frame, device, log)
+from kitchen_training.config import (EVAL_CONF_FLOOR, FIRE_CONF, THRESHOLDS,
+                                     Frame, device, log, mirror_path)
 from kitchen_training.dataset import labeled_sidecars
 
 CONF_DECIMALS = 3
@@ -21,7 +21,7 @@ CONF_DECIMALS = 3
 def eval_frames(run_dir: Path) -> list[Frame]:
     val_stems = {p.stem for p in (run_dir / "dataset/images/val").glob("*.jpg")}
     frames = [Frame(stem, verdict in ("dog", "dog_mixed"), stem in val_stems,
-                    DATASET_MIRROR / f"{stem}.jpg")
+                    mirror_path(f"{stem}.jpg"))
               for stem, verdict, _ in labeled_sidecars()]
     if not frames:
         sys.exit("[train] FAILED: no labeled frames to evaluate")

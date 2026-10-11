@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kitchen_training.config import (DATASET_MIRROR, FIRE_CONF, THRESHOLDS, log)
+from kitchen_training.config import (FIRE_CONF, THRESHOLDS, log, mirror_glob)
 from kitchen_training.evaluation import rank_key
 
 
@@ -38,7 +38,7 @@ def _leaderboard_md(metrics: dict, winner: str) -> list[str]:
 
 def _truth_by_stem(known_stems: dict) -> dict[str, bool]:
     truth = {}
-    for sidecar in sorted(DATASET_MIRROR.glob("sample_*.json")):
+    for sidecar in sorted(mirror_glob("sample_*.json")):
         if sidecar.stem not in known_stems:
             continue
         verdict = json.loads(sidecar.read_text()).get("human_label")

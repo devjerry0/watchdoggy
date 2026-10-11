@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR, RUNS
+from kitchen_training.config import DATASET_MIRROR, RUNS, mirror_path
 from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
@@ -58,7 +58,7 @@ def consensus_verdict(x_entry: dict, nano_dog: float,
 
 
 def _sidecar_meta(stem: str) -> dict:
-    sidecar = DATASET_MIRROR / f"{stem}.json"
+    sidecar = mirror_path(f"{stem}.json")
     return json.loads(sidecar.read_text()) if sidecar.is_file() else {}
 
 
