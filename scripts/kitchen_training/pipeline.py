@@ -15,8 +15,8 @@ import shutil
 from pathlib import Path
 
 from kitchen_training.build import build
-from kitchen_training.config import (BASE_MODEL, CHAMPION_META, CHAMPION_MODEL,
-                                     DATASET_MIRROR, PRELABEL_CACHE, RUNS)
+from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
+                                     PRELABEL_CACHE, RUNS)
 from kitchen_training.consensus import judge_frames
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -59,29 +59,13 @@ def prune_old_runs(runs_dir: Path) -> None:
         shutil.rmtree(stale, ignore_errors=True)
 
 
-def champion_cutoff() -> float | None:
-    """The newest label the deployed model trained on, when this run starts
-    from it. None = fresh run on everything (no champion or no record)."""
-    if start_weights() != CHAMPION_MODEL or not CHAMPION_META.is_file():
-        return None
-    try:
-        return float(json.loads(CHAMPION_META.read_text())["data_cutoff"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-
-
-def promote_champion(best: Path, data_cutoff: float, run_name: str) -> None:
+def promote_champion(best: Path) -> None:
     """The deployed bundle's weights become the next run's starting point.
-    Copy-then-rename, weights before the record: a crash in between leaves
-    new weights with the OLD cutoff, so the next run trains on more data,
-    never less."""
+    Copy-then-rename: a crash mid-copy never leaves a torn champion."""
     CHAMPION_MODEL.parent.mkdir(parents=True, exist_ok=True)
     tmp = CHAMPION_MODEL.with_suffix(".pt.tmp")
     shutil.copyfile(best, tmp)
     os.replace(tmp, CHAMPION_MODEL)
-    meta_tmp = CHAMPION_META.with_suffix(".json.tmp")
-    meta_tmp.write_text(json.dumps({"data_cutoff": data_cutoff, "run": run_name}))
-    os.replace(meta_tmp, CHAMPION_META)
     print(f"[pipeline] champion updated from {best}", flush=True)
 
 
@@ -99,8 +83,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    since = champion_cutoff()
-    dataset_stats = build(run_dir, augment=recipe["augment"], since=since)
+    dataset_stats = build(run_dir, augment=recipe["augment"])
     # Every image the trainer will actually iterate per epoch: base frames,
     # blur-augmented copies, and the extra human-weight copies.
     corpus = (dataset_stats["train"] + dataset_stats["augmented"]
@@ -115,7 +98,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         recipe = {**recipe, "epochs_requested": recipe["epochs"],
                   "epochs": epochs}
     recipe = {**recipe, "augment_mode": dataset_stats["augment_mode"],
-              "init": start_weights().name, "trained_since": since}
+              "init": start_weights().name}
     best = train(run_dir, "local", epochs=recipe["epochs"],
                  batch=recipe["batch"], freeze=recipe["freeze"])
     metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
@@ -145,9 +128,6 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
                     "val": dataset_stats["val"],
                     "augmented": dataset_stats["augmented"],
                     "hand_boxed": dataset_stats["hand_boxed"],
-                    "new": dataset_stats["new"],
-                    "replay": dataset_stats["replay"],
-                    "already_learned": dataset_stats["already_learned"],
                     "dropped": [stem for stem, _ in dataset_stats["dropped"]]},
         "recipe": recipe,
         "fire_conf": fire_conf,
@@ -162,7 +142,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "exam_suspects": suspects,
     }
     if gate["deploy"]:
-        promote_champion(best, dataset_stats["data_cutoff"], run_name)
+        promote_champion(best)
     # The built dataset (2+ files per frame) is what hit the Volume's
     # 500k-inode limit; the bundle, weights and report stay for forensics.
     strip_dataset(run_dir)
