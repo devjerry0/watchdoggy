@@ -22,6 +22,9 @@ PUSH_WARNINGS_SHOWN = 3   # after this many, failures are only counted
 READ_WORKERS = 8
 READ_CHUNK = 256
 PRELABEL_PROGRESS_EVERY = 2000  # log + checkpoint the cache this often
+# yolo26x on L40S, frames preloaded: 120 frames/s one per call, 182 in
+# batches of 16, 146 in batches of 32 (63/64 frames gave identical boxes).
+PRELABEL_BATCH = 16
 
 
 # A frame being written when the Pi loses power is left as a 0-byte file
@@ -121,9 +124,14 @@ def _load_cache() -> dict:
     return json.loads(PRELABEL_CACHE.read_text())
 
 
-def _prelabel_one(model, image) -> dict:
-    prediction = model.predict(image, conf=PRELABEL_CONF, imgsz=IMAGE_SIZE,
-                               device=device(), verbose=False)[0]
+def _label_batch(model, stems: list[str], images: list, cache: dict) -> None:
+    predictions = model.predict(images, conf=PRELABEL_CONF, imgsz=IMAGE_SIZE,
+                                device=device(), verbose=False)
+    for stem, prediction in zip(stems, predictions):
+        cache[stem] = _boxes(prediction)
+
+
+def _boxes(prediction) -> dict:
     dogs, people = [], []
     buckets = {"dog": dogs, "person": people}
     for box in prediction.boxes:
@@ -156,14 +164,23 @@ def prelabel(stems: list[str]) -> dict:
         model = YOLO(str(PRELABEL_MODEL))
         started = time.monotonic()
         unreadable = 0
+        stems, images = [], []
         for done, (stem, _, image) in enumerate(read_frames(todo), 1):
-            unreadable += image is None
-            # Cached as "no boxes, unreadable" so later phases never KeyError
-            # on it and no pass re-reads it.
-            cache[stem] = (_prelabel_one(model, image) if image is not None
-                           else dict(UNREADABLE))
+            if image is None:
+                # Cached as "no boxes, unreadable" so later phases never
+                # KeyError on it and no pass re-reads it.
+                cache[stem] = dict(UNREADABLE)
+                unreadable += 1
+            else:
+                stems.append(stem)
+                images.append(image)
+            if len(images) == PRELABEL_BATCH:
+                _label_batch(model, stems, images, cache)
+                stems, images = [], []
             if done % PRELABEL_PROGRESS_EVERY == 0:
                 _checkpoint(cache, done, len(todo), started)
+        if images:
+            _label_batch(model, stems, images, cache)
         _save_cache(cache)
         if unreadable:
             log(f"skipped {unreadable} unreadable frames (empty or corrupt files)")

@@ -154,3 +154,24 @@ def test_empty_or_corrupt_frames_read_as_none(monkeypatch, tmp_path):
     assert dataset._read_frame("sample_1") == (b"", None)
     assert dataset._read_frame("sample_2")[1] is None
     assert dataset._read_frame("sample_missing") == (b"", None)
+
+
+def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path):
+    dataset = importlib.import_module("kitchen_training.dataset")
+    calls = []
+
+    class FakeModel:
+        def predict(self, images, **kwargs):
+            calls.append(len(images))
+            return [object() for _ in images]
+
+    frames = [(f"s{i}", b"x", None if i == 5 else f"img{i}") for i in range(40)]
+    monkeypatch.setattr(dataset, "read_frames", lambda stems: iter(frames))
+    monkeypatch.setattr(dataset, "_boxes", lambda p: {"dogs": [], "people": [], "shape": [480, 640]})
+    monkeypatch.setattr(dataset, "_load_cache", lambda: {})
+    monkeypatch.setattr(dataset, "_save_cache", lambda cache: None)
+    import types, sys
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=lambda path: FakeModel()))
+    cache = dataset.prelabel([s for s, _, _ in frames])
+    assert calls == [16, 16, 7]                       # 39 readable frames in batches
+    assert cache["s5"]["unreadable"] is True and len(cache) == 40
