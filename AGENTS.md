@@ -237,3 +237,17 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   beside the warm start on the same build, gates both, keeps the better
   (`pipeline.pick_start`, Ash & Adams 2020 warm-start gap); both scores
   land in recipe.init_compare.
+- **2026-10-11 — The Modal Volume (v1) is the training bottleneck: too many
+  files.** watchdoggy-train-2 is a v1 volume; Modal's guidance is under
+  50k files (per-file latency scales with the count; hard cap 500k
+  inodes). pipeline/mirror alone holds ~192k (jpg + json per frame, flat).
+  Measured with a cold container: 4.9 frames/s serial, 14/s with 32
+  threads, while a fresh small volume read the same 90 KB files at 431/s
+  serial and 1,975/s parallel. Labeling 46k frames ran at ~6/s with the
+  L40S 95% idle (~2h), and the container itself missed heartbeats
+  ("Modal Client -> Modal Worker ... Deadline exceeded", UTC stamps, i.e.
+  container-side) during the read storms. `dataset.read_frames` now reads
+  ahead in parallel (prelabel, jury, build) and prelabel logs progress and
+  checkpoints the cache every 2,000 frames. Real fix pending: v2 volume
+  (no total cap, but 262,144 files per directory) with sharded folders, or
+  packed shards (Modal's advice for many small files).

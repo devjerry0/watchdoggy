@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE,
@@ -10,6 +12,39 @@ from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE,
 
 PUSH_TIMEOUT_SECONDS = 10
 PUSH_WARNINGS_SHOWN = 3   # after this many, failures are only counted
+# Reading frames off the Modal Volume one at a time ran ~6 frames/s (each
+# read ~150 ms) with the GPU 95% idle: 46k frames took ~2h. Reads are
+# latency-bound and parallelize well, so READ_WORKERS threads fetch ahead,
+# at most two chunks in flight (bounded memory), yielded in order.
+READ_WORKERS = 32
+READ_CHUNK = 256
+PRELABEL_PROGRESS_EVERY = 2000  # log + checkpoint the cache this often
+
+
+def _read_frame(stem: str):
+    import cv2
+    import numpy as np
+    data = (DATASET_MIRROR / f"{stem}.jpg").read_bytes()
+    return data, cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+
+def _drain(chunk: list[str], futures: list):
+    for stem, future in zip(chunk, futures):
+        data, image = future.result()
+        yield stem, data, image
+
+
+def read_frames(stems: list[str]):
+    """(stem, jpeg_bytes, decoded_image) for each stem, in order, read ahead
+    in parallel so the consumer never waits on storage."""
+    chunks = [stems[i:i + READ_CHUNK] for i in range(0, len(stems), READ_CHUNK)]
+    with ThreadPoolExecutor(READ_WORKERS) as pool:
+        ahead = [pool.submit(_read_frame, s) for s in chunks[0]] if chunks else []
+        for index, chunk in enumerate(chunks):
+            current, ahead = ahead, ([pool.submit(_read_frame, s)
+                                      for s in chunks[index + 1]]
+                                     if index + 1 < len(chunks) else [])
+            yield from _drain(chunk, current)
 
 
 def pull(host: str) -> None:
@@ -71,8 +106,8 @@ def _load_cache() -> dict:
     return json.loads(PRELABEL_CACHE.read_text())
 
 
-def _prelabel_one(model, jpg: Path) -> dict:
-    prediction = model.predict(str(jpg), conf=PRELABEL_CONF, imgsz=IMAGE_SIZE,
+def _prelabel_one(model, image) -> dict:
+    prediction = model.predict(image, conf=PRELABEL_CONF, imgsz=IMAGE_SIZE,
                                device=device(), verbose=False)[0]
     dogs, people = [], []
     buckets = {"dog": dogs, "person": people}
@@ -84,6 +119,19 @@ def _prelabel_one(model, jpg: Path) -> dict:
     return {"dogs": dogs, "people": people, "shape": list(prediction.orig_shape)}
 
 
+def _save_cache(cache: dict) -> None:
+    RUNS.mkdir(exist_ok=True)
+    PRELABEL_CACHE.write_text(json.dumps(cache))
+
+
+def _checkpoint(cache: dict, done: int, total: int, started: float) -> None:
+    """Progress line + cache save, so a dead container keeps its work."""
+    _save_cache(cache)
+    rate = done / max(time.monotonic() - started, 1e-6)
+    log(f"prelabeled {done}/{total} ({rate:.0f} frames/s, "
+        f"~{(total - done) / rate / 60:.0f} min left)")
+
+
 def prelabel(stems: list[str]) -> dict:
     cache = _load_cache()
     todo = [stem for stem in stems if stem not in cache]
@@ -91,10 +139,12 @@ def prelabel(stems: list[str]) -> dict:
         from ultralytics import YOLO
         log(f"prelabeling {len(todo)} new frames with {PRELABEL_MODEL.name} ...")
         model = YOLO(str(PRELABEL_MODEL))
-        for stem in todo:
-            cache[stem] = _prelabel_one(model, DATASET_MIRROR / f"{stem}.jpg")
-        RUNS.mkdir(exist_ok=True)
-        PRELABEL_CACHE.write_text(json.dumps(cache))
+        started = time.monotonic()
+        for done, (stem, _, image) in enumerate(read_frames(todo), 1):
+            cache[stem] = _prelabel_one(model, image)
+            if done % PRELABEL_PROGRESS_EVERY == 0:
+                _checkpoint(cache, done, len(todo), started)
+        _save_cache(cache)
     log(f"prelabels ready ({len(stems)} frames, {len(todo)} newly computed)")
     return cache
 

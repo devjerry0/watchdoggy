@@ -85,10 +85,38 @@ def test_bundles_are_scored_at_their_own_export_shape():
     evaluation._max_dog_conf(model, "frame.jpg", "cpu")
     assert "imgsz" not in model.kwargs
     model = _RecordingModel()
-    consensus._nano_scores(model, "sample_1")
+    consensus._nano_scores(model, "frame.jpg")
     assert "imgsz" not in model.kwargs
 
 
 def test_export_matches_the_camera_frame():
     config = importlib.import_module("kitchen_training.config")
     assert config.EXPORT_SHAPE == (480, 640)  # (h, w) of the C922's 640x480
+
+
+def test_frames_are_read_ahead_in_order(monkeypatch):
+    # Volume reads are slow one at a time; read_frames fetches ahead in
+    # parallel but must hand frames back in the caller's order (the build
+    # relies on it: humans first, near-duplicate pruning by order).
+    import threading
+    import time as _time
+    dataset = importlib.import_module("kitchen_training.dataset")
+    monkeypatch.setattr(dataset, "READ_CHUNK", 8)
+    in_flight, peak, lock = [0], [0], threading.Lock()
+
+    def fake_read(stem):
+        with lock:
+            in_flight[0] += 1
+            peak[0] = max(peak[0], in_flight[0])
+        _time.sleep(0.01)
+        with lock:
+            in_flight[0] -= 1
+        return stem.encode(), f"img-{stem}"
+
+    monkeypatch.setattr(dataset, "_read_frame", fake_read)
+    stems = [f"s{i}" for i in range(50)]
+    out = list(dataset.read_frames(stems))
+    assert [s for s, _, _ in out] == stems
+    assert [img for _, _, img in out] == [f"img-{s}" for s in stems]
+    assert peak[0] > 1                      # really parallel
+    assert list(dataset.read_frames([])) == []

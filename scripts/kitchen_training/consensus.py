@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from kitchen_training.config import DATASET_MIRROR, RUNS
+from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
 # Frames this exact jury (deployed weights + rule constants) has already
@@ -61,10 +62,9 @@ def _sidecar_meta(stem: str) -> dict:
     return json.loads(sidecar.read_text()) if sidecar.is_file() else {}
 
 
-def _nano_scores(nano, stem: str) -> tuple[float, float]:
+def _nano_scores(nano, image) -> tuple[float, float]:
     """(max dog conf, max person conf) from the deployed nano on one frame."""
-    prediction = nano.predict(str(DATASET_MIRROR / f"{stem}.jpg"),
-                              conf=NANO_SCAN_CONF, device="cpu",
+    prediction = nano.predict(image, conf=NANO_SCAN_CONF, device="cpu",
                               verbose=False)[0]
     nano_dog, nano_person = 0.0, 0.0
     for box in prediction.boxes:
@@ -151,8 +151,8 @@ def judge_frames(stems: list[str], cache: dict,
     if todo:
         from ultralytics import YOLO  # deferred, like the whole package
         nano = YOLO(str(deployed_dir), task="detect")
-        for stem in todo:
-            nano_dog, nano_person = _nano_scores(nano, stem)
+        for stem, _, image in read_frames(todo):
+            nano_dog, nano_person = _nano_scores(nano, image)
             if not entries[stem][0]:  # no human label: the consensus path
                 verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
                 if verdict:
