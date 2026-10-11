@@ -35,10 +35,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # kitchen_training
 MINUTES = 60
 # One ceiling for EVERY cloud job (user-decided): high enough that no
 # legitimate run is ever killed and its work lost, low enough to bound a
-# hung container's bill (~$8 worst case on L4). The Pi-side wrappers must
-# outlast this number -- trainer_daemon/env.py derives them from it.
+# hung container's bill (~$25 worst case on L40S + cpu/memory). The Pi-side
+# wrappers must outlast this number -- trainer_daemon/env.py derives them
+# from it.
 CLOUD_JOB_CEILING = 10 * 60 * MINUTES
-GPU = os.environ.get("DOGGY_TRAIN_GPU", "L4")
+# Read on the launching machine only: inside the container this env var is
+# absent, so the GPU travels to the run in the recipe (kickoff).
+GPU = os.environ.get("DOGGY_TRAIN_GPU", "L40S")
 VOL = Path("/vol")
 PIPELINE_ROOT = VOL / "pipeline"
 
@@ -172,7 +175,7 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
                        Path(deployed_dir) if deployed_dir else None,
                        Path(seed_models) if seed_models else None)
     recipe = {"epochs": epochs, "batch": batch, "freeze": freeze,
-              "augment": augment}
+              "augment": augment, "gpu": GPU}
     print(f"[pipeline] running the full pipeline in the cloud "
           f"(gate @ {fire_conf}) ...")
     results, bundle_tar = run_pipeline.remote(run_name, recipe, fire_conf)

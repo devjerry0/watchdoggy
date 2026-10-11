@@ -25,9 +25,18 @@ COMPLETED_MARKER = ".completed"
 # training.py/config.py is the convergence controller). The only automatic
 # adjustment is a CEILING FIT: cap epochs so the projected run finishes
 # inside the cloud-job ceiling instead of timing out and losing everything.
-# Throughput measured on the proven run (~216k images in ~50min on L4),
-# taken conservatively; overhead covers prelabel/build/eval/export.
-TRAIN_IMAGES_PER_SECOND = 60
+# Training throughput per Modal GPU (img/s incl. per-epoch val), so the cap
+# trims only what truly cannot fit. Benchmark 2026-10-11 (yolo26n freeze=10,
+# batch 32, imgsz 640, RAM cache, cpu=8): L4 180, L40S 416-435, A100-40GB
+# 184, H100 445-478; 16 cores/workers changed nothing (the GPU step is the
+# limit, not the dataloader). The real 2026-09-07 L4 run measured ~165 with
+# val (32 epochs x 56,224 images in 3.02h) = ~0.92 of the benchmark; values
+# below keep ~10% margin on that. The old flat 60 trimmed that run to 32 of
+# 80 epochs although 80 would have fit. Unmeasured GPUs (T4, A10G) keep the
+# old conservative 60. Overhead covers prelabel/build/eval/export.
+TRAIN_IMAGES_PER_SECOND = {"L4": 150, "L40S": 350, "A100": 150}
+UNMEASURED_IMAGES_PER_SECOND = 60
+MEASURED_BATCH = 32  # the batch size behind every rate above
 OVERHEAD_SECONDS = 1.5 * 3600
 MIN_EPOCHS = 15
 
@@ -40,13 +49,16 @@ MIN_EPOCHS = 15
 CORPSE_GRACE_SECONDS = 11 * 3600
 
 
-def fit_epochs(requested: int, corpus_images: int,
-               ceiling_seconds: float) -> int:
+def fit_epochs(requested: int, corpus_images: int, ceiling_seconds: float,
+               gpu: str = "", batch: int = MEASURED_BATCH) -> int:
     """The requested epochs, capped only when they cannot finish inside the
-    cloud-job ceiling (better a trimmed run than a timed-out corpse). Never
-    below MIN_EPOCHS unless the request itself was."""
-    budget = max(ceiling_seconds - OVERHEAD_SECONDS,
-                 3600.0) * TRAIN_IMAGES_PER_SECOND
+    cloud-job ceiling on this GPU (better a trimmed run than a timed-out
+    corpse). Never below MIN_EPOCHS unless the request itself was."""
+    rate = TRAIN_IMAGES_PER_SECOND.get(gpu, UNMEASURED_IMAGES_PER_SECOND)
+    # Every GPU benchmarked is bound by per-step overhead, so img/s scales
+    # with batch: a smaller batch is proportionally slower. Never scaled up.
+    rate *= min(1.0, batch / MEASURED_BATCH)
+    budget = max(ceiling_seconds - OVERHEAD_SECONDS, 3600.0) * rate
     fits = int(budget // max(corpus_images, 1))
     return min(requested, max(MIN_EPOCHS, fits))
 

@@ -35,10 +35,13 @@ SETTINGS_DEFAULTS = {"epochs": 80, "batch": "auto", "freeze": 10,
                      "min_new_labels": 5, "nightly_prelabel_hour": 2,
                      "gpu": "auto", "auto_update": True,
                      "monthly_credits": 30}
-# auto tiers by labeled-frame count. The nano model is dataloader-bound on
-# small sets -- a bigger GPU only pays once epochs are long enough; batch
-# grows with data but stays small enough for ~30+ optimizer steps/epoch.
-GPU_TIERS = ((2500, "A10G"), (0, "L4"))
+# "auto" GPU. Benchmarked 2026-10-11 (yolo26n training at the pipeline's
+# settings, cpu=8): L40S 416-435 img/s vs L4 180, A100-40GB 184, H100
+# 445-478; more CPU changed nothing. L40S is ~2.3x faster than L4 AND ~20%
+# cheaper per trained image ($1.60 vs $2.02 per million incl. cpu/memory).
+AUTO_GPU = "L40S"
+# batch grows with data but stays small enough for ~30+ optimizer
+# steps/epoch.
 BATCH_TIERS = ((2500, 64), (800, 32), (0, 16))
 
 
