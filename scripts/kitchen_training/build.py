@@ -35,6 +35,13 @@ HUMAN_WEIGHT_COPIES = 1  # one extra copy = human frames weigh 2x
 # variant per frame once the dataset is past AUTO_ALL_VARIANTS_BELOW.
 AUGMENT_MODES = ("auto", "all", "one", "off")
 AUTO_ALL_VARIANTS_BELOW = 3000  # verdicted frames
+# Warm-started runs (user-decided: don't re-train what the deployed model
+# already learned) train on every frame labeled or re-labeled after its data
+# cutoff, plus a rehearsal set so older cases aren't forgotten: all hand-
+# labeled frames (scarce, most valuable) and REPLAY_RATIO old auto-labeled
+# frames per new frame, re-drawn each run. The exam is never filtered -- it
+# is where forgetting would show.
+REPLAY_RATIO = 1.0
 
 
 def split_for(stem: str) -> str:
@@ -74,6 +81,43 @@ def _near_duplicate(image, seen: list[int]) -> bool:
         return True
     seen.append(h)
     return False
+
+
+def label_time(meta: dict) -> float:
+    """When the frame's current label was set, by hand or by auto-labeling."""
+    human = meta.get("labeled_at", 0.0) if meta.get("human_label") else 0.0
+    return max(human, (meta.get("auto_label") or {}).get("labeled_at", 0.0))
+
+
+def replay_fraction(new: int, old_auto: int) -> float:
+    return min(1.0, REPLAY_RATIO * new / old_auto) if old_auto else 0.0
+
+
+def training_role(stem: str, meta: dict, is_auto: bool, since: float | None,
+                  fraction: float) -> str | None:
+    """"new", "replay", or None (already learned: skipped this run)."""
+    if since is None or label_time(meta) > since:
+        return "new"
+    if not is_auto:
+        return "replay"
+    # Seeded by the cutoff: each champion rehearses a different old sample.
+    draw = int(hashlib.md5(f"{since}:{stem}".encode()).hexdigest(), 16) % 10_000
+    return "replay" if draw < fraction * 10_000 else None
+
+
+def _replay_fraction_for(samples: list, since: float | None) -> float:
+    if since is None:
+        return 1.0
+    new = old_auto = 0
+    for stem, _, meta in samples:
+        is_auto = not meta.get("human_label")
+        if _split(stem, meta, is_auto) != "train":
+            continue
+        if label_time(meta) > since:
+            new += 1
+        elif is_auto:
+            old_auto += 1
+    return replay_fraction(new, old_auto)
 
 
 def augment_mode(augment: bool | str, verdicted: int) -> str:
@@ -136,7 +180,7 @@ def _write_frame(dataset_dir: Path, stem: str, lines: list[str], augment: str,
 def _new_stats() -> dict:
     return {"train": 0, "val": 0, "dropped": [], "fallback": 0, "hand_boxed": 0,
             "augmented": 0, "auto_labeled": 0, "human_weighted": 0,
-            "dedup_dropped": 0,
+            "dedup_dropped": 0, "new": 0, "replay": 0, "already_learned": 0,
             "boxes": {"train": {"person": 0, "dog": 0},
                       "val": {"person": 0, "dog": 0}},
             "verdicts": {}}
@@ -146,7 +190,8 @@ def _log_build(stats: dict) -> None:
     log(f"train {stats['train']} imgs (+{stats['augmented']} augmented, "
         f"+{stats['human_weighted']} human-weight copies, "
         f"{stats['auto_labeled']} auto-labeled, "
-        f"{stats['dedup_dropped']} near-dupes dropped) "
+        f"{stats['dedup_dropped']} near-dupes dropped; {stats['new']} new, "
+        f"{stats['replay']} replay, {stats['already_learned']} already learned) "
         f"{stats['boxes']['train']} | "
         f"val {stats['val']} imgs {stats['boxes']['val']} (human-verified) | "
         f"hand-boxed {stats['hand_boxed']} | dropped {len(stats['dropped'])} | "
@@ -155,10 +200,14 @@ def _log_build(stats: dict) -> None:
         log(f"  NEEDS BOXES: {stem} ({why})")
 
 
-def build(run_dir: Path, augment: bool | str = False) -> dict:
+def build(run_dir: Path, augment: bool | str = False,
+          since: float | None = None) -> dict:
+    """since = the starting model's data cutoff (warm start): train frames
+    labeled at or before it are only included as replay. None = everything."""
     import cv2
     samples = labeled_sidecars(include_auto=True)
     mode = augment_mode(augment, len(samples))
+    fraction = _replay_fraction_for(samples, since)
     log(f"building dataset from {len(samples)} verdicted frames "
         f"(augmentation: {mode})")
     prelabels_by_stem = prelabel([stem for stem, _, _ in samples])
@@ -189,12 +238,19 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
             stats[source_counters[source]] += 1
         is_auto = not meta.get("human_label")
         split = _split(stem, meta, is_auto)
+        role = (training_role(stem, meta, is_auto, since, fraction)
+                if split == "train" else "exam")
+        if role is None:
+            stats["already_learned"] += 1
+            continue
         image = cv2.imread(str(DATASET_MIRROR / f"{stem}.jpg"))
         if (split == "train" and verdict in DEDUP_VERDICTS
                 and _near_duplicate(image, seen_hashes)):
             stats["dedup_dropped"] += 1
             continue
         stats["auto_labeled"] += is_auto
+        if role != "exam":
+            stats[role] += 1
         _write_frame(dataset_dir, stem, lines, mode, stats, split,
                      human=not is_auto, image=image)
 
@@ -202,5 +258,8 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
         f"path: {dataset_dir.resolve()}\ntrain: images/train\nval: images/val\n"
         "names:\n  0: person\n  1: dog\n")
     stats["augment_mode"] = mode
+    # The next champion's cutoff: the newest label anywhere in the dataset
+    # (frames skipped as already learned were learned by its ancestors).
+    stats["data_cutoff"] = max((label_time(m) for _, _, m in samples), default=0.0)
     _log_build(stats)
     return stats

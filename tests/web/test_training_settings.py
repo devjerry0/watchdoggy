@@ -77,3 +77,12 @@ def test_augment_modes_and_batch_128_validated(tmp_path):
     assert c.post("/api/training/settings", json={"augment": 1}).status_code == 422
     assert c.post("/api/training/settings",
                   json={"batch": 128}).json()["settings"]["batch"] == 128
+
+
+def test_min_new_labels_allows_thousands(tmp_path):
+    c, _ = _client(tmp_path)
+    assert c.get("/api/training/settings").json()["min_new_labels"] == 1000
+    assert c.post("/api/training/settings",
+                  json={"min_new_labels": 5000}).status_code == 200
+    assert c.post("/api/training/settings",
+                  json={"min_new_labels": 200000}).status_code == 422

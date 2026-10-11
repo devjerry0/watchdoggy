@@ -47,11 +47,56 @@ def test_training_starts_from_the_champion_when_it_exists(tmp_path, monkeypatch)
     assert training.start_weights() == champion
 
 
-def test_promote_champion_replaces_it_atomically(tmp_path, monkeypatch):
+def _point_champion(tmp_path, monkeypatch):
     champion = tmp_path / "models" / "champion.pt"
-    monkeypatch.setattr(pipeline, "CHAMPION_MODEL", champion)
+    for module in (pipeline, training):
+        monkeypatch.setattr(module, "CHAMPION_MODEL", champion)
+    monkeypatch.setattr(pipeline, "CHAMPION_META", champion.with_suffix(".json"))
+    return champion
+
+
+def test_promote_champion_writes_weights_and_cutoff(tmp_path, monkeypatch):
+    import json
+    champion = _point_champion(tmp_path, monkeypatch)
     best = tmp_path / "best.pt"
     best.write_bytes(b"new weights")
-    pipeline.promote_champion(best)
+    pipeline.promote_champion(best, 1234.5, "20261011-140000")
     assert champion.read_bytes() == b"new weights"
-    assert not champion.with_suffix(".pt.tmp").exists()
+    assert json.loads(champion.with_suffix(".json").read_text()) == {
+        "data_cutoff": 1234.5, "run": "20261011-140000"}
+    assert not list(champion.parent.glob("*.tmp"))
+    # ...and the next run trains only on what came after that cutoff.
+    assert pipeline.champion_cutoff() == 1234.5
+
+
+def test_no_champion_record_means_a_full_run(tmp_path, monkeypatch):
+    champion = _point_champion(tmp_path, monkeypatch)
+    assert pipeline.champion_cutoff() is None       # no weights at all
+    champion.parent.mkdir(parents=True)
+    champion.write_bytes(b"weights")
+    assert pipeline.champion_cutoff() is None       # weights but no record
+    champion.with_suffix(".json").write_text("{not json")
+    assert pipeline.champion_cutoff() is None       # torn record
+
+
+def test_warm_runs_train_new_frames_plus_replay():
+    since = 1000.0
+    new_auto = {"auto_label": {"verdict": "dog", "labeled_at": 1500.0}}
+    old_auto = {"auto_label": {"verdict": "dog", "labeled_at": 500.0}}
+    old_hand = {"human_label": "dog", "labeled_at": 500.0}
+    relabeled = {"human_label": "dog", "labeled_at": 1500.0,
+                 "auto_label": {"verdict": "empty", "labeled_at": 500.0}}
+    role = build.training_role
+    assert role("a", new_auto, True, since, 0.0) == "new"
+    assert role("b", relabeled, False, since, 0.0) == "new"   # a correction is new
+    assert role("c", old_hand, False, since, 0.0) == "replay"  # hand labels always
+    assert role("d", old_auto, True, since, 0.0) is None       # already learned
+    assert role("d", old_auto, True, since, 1.0) == "replay"
+    assert role("d", old_auto, True, None, 0.0) == "new"       # fresh run: all
+    # The replay draw hits about the requested fraction of old frames.
+    drawn = sum(role(f"s{i}", old_auto, True, since, 0.25) == "replay"
+                for i in range(4000))
+    assert 850 < drawn < 1150
+    assert build.replay_fraction(new=500, old_auto=2000) == 0.25
+    assert build.replay_fraction(new=5000, old_auto=2000) == 1.0
+    assert build.replay_fraction(new=10, old_auto=0) == 0.0
