@@ -193,3 +193,16 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   copy its best.pt to pipeline/models/champion.pt**, or the next run warm-
   starts from a stale model. Robustness (stress row) is an indicator, not a
   gate: if "one" copy weakens it, set augment to "all".
+- **2026-10-11 — Warm runs train on what's new, plus replay
+  (user-decided).** `pipeline/models/champion.json` records the champion's
+  `data_cutoff` (newest label time it trained on). A warm-started build
+  (`build(..., since=cutoff)`) trains every frame labeled or re-labeled
+  after it, all hand-labeled frames, and `REPLAY_RATIO` (1:1) old auto-
+  labeled frames per new one (a different draw per champion); the rest is
+  skipped as already learned. Pure new-only was declined: it forgets older
+  cases. The exam is never filtered. `promote_champion` writes weights,
+  then the record (a crash in between means more data next run, never
+  less). No record = full run. Seeded cutoff: 1788757918 (Sep 7 01:11:58
+  EDT, run 20260907-011158). The auto-train gate `min_new_labels` now
+  counts hand + auto labels (`queue.labels_since`), default 1000: hand
+  labels alone run ~100 a month.

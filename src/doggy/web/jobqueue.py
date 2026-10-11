@@ -17,7 +17,7 @@ from fastapi import HTTPException
 SETTINGS_DEFAULTS = {"epochs": 200, "batch": "auto", "freeze": 10,
                      "augment": "auto",  # auto | all | one | off (build.py)
                      "train_interval_hours": 336, "label_interval_hours": 168,
-                     "min_new_labels": 5, "nightly_prelabel_hour": 2,
+                     "min_new_labels": 1000, "nightly_prelabel_hour": 2,
                      "monthly_credits": 30,  # Modal starter free tier
                      "gpu": "auto",  # auto = trainer_daemon.env.AUTO_GPU (L40S)
                      "auto_update": True}  # daily GitHub release check
@@ -28,7 +28,7 @@ _BATCH_CHOICES = {"auto", 8, 16, 32, 64, 128}
 _AUGMENT_MODES = ("auto", "all", "one", "off")
 _INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),
                "train_interval_hours": (6, 720), "label_interval_hours": (24, 720),
-               "min_new_labels": (1, 100),
+               "min_new_labels": (1, 100000),
                "nightly_prelabel_hour": (0, 23), "monthly_credits": (0, 100000)}
 
 

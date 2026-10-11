@@ -215,3 +215,21 @@ def test_labeling_comes_due_again_after_a_week(tmp_path, monkeypatch):
     monkeypatch.setattr(q, "last_nightly_slot", lambda hour: __import__("time").time() - 60)
     job = q.synthesize_job(q.jobs())
     assert job is not None and job["kind"] == "prelabel"
+
+
+def test_new_labels_count_hand_and_auto_labels_once(tmp_path, monkeypatch):
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    monkeypatch.setattr(q, "DATASET_DIR", ds)
+    frames = {
+        "hand": {"human_label": "dog", "labeled_at": 200.0},
+        "auto": {"auto_label": {"verdict": "empty", "labeled_at": 200.0}},
+        "both": {"human_label": "dog", "labeled_at": 200.0,
+                 "auto_label": {"verdict": "dog", "labeled_at": 150.0}},
+        "old": {"human_label": "dog", "labeled_at": 50.0,
+                "auto_label": {"verdict": "dog", "labeled_at": 50.0}},
+        "unlabeled": {},
+    }
+    for name, meta in frames.items():
+        (ds / f"sample_{name}.json").write_text(json.dumps(meta))
+    assert q.labels_since(100.0) == 3

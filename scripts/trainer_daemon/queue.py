@@ -104,14 +104,18 @@ def sidecar_stats() -> tuple[int, int, float]:
 
 
 def labels_since(when: float) -> int:
+    """New training data since `when`: frames labeled by hand OR by the
+    auto-labeling jury (each frame once). Hand labels alone run ~100 a
+    month, far too few to gate on (user-decided threshold: ~1k new)."""
     count = 0
     for sidecar in DATASET_DIR.glob("sample_*.json"):
         try:
             meta = json.loads(sidecar.read_text())
         except (OSError, ValueError):
             continue
-        if meta.get("human_label") and meta.get("labeled_at", 0.0) > when:
-            count += 1
+        human = meta.get("human_label") and meta.get("labeled_at", 0.0) > when
+        auto = (meta.get("auto_label") or {}).get("labeled_at", 0.0) > when
+        count += bool(human or auto)
     return count
 
 

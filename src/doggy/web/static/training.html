@@ -195,8 +195,8 @@
           <input id="f_interval" type="number" min="6" max="720"></div>
         <div class="field"><label for="f_labelint">label every (h)</label>
           <input id="f_labelint" type="number" min="24" max="720"></div>
-        <div class="field"><label for="f_minlabels">min new labels</label>
-          <input id="f_minlabels" type="number" min="1" max="100"></div>
+        <div class="field"><label for="f_minlabels">min new labels (hand + auto)</label>
+          <input id="f_minlabels" type="number" min="1" max="100000"></div>
         <div class="field"><label for="f_nightly">labeling at (h)</label>
           <input id="f_nightly" type="number" min="0" max="23"></div>
         <div class="field"><label for="f_credits">monthly credits ($)</label>
@@ -420,7 +420,10 @@ function renderRuns(){
           + (v.false_fires ? "(" + v.false_fires + "FP)" : "")).join("  ")]);
       if (s.dataset) rows.push(["dataset", s.dataset.train + " train (+"
         + (s.dataset.augmented || 0) + " aug) / " + s.dataset.val + " held out"
-        + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")]);
+        + (s.dataset.hand_boxed ? " · " + s.dataset.hand_boxed + " hand-boxed" : "")
+        + (s.dataset.already_learned ? " · " + s.dataset.new + " new + "
+           + s.dataset.replay + " replay (" + s.dataset.already_learned
+           + " already learned)" : "")]);
       if (s.recipe) rows.push(["recipe", s.recipe.epochs + " epochs · batch "
         + s.recipe.batch + " · freeze " + s.recipe.freeze
         + (s.recipe.augment_mode && s.recipe.augment_mode !== "off"
