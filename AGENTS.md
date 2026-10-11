@@ -211,3 +211,10 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   known frames stop improving. The auto-train gate `min_new_labels` counts
   hand + auto labels (`queue.labels_since`), default 1000: hand labels
   alone run ~100 a month.
+- **2026-10-11 — Do not export the NCNN bundle at 640x480 (yet).** It would
+  skip 25% letterbox padding (160 of 640 rows are grey) for 1.30x speed, but
+  the pnnx conversion at non-square input lost 28 of 153 exam dogs (137/3 ->
+  109/7 at 0.6) while the same weights in PyTorch at 480x640 scored 137/3
+  (136/4 on the NCNN fallback head). Keep `export.py` at square
+  `IMAGE_SIZE`; retry only with a newer pnnx and the exam as judge (see
+  skill yolo26-ncnn-export-head-swap).
