@@ -126,16 +126,43 @@ def run_prelabels(run_name: str) -> dict:
     return results
 
 
+# The jury runs the deployed NCNN nano one frame per call (ultralytics'
+# NCNN backend reads only im[0] of a batch), ~26 frames/s per container, so
+# it is batched across containers instead: 65k frames in 4,000-frame chunks
+# finish in minutes, not ~40 min in one container. Same CPU-hours.
+JURY_CHUNK = 4000
+
+
 @app.function(image=image, cpu=4, memory=8192,
               volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
-def run_consensus(run_name: str) -> dict:
-    """CPU phase: the jury judges what needs judging (no GPU billed while
-    a CPU model loops over frames)."""
+def run_consensus_chunk(run_name: str, stems: list[str]) -> dict:
+    """CPU: one chunk of the jury (no GPU billed while the nano judges)."""
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
-    from kitchen_training.pipeline import consensus_phase
+    from kitchen_training.pipeline import judge_chunk_phase
 
-    results = consensus_phase(run_name, run_root)
+    return judge_chunk_phase(run_root, stems)
+
+
+@app.function(image=image, cpu=1, memory=2048,
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
+def run_label_pass(run_name: str) -> dict:
+    """The whole weekly labeling pass as ONE cloud call: GPU labeling, then
+    the jury fanned out over CPU containers, then the merge. A Pi that drops
+    off mid-pass can no longer strand the jury step (it used to chain the
+    two calls itself); the Pi collects this call's result by id instead."""
+    results = run_prelabels.remote(run_name)
+    volume.reload()  # see the cache the labeling container just committed
+    run_root = PIPELINE_ROOT / "runs" / run_name
+    _point_kitchen_training_at_volume(run_root)
+    from kitchen_training.pipeline import finish_jury_phase, jury_plan_phase
+
+    plan = jury_plan_phase(run_name, run_root)
+    todo = plan["todo"]
+    chunks = [todo[i:i + JURY_CHUNK] for i in range(0, len(todo), JURY_CHUNK)]
+    print(f"[pipeline] jury fanned out over {len(chunks)} containers", flush=True)
+    parts = list(run_consensus_chunk.map([run_name] * len(chunks), chunks))
+    results.update(finish_jury_phase(run_name, plan, parts))
     volume.commit()
     return results
 
@@ -176,7 +203,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
 def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
             seed_models: str = "", epochs: int = 200, batch: int = 16,
             freeze: int = 10, augment: str = "auto", compare_init: bool = False,
-            fire_conf: float = 0.7) -> None:
+            fire_conf: float = 0.7, call_file: str = "") -> None:
     """Full pipeline run. --seed-models <dir> uploads yolo26n/x.pt first
     (one-time, from a machine that has them). --fire-conf is the appliance's
     runtime alarm threshold: the gate judges at that operating point."""
@@ -187,21 +214,48 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
               "augment": augment, "gpu": GPU, "compare_init": compare_init}
     print(f"[pipeline] running the full pipeline in the cloud "
           f"(gate @ {fire_conf}) ...")
-    results, bundle_tar = run_pipeline.remote(run_name, recipe, fire_conf)
+    call = run_pipeline.spawn(run_name, recipe, fire_conf)
+    _remember_call(call_file, call)
+    results, bundle_tar = call.get()
     _write_results(Path(out_dir), results, bundle_tar)
 
 
 @app.local_entrypoint()
 def kickoff_prelabels(dataset_dir: str, out_dir: str,
-                      deployed_dir: str = "") -> None:
-    """Prelabels-only run (fast): fresh ·x boxes for the review page, plus
-    consensus auto-verdicts when --deployed-dir provides the second juror."""
+                      deployed_dir: str = "", call_file: str = "") -> None:
+    """Labeling pass: fresh ·x boxes for the review page, plus consensus
+    auto-verdicts when --deployed-dir provides the second juror."""
     run_name = _upload(Path(dataset_dir),
                        Path(deployed_dir) if deployed_dir else None, None)
-    print("[pipeline] prelabeling in the cloud ...")
-    results = run_prelabels.remote(run_name)
-    results.update(run_consensus.remote(run_name))
-    out = Path(out_dir)
+    print("[pipeline] labeling in the cloud ...")
+    call = run_label_pass.spawn(run_name)
+    _remember_call(call_file, call)
+    _write_label_results(Path(out_dir), call.get())
+
+
+def _remember_call(call_file: str, call) -> None:
+    """Save the spawned call's id before waiting on it: if the connection
+    drops (Pi Wi-Fi, a heartbeat stall), the run keeps going in the cloud
+    (modal run --detach) and the trainer collects the result by this id.
+    Modal keeps call results for 7 days."""
+    print(f"[pipeline] cloud call {call.object_id}", flush=True)
+    if call_file:
+        Path(call_file).write_text(call.object_id)
+
+
+@app.local_entrypoint()
+def collect(call_id: str, out_dir: str, kind: str) -> None:
+    """Fetch a spawned run's result by call id (waits if it is still
+    running) and write the same out_dir files its kickoff would have."""
+    print(f"[pipeline] collecting cloud call {call_id} ...", flush=True)
+    result = modal.FunctionCall.from_id(call_id).get()
+    if kind == "train":
+        _write_results(Path(out_dir), *result)
+        return
+    _write_label_results(Path(out_dir), result)
+
+
+def _write_label_results(out: Path, results: dict) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     (out / "auto_verdicts.json").write_text(

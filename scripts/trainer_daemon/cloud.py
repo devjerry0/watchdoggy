@@ -44,11 +44,35 @@ def modal_run(entrypoint: str, arguments: list[str], job_id: str) -> None:
     labeling = entrypoint == "kickoff_prelabels"
     log(f"cloud GPU: {AUTO_LABEL_GPU if labeling else chosen_gpu} "
         f"({'labeling' if labeling else 'training'})")
+    call_file = JOBS_DIR / f"{job_id}.call"
+    env = {**os.environ, "DOGGY_TRAIN_GPU": chosen_gpu,
+           "DOGGY_LABEL_GPU": AUTO_LABEL_GPU}
+    # --detach: the cloud run keeps going if this client dies or loses the
+    # connection; the spawned call's id lands in call_file before the wait.
+    try:
+        _run_modal(["run", "--detach", f"{PIPELINE}::{entrypoint}",
+                    "--dataset-dir", str(DATASET_DIR),
+                    "--call-file", str(call_file)] + arguments, job_id, env)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        # Exit on a dropped connection, or (Sep 2026) a client that hung on
+        # lost heartbeats until the timeout: either way, collect by id.
+        if not call_file.is_file():
+            raise  # failed before the cloud call even started
+        log("connection to the cloud run dropped; collecting its result "
+            "by call id")
+        _run_modal(["run", f"{PIPELINE}::collect",
+                    "--call-id", call_file.read_text().strip(),
+                    "--out-dir", _out_dir(arguments),
+                    "--kind", "label" if labeling else "train"], job_id, env)
+    call_file.unlink(missing_ok=True)
+
+
+def _out_dir(arguments: list[str]) -> str:
+    return arguments[arguments.index("--out-dir") + 1]
+
+
+def _run_modal(args: list[str], job_id: str, env: dict) -> None:
     with open(JOBS_DIR / f"{job_id}.log", "ab") as log_file:
-        subprocess.run([str(MODAL), "run", f"{PIPELINE}::{entrypoint}",
-                        "--dataset-dir", str(DATASET_DIR)] + arguments,
-                       check=True, cwd=DOGGY_ROOT,
+        subprocess.run([str(MODAL)] + args, check=True, cwd=DOGGY_ROOT,
                        timeout=MODAL_SUBPROCESS_TIMEOUT,
-                       stdout=log_file, stderr=subprocess.STDOUT,
-                       env={**os.environ, "DOGGY_TRAIN_GPU": chosen_gpu,
-                            "DOGGY_LABEL_GPU": AUTO_LABEL_GPU})
+                       stdout=log_file, stderr=subprocess.STDOUT, env=env)
