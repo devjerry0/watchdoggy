@@ -1,4 +1,4 @@
-"""Talking to Modal: kicking off cloud runs (with auto GPU/batch tiering).
+"""Talking to Modal: kicking off cloud runs (auto GPU, auto batch tiering).
 Money lives in trainer_daemon.billing."""
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ import os
 import subprocess
 
 from trainer_daemon.env import (
+    AUTO_GPU,
     BATCH_TIERS,
     DATASET_DIR,
     DOGGY_ROOT,
-    GPU_TIERS,
     JOBS_DIR,
     MODAL,
     MODAL_SUBPROCESS_TIMEOUT,
@@ -22,10 +22,7 @@ from trainer_daemon.queue import sidecar_stats
 
 def gpu() -> str:
     chosen = settings().get("gpu", "auto")
-    if chosen != "auto":
-        return chosen
-    _, labeled, _ = sidecar_stats()
-    return next(tier for floor, tier in GPU_TIERS if labeled >= floor)
+    return AUTO_GPU if chosen == "auto" else chosen
 
 
 def batch(job: dict) -> int:

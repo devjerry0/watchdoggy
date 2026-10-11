@@ -116,11 +116,28 @@ def test_epochs_are_capped_only_by_the_ceiling():
     # Requested epochs run as requested while they fit the ceiling --
     # data growth alone never scales them down (user-decided; early
     # stopping owns convergence)...
-    assert hygiene.fit_epochs(80, 2_700, ceiling) == 80
-    assert hygiene.fit_epochs(80, 22_000, ceiling) == 80
+    assert hygiene.fit_epochs(80, 2_700, ceiling, "L4") == 80
+    assert hygiene.fit_epochs(80, 22_000, ceiling, "L4") == 80
+    # The 2026-09-07 corpus: 80 epochs fit at the measured L4 throughput
+    # (the old flat 60 img/s assumption trimmed this run to 32).
+    assert hygiene.fit_epochs(80, 56_224, ceiling, "L4") == 80
     # ...a corpus too big for the request gets trimmed to what fits...
-    assert hygiene.fit_epochs(80, 60_000, ceiling) == 30
+    assert hygiene.fit_epochs(80, 120_000, ceiling, "L4") == 38
     # ...never below the floor even when nothing truly fits...
-    assert hygiene.fit_epochs(80, 500_000, ceiling) == hygiene.MIN_EPOCHS
+    assert hygiene.fit_epochs(80, 500_000, ceiling, "L4") == hygiene.MIN_EPOCHS
     # ...and an explicit low request is never raised.
-    assert hygiene.fit_epochs(10, 22_000, ceiling) == 10
+    assert hygiene.fit_epochs(10, 22_000, ceiling, "L4") == 10
+
+
+def test_epoch_cap_follows_the_gpu():
+    ceiling = 10 * 3600
+    # A faster GPU fits the full request where L4 must trim...
+    assert hygiene.fit_epochs(80, 120_000, ceiling, "L40S") == 80
+    # ...and an unmeasured (or unnamed) GPU keeps the old conservative rate,
+    # so a slow T4 can never overrun the ceiling.
+    assert hygiene.fit_epochs(80, 56_224, ceiling, "T4") == 32
+    assert hygiene.fit_epochs(80, 56_224, ceiling) == 32
+    # A smaller batch is slower per image (per-step-bound GPUs): batch 16
+    # halves the assumed rate; a bigger batch never inflates it.
+    assert hygiene.fit_epochs(80, 120_000, ceiling, "L40S", batch=16) == 44
+    assert hygiene.fit_epochs(80, 120_000, ceiling, "L4", batch=64) == 38

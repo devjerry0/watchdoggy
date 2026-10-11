@@ -78,7 +78,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     corpus = (dataset_stats["train"] + dataset_stats["augmented"]
               + dataset_stats.get("human_weighted", 0))
     ceiling = float(os.environ.get("KT_JOB_CEILING_SECONDS", 10 * 3600))
-    epochs = fit_epochs(recipe["epochs"], corpus, ceiling)
+    epochs = fit_epochs(recipe["epochs"], corpus, ceiling,
+                        recipe.get("gpu", ""), recipe["batch"])
     if epochs != recipe["epochs"]:
         print(f"[pipeline] {corpus} train images cannot finish "
               f"{recipe['epochs']} epochs inside the {ceiling / 3600:.0f}h "
