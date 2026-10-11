@@ -139,7 +139,7 @@ is a closed loop that lives on the appliance:
    that the camera's own footage covers those conditions and the copies
    would mostly cost time.
 5. **Gate.** Challenger and incumbent sit the **identical, 100%
-   human-verified held-out exam**, judged at the appliance's actual runtime
+   human-verified held-out exam**, judged at the appliance's runtime
    threshold, and **the best model wins**: fewest total errors (missed dogs
    plus false fires), with false fires as tie-breaker and always-visible
    indicator. Every false alarm you ever flagged from the catch log is a
@@ -155,6 +155,25 @@ is a closed loop that lives on the appliance:
 Your only job is a few minutes of arbitration on the Label page now and then.
 Everything else (weekly prelabels, consensus auto-labeling, label audits,
 scheduled training, evaluation, gated deployment) happens on its own.
+
+### Small datasets get extra copies
+
+While a setup has fewer than 3,000 labeled frames, every training frame goes
+in three more times: once with motion blur (a dog trotting past at the
+camera's roughly 2 frames a second), once out of focus, and once darkened to
+dusk. These change only brightness and sharpness, so every box still fits.
+Only training frames get copies; the exam always uses the original frames.
+
+On the first dataset of 168 frames, the copies decided the stress test. The
+model trained with them caught 22 or 23 of 23 held-out dogs under every
+condition (dark, bright, blur, JPEG compression, shifted camera) with no
+false alarms. The same training without copies caught 19 or 20 and raised
+one false alarm.
+
+The copies make every epoch four times bigger, which is cheap on a small
+dataset. Past 3,000 labeled frames the "auto" setting stops adding them: the
+camera's own footage covers night and motion blur by then, and the copies
+would make up three quarters of every epoch.
 
 ### What a run costs, and why
 
