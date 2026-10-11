@@ -19,9 +19,148 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   On the Pi, never plain `uv sync` — it removes out-of-band packages and the
   Pi's firewall blocks re-fetching (see docs/ and skills for the deploy flow).
 - Package name is `doggy` (src/doggy); entry point `doggy = doggy.main:main`.
+- Config split: `.env` is STRUCTURAL only (camera, ports, paths, TLS; the 19
+  `Settings`-only fields). The 51 live tunables (`TunableSettings`) live in
+  `settings.json` via `core/settings_store.py` (atomic write, first-boot
+  migration from .env, `settings-changes.jsonl` audit log with client IP).
+  Never add a tunable that reads `.env` at runtime; out-of-process readers
+  (trainer daemon) read `settings.json` directly. Both files are appliance
+  state: gitignored, snapshotted by `doggy-install-code`, excluded by
+  `deploy-to-pi.sh`.
 - Architecture overview: ARCHITECTURE.md. Systemd units: systemd/.
   Training pipeline: scripts/train_kitchen_model.py.
 
 ## Learnings
 
 <!-- Append dated entries below. Terse: what was non-obvious, why, code path. -->
+
+- **2026-09-06 — Modal Volumes have a hard 500,000-inode (file count) cap;
+  ENOSPC on mkdir means files, not bytes.** The Sep 1-6 outage: timed-out
+  training runs each left a built dataset (~100k files) in their run dir,
+  prune only ran on success, the cap hit, and every run died at
+  `run_dir.mkdir` while the daemon re-queued one per 30-min tick (~$13
+  burned, silent). Diagnose with a cloud-side `du -s --inodes` / `df -i`
+  probe, not `du -h`. Guards now in `scripts/kitchen_training/hygiene.py`
+  (start-of-run janitor + dataset strip + `.completed` markers + a
+  ceiling-fit epoch cap — epochs are NEVER scaled down just because data
+  grew, user-decided; early stopping owns convergence) and
+  `scripts/trainer_daemon/queue.py` (per-kind failure
+  backoff; one >4h failure arms it alone). Cleanup must run at the START
+  of a run — a full volume prevents the success that end-of-run cleanup
+  depends on.
+- **2026-09-06 — Any auto-retried cloud job needs backoff + a visible
+  failure streak from day one.** 260 identical failures cost real money
+  before anyone noticed; the /training budget card now banners at 3
+  consecutive failures (`cloud_failure_streak` in
+  `src/doggy/web/routers/training.py`, threshold mirrored from
+  `trainer_daemon.queue.BACKOFF_AFTER`). Credit refusals carry status
+  `refused` so "no credits" never reads as "cloud broken".
+- **2026-09-06 — The detector's NCNN threads sync per layer, so ~1 core of
+  co-load costs ~25%+ FPS (2.2 -> 1.0-1.3 during trainer passes).**
+  `doggy-trainer.service` runs at Nice=10 CPUWeight=20 (drop-in on the Pi +
+  `scripts/setup-pi-trainer.sh`). If FPS "mysteriously" sags, check what
+  else is on the cores before touching the model.
+- **2026-09-09 — FPS on the Pi is inference-bound (~2.4 fps at imgsz 640);
+  everything else is about not stealing from NCNN and not stalling the
+  loop.** Fixed: catch-clip WebP encode ran inline on the detect thread
+  (72 frames = 10-15s freeze, dashboard read "0.1 FPS" during Cooling
+  down) -> worker thread (`reaction/clips.py`); MJPEG stream re-encoded the
+  same frame 10x/s per viewer -> encode on `FrameBuffer.version` change;
+  webcam decoded 30 fps for a 2-fps consumer -> `CAP_PROP_FPS` 10
+  (`vision/camera.py`); dashboard shows `fps_avg` (EMA) not instantaneous
+  1/dt. Profile with `py-spy record --rate 25 --format raw` on the main
+  process (root via trainer venv), but NOTE py-spy counts threads parked in
+  `epoll`/`Popen.wait` as active -- read real CPU from `top`. "Cooling
+  down" on the dashboard = post-catch COOLDOWN state, not thermal (thermal
+  shows "easing off" by the temperature). Next lever if more FPS is wanted:
+  export imgsz 640 -> 480 (~1.7x), gate-judged.
+- **2026-09-09 — At ~47k frames (~95k dir entries) any O(dataset) directory
+  pass on a hot path is an FPS bug.** `SidecarIndex.snapshot()` re-stat'ed
+  every entry per request (1-3s Pi CPU) and the training page polls it ->
+  ~1 FPS whenever that page was open; `DatasetCapture` ran the cap prune
+  (stat of every sample_*) on EVERY saved frame -> a dip every few minutes
+  at idle. Now the index is EVENT-DRIVEN: writers call
+  `index.upsert(stem)` after an in-place sidecar edit (one stat+parse); a
+  directory-mtime change (capture/prune) triggers a names-only readdir
+  that stats/parses only new names; the full re-stat runs once a DAY (or
+  `invalidate()`). Prune runs once a day (`PRUNE_INTERVAL_SECONDS`).
+  Rule: anything in the web process that edits a sidecar in place MUST
+  `upsert(stem)` -- an in-place write does not move the dir mtime, and the
+  daily net is the only other catch. The cold build + daily re-stat run on
+  `SidecarIndex.start()`'s daemon thread at nice 15 (never on a request);
+  heavy aggregate loops call `core.priority.lower_thread_priority(10)`
+  first (Linux per-thread nice, sticks for the worker's life -- fine, the
+  dashboard must never outrun the detector). Snapshot rows are bisect-
+  inserted, not re-sorted. Tests build apps with
+  `create_app(..., index_refresh=False)` (synchronous index); the index
+  binds `threading.Thread` at import because test_api_serve fakes it to run
+  serve()'s uvicorn threads inline. `api_frames` still walks all sidecars
+  per call (~10-15% while the label page fetches, now at nice 10).
+  Live view: `MjpegFanout` encodes each frame once for all viewers and caps
+  concurrent streams at 4 (503 + dashboard hint beyond that).
+- **2026-09-12 — "The model isn't catching" was the THRESHOLD, not the
+  model.** `DOGGY_CONFIDENCE` had been slid to 0.95 (persisted in .env);
+  real dogs score 0.6-0.9 through the NCNN export, so 1,745 sightings in 3
+  days produced zero fires while the dashboard looked armed. Diagnose with
+  the exam curve (`training-runs/<run>/local-gate.json`, or the report):
+  deployed model @0.8 82/127, @0.9 30/127, @0.95 4/127. Guard:
+  `MAX_ALARM_CONFIDENCE = 0.85` in `core/tunables.py` (422 on PATCH,
+  slider max mirrors it). The user's operating point is **0.6**. When a
+  catch-rate complaint arrives, check `.env` + `events.jsonl` confidences
+  BEFORE blaming the model.
+- **2026-09-12 — A cloud run that dies after export can be finished on the
+  Mac for free.** `kitchen_ncnn_model/` + `train/` survive on the volume
+  (`modal volume get`); rebuild the exam split locally from
+  `build._split` (val stems as empty marker files under
+  `run_dir/dataset/images/val`), pull only the human-labeled images
+  (`rsync --files-from` of the `.labeled-index.json` stems, ~1.3k files
+  not 57k), run `deploy_gate` + `robustness` (inference only, minutes on
+  CPU/MPS), then stage via `doggy` sudo into `/home/trainer/staging_ncnn_model`
+  and `doggy-install-model`. Script: the local_gate.py pattern in this
+  session; the labeled index lives in `jobs/`, not `dataset/`, on the Pi.
+  Write the job's `.result.json` overlay by hand (status done + summary) so
+  the training card and the failure-streak/backoff see the success.
+  **NEVER stage a bundle with `tar` from a Mac**: it ships AppleDouble
+  `._model.ncnn.param` twins, NCNN's loader globs `*.param`, picks the
+  junk first ("parse magic failed" -> `IndexError: list index out of
+  range` in `inference_worker.init`), and every inference child dies at
+  load -- the detector ran blind for 25 min on 2026-09-12 at "0.1 FPS".
+  Use `rsync -a` / `scp -r` (they don't create `._` files) and, when the
+  detector shows 0.1 FPS after a restart with IndexError in the journal,
+  check `ls -a models/kitchen_ncnn_model` first. `doggy-install-model` now
+  strips `._*` and refuses a bundle without exactly one .param + one .bin.
+- **2026-09-12 — Contracts the Codex cross-review pinned (keep them):**
+  (a) `load_settings()` must never let a LEGACY .env tunable stop boot --
+  a model-level pydantic error has an empty `loc`, so classify by "does it
+  validate with all tunables defaulted?", not by field name. (b) Anything
+  in `app.py` that reads a tunable at construction (retention, clip
+  window, log level) must read the merged settings.json value:
+  `settings.model_copy(update=tunables.model_dump())`. (c) `SidecarIndex`
+  hands out its snapshot list and readers iterate it outside the lock, so
+  incremental updates are COPY-ON-WRITE; the refresher thread must catch
+  everything (its first exception handler had a NameError -- the test
+  `test_refresher_survives_a_scan_exception` guards it). (d) Nightly jobs
+  run TWO cloud phases; Pi-side wait wrappers = 2 x CLOUD_JOB_CEILING.
+  Declined findings: kickoff-dir pruning vs in-flight jobs (daemon
+  serializes; current run exempt), backoff edge cases (bounded by the 24h
+  cap). Codex auth gotcha: `codex login status` can say "Logged in" with
+  a revoked refresh token; a real `codex login` (browser callback) is the
+  only fix -- verify with a cheap `codex exec` before relying on it.
+- **2026-10-11 — Cloud training is GPU-step-bound, not dataloader-bound;
+  "auto" GPU is L40S.** Synthetic-frame Modal benchmark at the pipeline's
+  settings (yolo26n freeze=10, batch 32, imgsz 640, RAM cache, cpu=8): L4
+  180 img/s, L40S 416-435, A100-40GB 184 (no faster than L4), H100
+  445-478; 16 cores/workers changed nothing; GPU util 30-60% everywhere =
+  per-step overhead, so throughput scales with batch. L40S is ~2.3x L4
+  AND cheaper per trained image ($1.60 vs $2.02 per million incl.
+  cpu+memory). The ceiling-fit cap uses per-GPU rates
+  (`hygiene.TRAIN_IMAGES_PER_SECOND`, scaled down by batch/32, unmeasured
+  GPUs keep 60); the old flat 60 trimmed the Sep 7 run to 32 of 80 epochs
+  while it was still improving. The GPU reaches the container in
+  `recipe["gpu"]`: `DOGGY_TRAIN_GPU` exists only on the launching machine.
+  Benchmark a GPU before adding its rate. Worst-case hung run on L40S is
+  ~$25 (10h ceiling). Modal now requires a payment method on file for ANY
+  GPU, T4 included ("Please add a payment method to use <GPU> GPU
+  functions", policy change between Sep 7 and Oct 11). A Pi without
+  internet can't refresh `jobs/billing.json`, so a stale "credits spent"
+  file silently keeps the credit gate closed (Sep 13 - Oct 11: zero jobs).
