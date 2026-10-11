@@ -104,8 +104,7 @@ is a closed loop that lives on the appliance:
    default): a large model (yolo26x) draws `·x` boxes for every new frame,
    and a **two-model
    jury** (the deployed fine-tune plus the big model) auto-labels the frames
-   it can vouch for. The jury's thresholds are not guesses: they are
-   backtested against the full human-labeled corpus with the current champion
+   it can vouch for. The jury's thresholds are backtested against the full human-labeled corpus with the current champion
    as juror, and re-audited when the champion changes. In the latest backtest
    the shipped rules mislabel about 0.1% of dog frames and fabricate none,
    while clearing about a third of a fresh queue per pass. The jury also
@@ -126,7 +125,7 @@ is a closed loop that lives on the appliance:
    and only once at least 1,000 frames have been labeled since the last run
    (yours and the jury's together), the trainer sends one job to a Modal
    cloud GPU: label fusion, near-duplicate pruning of dogless frames,
-   training, frame-level evaluation scored the way the alarm actually fires,
+   training, frame-level evaluation scored the way the alarm fires,
    NCNN export, and a robustness stress test (blur, darkness, overexposure,
    compression, camera shift). Auto-labeled frames train but never enter
    the exam.
@@ -160,8 +159,7 @@ scheduled training, evaluation, gated deployment) happens on its own.
 ### What a run costs, and why
 
 Cloud cost is GPU time, and GPU time is images processed divided by speed.
-The defaults come from benchmarks at this project's exact settings, not from
-price lists:
+The defaults come from benchmarks at this project's exact training settings:
 
 - **GPU: L40S, for training and labeling.** It trained about 420 images a
   second against 180 on an L4, and labeled about 81 frames a second against
@@ -172,9 +170,8 @@ price lists:
   bigger batch gets more done per step. 128 was about a quarter faster than
   32; going to 256 gained nothing more. Tiny first datasets keep a small
   batch.
-- **No re-learning, no copies.** Starting from the deployed model and
-  skipping the augmentation copies on a big dataset are what cut a run from
-  an estimated $18 to about $2-3.
+- **Fine-tuning the deployed model, without copies on a big dataset.**
+  Together these cut a run from an estimated $18 to about $2-3.
 
 The training page can override the GPU, batch and copies settings, for
 example "all 3 copies" if the robustness table ever shows blur handling
@@ -183,7 +180,7 @@ slipping.
 ## The training console
 
 The `/training` page is the console: the live model's scorecard (scored at
-the threshold the detector actually runs with), dataset composition, real
+the threshold the detector runs with), dataset composition, real
 cloud spend against your credit allowance, an improvement chart across runs,
 the cloud run's stages and log streaming live while it works, recipe and
 schedule knobs, and every run's full report (threshold curves, gate
@@ -208,7 +205,7 @@ Billing is pulled straight from Modal and every run records its true cost.
 The monthly credits setting is a hard stop: once spend reaches it, or
 anything has been billed beyond credits, the trainer refuses to start cloud
 jobs and says so, both on the budget card and in the refused job's history
-entry. Self-updates still run (they come from GitHub, not Modal), and cloud
+entry. Self-updates still run (they come from GitHub), and cloud
 jobs resume by themselves when the billing cycle resets.
 
 Modal requires a payment method on file before it runs any GPU job, even

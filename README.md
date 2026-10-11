@@ -40,8 +40,7 @@ With the optional `trainer` user set up (`scripts/setup-pi-trainer.sh`):
 Stock COCO weights caught 15 of 61 dog moments in this kitchen, with 5 false
 alarms. The current fine-tuned model catches 113 of 127 with no false alarms
 across 215 dog-free frames. That's on a later, larger held-out set, scored at
-this appliance's 0.6 threshold using the exported NCNN model the Pi actually
-runs.
+this appliance's 0.6 threshold using the exported NCNN model the Pi runs.
 
 ## How it works
 
@@ -127,8 +126,8 @@ to your own cloud account.**
   firewall (`scripts/harden-pi.sh`). The live video stream is only served on
   your LAN.
 - Cloud training is opt-in. When enabled, every frame the Pi saves for training
-  is uploaded to your Modal volume. These are still frames, not video, and can
-  include people in the kitchen. Only the separate `trainer` user can reach the
+  is uploaded to your Modal volume. They are still images and can include people
+  in the kitchen. Only the separate `trainer` user can reach the
   internet, and only Modal and the GitHub API (for release checks and the
   clock).
 - If you skip the trainer setup, nothing leaves the Pi. You can still train

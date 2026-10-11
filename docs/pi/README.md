@@ -97,7 +97,7 @@ firmware; changing how you pair doesn't fix it. The workaround is to keep a
 `NoInputNoOutput` agent registered permanently, so the fresh pairing on each boot
 is accepted automatically.
 
-The service runs as the app user, not root. As root, the A2DP connection fails
+The service runs as the app user. As root, the A2DP connection fails
 with `avdtp Permission denied`, because the media endpoint belongs to the user's
 PipeWire session.
 
@@ -124,7 +124,7 @@ persist across reboots.
 > this step is done, every frame the Pi saves for training is uploaded to the
 > Modal volume in your account. That includes frames from alarms, uncertain
 > detections, periodic background shots, and moments when a person is in view.
-> Still frames only, never the live stream. The trainer also checks
+> Only still frames are uploaded. The trainer also checks
 > `api.github.com` for releases and the current time. Nothing else is reachable.
 > Skip this step and nothing leaves the Pi.
 
@@ -202,7 +202,7 @@ USB-C wall charger is fine, but laptop USB ports and cheap chargers are not.
 
 YOLO26n through NCNN at 640px runs at about 2.4 FPS on a Pi 4 CPU (a Pi 5 is
 much faster). That's enough because the trigger waits for the dog to stay in the
-watch area for a while rather than reacting to a single frame. For more speed,
+watch area for a moment before firing. For more speed,
 export at a smaller `imgsz` such as 480, at some cost in accuracy on small or
 distant dogs.
 

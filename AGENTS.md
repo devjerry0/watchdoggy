@@ -27,6 +27,9 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   (trainer daemon) read `settings.json` directly. Both files are appliance
   state: gitignored, snapshotted by `doggy-install-code`, excluded by
   `deploy-to-pi.sh`.
+- Docs voice (user rule): plain sentences that say what a thing does. No em
+  dashes, no "not X but Y" / "X, not Y" contrast framing, no "actually",
+  no punchy slogan bullets.
 - Architecture overview: ARCHITECTURE.md. Systemd units: systemd/.
   Training pipeline: scripts/train_kitchen_model.py.
 
