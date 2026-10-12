@@ -114,7 +114,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_stats = build(run_dir, augment=recipe["augment"])
+    dataset_stats = build(run_dir, augment=recipe["augment"],
+                          deployed_dir=run_root / "deployed_ncnn_model")
     # Every image the trainer will actually iterate per epoch: base frames,
     # blur-augmented copies, and the extra human-weight copies.
     corpus = (dataset_stats["train"] + dataset_stats["augmented"]
