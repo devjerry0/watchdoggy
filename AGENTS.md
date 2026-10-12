@@ -309,7 +309,7 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   X's box; the live sidecar box fallback (`fusion._fallback_dogs`) applies
   to human-labeled frames only (the human is the second judge). Found
   because the build dropped 312 boxless solo-dog autos and boxed 2,315
-  more with the nano's own live box; a v1.0.40 rescue that re-asked the
+  more with the nano's own live box; a same-day rescue that re-asked the
   nano for boxes was reverted for the same reason. `_jury_id` hashes a
   rule tag as well as the numbers: a rule that changes meaning without
   changing a constant must change the tag, or the old jury's memory
