@@ -302,14 +302,3 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   10 MB manifest rewrite per request on the SD card) 39k sidecars took
   ~20 min of a 26 min pass. `mirror_sync.upload_chunks` caps a request at
   8 MB or 2,000 files, which keeps jpg requests the same size.
-- **2026-10-11 — The jury keeps scores, not boxes; the build re-asks the
-  nano.** A frame the jury labels dog on the nano alone (>= 0.85, big model
-  saw nothing) has no stored dog box: the cloud cache has only the big
-  model's (none), and the sidecar's live detections came from whatever
-  model ran at capture time (often a weak lowconf). 312 such frames were
-  dropped as "NEEDS BOXES" from the Oct 11 build; the label page only lists
-  human-labeled ones (4). `build(..., deployed_dir=...)` now runs the
-  deployed nano on those frames (`consensus.nano_dog_boxes`, at
-  PRELABEL_CONF) and `fusion.fuse(..., nano_dogs)` uses its boxes as the
-  last fallback. Also remember the build's dHash dedup: the Oct 11 epoch
-  was 34,515 images from 69,709 verdicted frames.

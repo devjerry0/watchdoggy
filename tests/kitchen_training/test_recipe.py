@@ -226,12 +226,3 @@ def test_uploads_are_sized_by_bytes():
         [UPLOAD_CHUNK_MAX_FILES, UPLOAD_CHUNK_MAX_FILES, 1000]
     huge = {"sample_big.jpg": 20 << 20, "sample_a.json": 10}
     assert list(upload_chunks(list(huge), huge)) == [["sample_big.jpg"], ["sample_a.json"]]
-
-
-def test_nano_boxes_rescue_a_dog_frame_nothing_else_boxed():
-    fusion = importlib.import_module("kitchen_training.fusion")
-    prelabels = {"shape": [480, 640], "dogs": [], "people": []}  # big model: nothing
-    meta = {"detections": {"targets": []}}                       # live Pi: nothing
-    assert fusion.fuse("s", "dog", meta, prelabels) == (None, "drop")
-    lines, source = fusion.fuse("s", "dog", meta, prelabels, [[64.0, 48.0, 128.0, 96.0]])
-    assert source == "fallback" and len(lines) == 1 and lines[0].startswith("1 ")  # dog

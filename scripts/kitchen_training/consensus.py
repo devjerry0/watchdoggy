@@ -11,7 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR, PRELABEL_CONF, RUNS, mirror_path
+from kitchen_training.config import DATASET_MIRROR, RUNS, mirror_path
 from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
@@ -75,16 +75,6 @@ def _nano_scores(nano, image) -> tuple[float, float]:
         if label == "person":
             nano_person = max(nano_person, conf)
     return nano_dog, nano_person
-
-
-def nano_dog_boxes(nano, image) -> list[list[float]]:
-    """The deployed nano's dog boxes on one frame, at the label bar. The
-    jury keeps only scores, so a frame it labeled dog on the nano alone
-    (the big model saw nothing) has no stored box: the build asks again."""
-    prediction = nano.predict(image, conf=PRELABEL_CONF, device="cpu",
-                              verbose=False)[0]
-    return [box.xyxy[0].tolist() for box in prediction.boxes
-            if prediction.names[int(box.cls[0])] == "dog"]
 
 
 def _jury_id(deployed_dir: Path) -> str:
