@@ -45,7 +45,12 @@ def _real_dogs(dogs, people, verdict) -> list:
 
 
 def _fallback_dogs(meta: dict) -> list:
-    """The big model missed the dog: fall back to the nano's sidecar box."""
+    """The big model missed the dog: fall back to the nano's sidecar box,
+    for HUMAN-labeled frames only (the human is the second judge). An auto
+    label trains on the big model's box or not at all: both models must
+    agree for a box to train (user rule, 2026-10-11)."""
+    if not meta.get("human_label"):
+        return []
     boxes = [d["box"] for d in meta.get("detections", {}).get("targets", [])
              if d.get("label") == "dog"
              and d.get("confidence", 0) >= PRELABEL_CONF]

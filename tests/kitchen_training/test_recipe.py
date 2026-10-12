@@ -226,3 +226,29 @@ def test_uploads_are_sized_by_bytes():
         [UPLOAD_CHUNK_MAX_FILES, UPLOAD_CHUNK_MAX_FILES, 1000]
     huge = {"sample_big.jpg": 20 << 20, "sample_a.json": 10}
     assert list(upload_chunks(list(huge), huge)) == [["sample_big.jpg"], ["sample_a.json"]]
+
+
+def test_a_dog_only_the_small_model_sees_is_disputed_not_auto_labeled(monkeypatch, tmp_path):
+    import sys, types
+    consensus = importlib.import_module("kitchen_training.consensus")
+    no_x = {"dogs": [], "people": []}
+    assert consensus.consensus_verdict(no_x, 0.95, 0.0) is None
+    assert consensus.consensus_verdict({"dogs": [[1, 1, 5, 5]], "people": []}, 0.5, 0.0) == "dog"
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=lambda *a, **k: None))
+    monkeypatch.setattr(consensus, "_entries", lambda stems: {s: [None, None, 0, 0] for s in stems})
+    monkeypatch.setattr(consensus, "read_frames", lambda stems: iter((s, b"", "img") for s in stems))
+    scores = {"sure": (0.95, 0.0), "unsure": (0.5, 0.0)}
+    monkeypatch.setattr(consensus, "_nano_scores", lambda nano, image, it=iter(scores.values()): next(it))
+    out = consensus.judge_stems(list(scores), {"sure": no_x, "unsure": no_x}, tmp_path)
+    assert out["auto_verdicts"] == {}
+    assert out["disputes"] == {"sure": {"model_says": "dog", "nano_conf": 0.95}}
+    assert sorted(out["declined"]) == ["sure", "unsure"]
+
+
+def test_live_small_model_box_trains_only_with_a_human_label():
+    fusion = importlib.import_module("kitchen_training.fusion")
+    no_x = {"shape": [480, 640], "dogs": [], "people": []}
+    live = {"detections": {"targets": [{"label": "dog", "confidence": 0.9, "box": [64, 48, 128, 96]}]}}
+    assert fusion.fuse("s", "dog", live, no_x) == (None, "drop")           # auto label
+    lines, source = fusion.fuse("s", "dog", {**live, "human_label": "dog"}, no_x)
+    assert source == "fallback" and lines[0].startswith("1 ")
