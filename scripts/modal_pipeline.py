@@ -151,7 +151,9 @@ def run_label_pass(run_name: str) -> dict:
     the jury fanned out over CPU containers, then the merge. A Pi that drops
     off mid-pass can no longer strand the jury step (it used to chain the
     two calls itself); the Pi collects this call's result by id instead."""
+    started = time.monotonic()
     results = run_prelabels.remote(run_name)
+    labeled_at = time.monotonic()
     volume.reload()  # see the cache the labeling container just committed
     run_root = PIPELINE_ROOT / "runs" / run_name
     _point_kitchen_training_at_volume(run_root)
@@ -161,18 +163,25 @@ def run_label_pass(run_name: str) -> dict:
     todo = plan["todo"]
     chunks = [todo[i:i + JURY_CHUNK] for i in range(0, len(todo), JURY_CHUNK)]
     print(f"[pipeline] jury fanned out over {len(chunks)} containers", flush=True)
-    parts, judged, started = [], 0, time.monotonic()
+    parts, judged, jury_started = [], 0, time.monotonic()
     # Unordered: report each chunk as it lands (the merge doesn't care).
     for part in run_consensus_chunk.map([run_name] * len(chunks), chunks,
                                         order_outputs=False):
         parts.append(part)
         judged += len(part["auto_verdicts"]) + len(part["disputes"]) \
             + len(part["declined"])
+        elapsed = time.monotonic() - jury_started
         print(f"[pipeline] jury {len(parts)}/{len(chunks)} chunks done "
-              f"({judged}/{len(todo)} frames, "
-              f"{(time.monotonic() - started) / 60:.1f} min)", flush=True)
+              f"({judged}/{len(todo)} frames, {elapsed / 60:.1f} min, "
+              f"{judged / max(elapsed, 1e-6):.0f} frames/s overall)",
+              flush=True)
     results.update(finish_jury_phase(run_name, plan, parts))
     volume.commit()
+    done = time.monotonic()
+    print(f"[pipeline] label pass took {(done - started) / 60:.1f} min: "
+          f"labeling {(labeled_at - started) / 60:.1f}, jury plan "
+          f"{(jury_started - labeled_at) / 60:.1f}, jury "
+          f"{(done - jury_started) / 60:.1f}", flush=True)
     return results
 
 
@@ -198,7 +207,8 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
         {key: results[key] for key in
          ("run_name", "gate", "dataset", "recipe", "ncnn_truth",
           "robustness", "robustness_deployed", "slices", "calibration",
-          "ncnn_heldout", "exam_suspects")}, indent=1))
+          "ncnn_heldout", "exam_suspects")}
+        | {"timings": results.get("timings")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
     if bundle_tar:

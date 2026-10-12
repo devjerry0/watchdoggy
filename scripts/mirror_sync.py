@@ -116,6 +116,7 @@ def _state_dir(dataset_dir: Path) -> Path:
 
 
 def sync_mirror(volume, dataset_dir: Path) -> None:
+    started = time.monotonic()
     state = _state_dir(dataset_dir)
     manifest_file = state / ".upload-manifest.json"
     # Legacy location fallback: earlier versions kept state beside the
@@ -136,9 +137,10 @@ def sync_mirror(volume, dataset_dir: Path) -> None:
     changed = [n for n, sig in current.items() if old.get(n) != sig]
     deleted = [n for n in old if n not in current]
     print(f"[pipeline] mirror sync: {len(changed)} to upload, "
-          f"{len(deleted)} to delete, {len(current) - len(changed)} unchanged",
-          flush=True)
-    done, last_print = 0, time.monotonic()
+          f"{len(deleted)} to delete, {len(current) - len(changed)} unchanged "
+          f"(scanned in {time.monotonic() - started:.0f}s)", flush=True)
+    done, last_print, upload_started = 0, time.monotonic(), time.monotonic()
+    total_bytes = sum(current[n][1] for n in changed)
     for chunk in upload_chunks(changed, {n: current[n][1] for n in changed}):
         _put_chunk(volume, dataset_dir, chunk)
         for name in chunk:
@@ -148,10 +150,18 @@ def sync_mirror(volume, dataset_dir: Path) -> None:
         if done == len(changed) or time.monotonic() - last_print >= PROGRESS_EVERY_S:
             print(f"[pipeline]   uploaded {done}/{len(changed)}", flush=True)
             last_print = time.monotonic()
+    if changed:
+        took = max(time.monotonic() - upload_started, 1e-6)
+        print(f"[pipeline]   upload took {took:.0f}s: "
+              f"{len(changed) / took:.0f} files/s, "
+              f"{total_bytes / took / 1e6:.1f} MB/s", flush=True)
     for name in deleted:
         try:
             volume.remove_file(mirror_key(name))
         except Exception:
             pass  # already gone is fine; the mirror only needs to converge
     manifest_file.write_text(json.dumps(current))
+    index_started = time.monotonic()
     _write_index(volume, dataset_dir)
+    print(f"[pipeline] sync took {time.monotonic() - started:.0f}s "
+          f"(index {time.monotonic() - index_started:.0f}s)", flush=True)

@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 from kitchen_training.build import build
 from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
-                                     PRELABEL_CACHE, RUNS, mirror_glob)
+                                     PRELABEL_CACHE, RUNS, duration,
+                                     mirror_glob, phase)
 from kitchen_training.consensus import finish_jury, judge_stems, jury_plan
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -106,6 +108,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     results payload and the NCNN bundle path when the gate says deploy."""
     recipe = {**DEFAULT_RECIPE, **recipe}
     print(f"[pipeline] recipe: {recipe}", flush=True)
+    started, timings = time.monotonic(), {}
     cache_before = cached_stems()
     run_dir = RUNS / run_name
     # Janitor BEFORE the first write: a full Volume must heal itself here,
@@ -114,7 +117,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_stats = build(run_dir, augment=recipe["augment"])
+    with phase("build", timings):
+        dataset_stats = build(run_dir, augment=recipe["augment"])
     # Every image the trainer will actually iterate per epoch: base frames,
     # blur-augmented copies, and the extra human-weight copies.
     corpus = (dataset_stats["train"] + dataset_stats["augmented"]
@@ -132,17 +136,28 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
                   "epochs": epochs}
     recipe = {**recipe, "augment_mode": dataset_stats["augment_mode"],
               "init": start_weights().name}
-    best = train(run_dir, "local", epochs=recipe["epochs"],
-                 batch=recipe["batch"], freeze=recipe["freeze"])
+    with phase("train", timings):
+        best = train(run_dir, "local", epochs=recipe["epochs"],
+                     batch=recipe["batch"], freeze=recipe["freeze"])
+    seen = corpus * recipe["epochs"]
+    print(f"[pipeline] trained {seen} images ({corpus} x {recipe['epochs']} "
+          f"epochs) at {seen / max(timings['train'], 1):.0f} img/s", flush=True)
     if compare:
-        best, recipe = pick_start(run_dir, best, recipe,
-                                  run_root / "deployed_ncnn_model", fire_conf)
-    metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
-    bundle = export(run_dir, best)
-    metrics["ncnn_truth"] = ncnn_truth(run_dir, bundle)
-    metrics["robustness"] = robustness(run_dir, bundle)
+        with phase("compare", timings):
+            best, recipe = pick_start(run_dir, best, recipe,
+                                      run_root / "deployed_ncnn_model",
+                                      fire_conf)
+    with phase("evaluate", timings):
+        metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
+    with phase("export", timings):
+        bundle = export(run_dir, best)
+    with phase("ncnn truth", timings):
+        metrics["ncnn_truth"] = ncnn_truth(run_dir, bundle)
+    with phase("robustness", timings):
+        metrics["robustness"] = robustness(run_dir, bundle)
     deployed_dir = run_root / "deployed_ncnn_model"
-    gate = deploy_gate(run_dir, bundle, deployed_dir, fire_conf)
+    with phase("gate", timings):
+        gate = deploy_gate(run_dir, bundle, deployed_dir, fire_conf)
     new_confs = gate.pop("_new_confs")
     deployed_confs = gate.pop("_deployed_confs", None)
     exam = eval_frames(run_dir)
@@ -151,9 +166,15 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
     if deployed_dir.is_dir():
         # The incumbent runs the same stress suite: comparisons stay
         # apples-to-apples as the exam grows.
-        metrics["robustness_deployed"] = robustness(run_dir, deployed_dir)
-    suspects = exam_suspects(run_dir, bundle)
+        with phase("robustness (deployed)", timings):
+            metrics["robustness_deployed"] = robustness(run_dir, deployed_dir)
+    with phase("exam audit", timings):
+        suspects = exam_suspects(run_dir, bundle)
     report(run_dir, dataset_stats, metrics, "fine-tune", bundle)
+    timings["total"] = round(time.monotonic() - started, 1)
+    print("[pipeline] timings: " + " | ".join(
+        f"{name} {duration(seconds)}" for name, seconds in timings.items()),
+        flush=True)
 
     results = {
         "run_name": run_name,
@@ -176,6 +197,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         # appliance's runtime threshold, not a fixed default.
         "ncnn_heldout": gate["new"],
         "exam_suspects": suspects,
+        "timings": timings,
     }
     if gate["deploy"]:
         promote_champion(best)

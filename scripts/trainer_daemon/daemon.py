@@ -70,6 +70,7 @@ def main() -> int:
         return 0
 
     log(f"running {job['kind']} job {job['id']}")
+    started = time.time()
     write_result(job["id"], "running", "")
     try:
         detail = RUNNERS[job["kind"]](job)
@@ -79,5 +80,6 @@ def main() -> int:
         return 1
     extra = {"summary": job["_summary"]} if "_summary" in job else None
     write_result(job["id"], "done", detail, extra)
-    log(f"job {job['id']} done: {detail}")
+    log(f"job {job['id']} done in {(time.time() - started) / 60:.1f} min: "
+        f"{detail}")
     return 0

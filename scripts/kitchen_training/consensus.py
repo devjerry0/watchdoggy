@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR, RUNS, mirror_path
+from kitchen_training.config import DATASET_MIRROR, RUNS, log, mirror_path, rate
 from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
@@ -158,6 +159,7 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
     im[0] of a batch, so batching the nano would silently drop frames. The
     cloud parallelizes across containers instead (modal_pipeline)."""
     from ultralytics import YOLO  # deferred, like the whole package
+    started = time.monotonic()
     entries = _entries(stems)
     nano = YOLO(str(deployed_dir), task="detect")
     auto_verdicts: dict = {}
@@ -184,6 +186,7 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
                               "nano_conf": round(nano_dog, 3)}
             continue
         declined.append(stem)
+    log(f"jury chunk: {rate(len(stems), time.monotonic() - started)}")
     return {"auto_verdicts": auto_verdicts, "disputes": disputes,
             "declined": declined}
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE, mirror_glob, mirror_path,
                                      PRELABEL_CACHE, PRELABEL_CONF,
-                                     PRELABEL_MODEL, RUNS, device, log, sh)
+                                     PRELABEL_MODEL, RUNS, device, log, rate, sh)
 
 PUSH_TIMEOUT_SECONDS = 10
 PUSH_WARNINGS_SHOWN = 3   # after this many, failures are only counted
@@ -156,6 +156,7 @@ def _checkpoint(cache: dict, done: int, total: int, started: float) -> None:
 
 
 def prelabel(stems: list[str]) -> dict:
+    started = time.monotonic()
     cache = _load_cache()
     todo = [stem for stem in stems if stem not in cache]
     if todo:
@@ -184,7 +185,9 @@ def prelabel(stems: list[str]) -> dict:
         _save_cache(cache)
         if unreadable:
             log(f"skipped {unreadable} unreadable frames (empty or corrupt files)")
-    log(f"prelabels ready ({len(stems)} frames, {len(todo)} newly computed)")
+    took = (f", {rate(len(todo), time.monotonic() - started)}" if todo else "")
+    log(f"prelabels ready ({len(stems)} frames, {len(todo)} newly computed"
+        f"{took})")
     return cache
 
 

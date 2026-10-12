@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,6 +92,28 @@ class Frame:
 
 def log(message: str) -> None:
     print(f"[train] {message}", flush=True)
+
+
+def duration(seconds: float) -> str:
+    if seconds < 90:
+        return f"{seconds:.0f}s"
+    if seconds < 5400:
+        return f"{seconds / 60:.1f} min"
+    return f"{seconds / 3600:.2f} h"
+
+
+def rate(count: int, seconds: float, unit: str = "frames") -> str:
+    return (f"{count} {unit} in {duration(seconds)} "
+            f"({count / max(seconds, 1e-6):.0f} {unit}/s)")
+
+
+@contextmanager
+def phase(name: str, timings: dict):
+    """Time a pipeline phase: logs it and records seconds in timings."""
+    started = time.monotonic()
+    yield
+    timings[name] = round(time.monotonic() - started, 1)
+    log(f"{name} took {duration(timings[name])}")
 
 
 def sh(command: list[str], env: dict | None = None) -> None:
