@@ -104,7 +104,10 @@ is a closed loop that lives on the appliance:
    default): a large model (yolo26x) draws `·x` boxes for every new frame,
    and a **two-model
    jury** (the deployed fine-tune plus the big model) auto-labels the frames
-   it can vouch for. The jury's thresholds are backtested against the full human-labeled corpus with the current champion
+   it can vouch for. A frame is auto-labeled dog only when both models see
+   the dog, and it trains on the big model's box. When the deployed model is
+   sure of a dog (0.85 or higher) and the big model sees nothing, the frame
+   is flagged Disputed for you instead. The jury's thresholds are backtested against the full human-labeled corpus with the current champion
    as juror, and re-audited when the champion changes. In the latest backtest
    the shipped rules mislabel about 0.1% of dog frames and fabricate none,
    while clearing about a third of a fresh queue per pass. The jury also

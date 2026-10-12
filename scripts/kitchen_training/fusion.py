@@ -45,19 +45,22 @@ def _real_dogs(dogs, people, verdict) -> list:
 
 
 def _fallback_dogs(meta: dict) -> list:
-    """The big model missed the dog: fall back to the nano's sidecar box."""
+    """The big model missed the dog: fall back to the nano's sidecar box,
+    for HUMAN-labeled frames only (the human is the second judge). An auto
+    label trains on the big model's box or not at all: both models must
+    agree for a box to train (user rule, 2026-10-11)."""
+    if not meta.get("human_label"):
+        return []
     boxes = [d["box"] for d in meta.get("detections", {}).get("targets", [])
              if d.get("label") == "dog"
              and d.get("confidence", 0) >= PRELABEL_CONF]
     return [list(map(float, box)) for box in boxes]
 
 
-def fuse(stem: str, verdict: str, meta: dict, prelabels: dict,
-         nano_dogs: list | None = None) -> tuple[list[str] | None, str]:
+def fuse(stem: str, verdict: str, meta: dict,
+         prelabels: dict) -> tuple[list[str] | None, str]:
     """Label lines for one frame plus their provenance:
-    'hand' | 'fused' | 'fallback' | 'drop' (lines=None means drop).
-    nano_dogs: the deployed nano's dog boxes, computed by the build only
-    when nothing else has a box."""
+    'hand' | 'fused' | 'fallback' | 'drop' (lines=None means drop)."""
     height, width = prelabels["shape"]
     hand_boxes = meta.get("human_boxes")
     if isinstance(hand_boxes, list):
@@ -73,7 +76,7 @@ def fuse(stem: str, verdict: str, meta: dict, prelabels: dict,
     dogs = _real_dogs(list(prelabels["dogs"]), prelabels["people"], verdict)
     source = "fused"
     if not dogs:
-        dogs = _fallback_dogs(meta) or list(nano_dogs or [])
+        dogs = _fallback_dogs(meta)
         source = "fallback"
     if not dogs:
         return None, "drop"

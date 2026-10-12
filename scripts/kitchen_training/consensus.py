@@ -1,17 +1,17 @@
 """Consensus auto-labeling and the one-direction label audit.
 
 The nano is the DEPLOYED kitchen specialist; X is the generic giant. The
-jurors must agree before a frame skips the human queue -- except a
-near-certain nano dog stands alone (the specialist out-sees X on dark and
-half-hidden dogs it was specifically trained on). Genuine disagreement =
-the frame stays for the human."""
+jurors must agree before a frame skips the human queue. A near-certain
+nano dog that X misses (often a dark or half-hidden dog) is flagged
+disputed for the human. Any other disagreement = the frame stays in the
+human queue."""
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR, PRELABEL_CONF, RUNS, mirror_path
+from kitchen_training.config import DATASET_MIRROR, RUNS, mirror_path
 from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
@@ -30,7 +30,10 @@ JURY_MEMORY = RUNS / "jury-no-action.json"
 # had become the sole bottleneck on autonomy. Safety nets that remain:
 # auto-labels train-split only, disputable by every future candidate.
 AUTO_DOG_NANO_CONF = 0.45    # dog when X agrees
-AUTO_DOG_SOLO_CONF = 0.85    # dog on nano alone (X misses dark/hidden dogs)
+# Both jurors must agree on a dog (user rule, 2026-10-11). A nano this sure
+# with X seeing nothing used to auto-label "dog" alone; it is flagged
+# disputed for the human instead (often a dark or half-hidden dog).
+SOLO_DOG_DISPUTE_CONF = 0.85
 AUTO_CLEAR_NANO_CONF = 0.15  # this quiet + no X dog = confident "no dog"
 AUTO_PERSON_NANO_CONF = 0.5
 # The label AUDIT keeps the old alarm-grade bar: it second-guesses HUMAN
@@ -47,8 +50,6 @@ def consensus_verdict(x_entry: dict, nano_dog: float,
     x_dog = bool(x_entry["dogs"])
     x_person = bool(x_entry["people"])
     if x_dog and nano_dog >= AUTO_DOG_NANO_CONF:
-        return "dog"
-    if nano_dog >= AUTO_DOG_SOLO_CONF:
         return "dog"
     if not x_dog and nano_dog <= AUTO_CLEAR_NANO_CONF:
         if x_person or nano_person >= AUTO_PERSON_NANO_CONF:
@@ -77,21 +78,14 @@ def _nano_scores(nano, image) -> tuple[float, float]:
     return nano_dog, nano_person
 
 
-def nano_dog_boxes(nano, image) -> list[list[float]]:
-    """The deployed nano's dog boxes on one frame, at the label bar. The
-    jury keeps only scores, so a frame it labeled dog on the nano alone
-    (the big model saw nothing) has no stored box: the build asks again."""
-    prediction = nano.predict(image, conf=PRELABEL_CONF, device="cpu",
-                              verbose=False)[0]
-    return [box.xyxy[0].tolist() for box in prediction.boxes
-            if prediction.names[int(box.cls[0])] == "dog"]
-
-
 def _jury_id(deployed_dir: Path) -> str:
-    """The jury's identity: deployed weights + rule constants."""
+    """The jury's identity: deployed weights + rules. A rule that changes
+    meaning without changing a number needs its own tag here, or the old
+    jury's memory survives it."""
     digest = hashlib.sha256(repr((
-        AUTO_DOG_NANO_CONF, AUTO_DOG_SOLO_CONF, AUTO_CLEAR_NANO_CONF,
-        AUTO_PERSON_NANO_CONF, AUDIT_DOG_NANO_CONF)).encode())
+        AUTO_DOG_NANO_CONF, "solo dog -> dispute", SOLO_DOG_DISPUTE_CONF,
+        AUTO_CLEAR_NANO_CONF, AUTO_PERSON_NANO_CONF,
+        AUDIT_DOG_NANO_CONF)).encode())
     for weights in sorted(deployed_dir.glob("**/*.bin")):
         digest.update(weights.read_bytes())
     return digest.hexdigest()[:16]
@@ -178,7 +172,10 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
             if verdict:
                 auto_verdicts[stem] = verdict
                 continue
-            declined.append(stem)
+            if nano_dog >= SOLO_DOG_DISPUTE_CONF and not cache[stem]["dogs"]:
+                disputes[stem] = {"model_says": "dog",
+                                  "nano_conf": round(nano_dog, 3)}
+            declined.append(stem)  # flagged once, never re-judged by this jury
             continue
         # Audit path: the prefilter already established eligibility
         # (non-dog human label, unsettled, undisputed, X sees a dog).

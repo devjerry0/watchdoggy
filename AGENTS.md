@@ -302,14 +302,16 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   10 MB manifest rewrite per request on the SD card) 39k sidecars took
   ~20 min of a 26 min pass. `mirror_sync.upload_chunks` caps a request at
   8 MB or 2,000 files, which keeps jpg requests the same size.
-- **2026-10-11 — The jury keeps scores, not boxes; the build re-asks the
-  nano.** A frame the jury labels dog on the nano alone (>= 0.85, big model
-  saw nothing) has no stored dog box: the cloud cache has only the big
-  model's (none), and the sidecar's live detections came from whatever
-  model ran at capture time (often a weak lowconf). 312 such frames were
-  dropped as "NEEDS BOXES" from the Oct 11 build; the label page only lists
-  human-labeled ones (4). `build(..., deployed_dir=...)` now runs the
-  deployed nano on those frames (`consensus.nano_dog_boxes`, at
-  PRELABEL_CONF) and `fusion.fuse(..., nano_dogs)` uses its boxes as the
-  last fallback. Also remember the build's dHash dedup: the Oct 11 epoch
-  was 34,515 images from 69,709 verdicted frames.
+- **2026-10-11 — Both models must agree on a dog (user rule).** The jury
+  no longer auto-labels "dog" on the nano alone (>= 0.85 with X seeing
+  nothing): those frames get a `disputed` flag for the human
+  (`consensus.SOLO_DOG_DISPUTE_CONF`). An auto-labeled dog trains only on
+  X's box; the live sidecar box fallback (`fusion._fallback_dogs`) applies
+  to human-labeled frames only (the human is the second judge). Found
+  because the build dropped 312 boxless solo-dog autos and boxed 2,315
+  more with the nano's own live box; a v1.0.40 rescue that re-asked the
+  nano for boxes was reverted for the same reason. `_jury_id` hashes a
+  rule tag as well as the numbers: a rule that changes meaning without
+  changing a constant must change the tag, or the old jury's memory
+  survives it. Also remember the build's dHash dedup: the Oct 11 epoch was
+  34,515 images from 69,709 verdicted frames.
