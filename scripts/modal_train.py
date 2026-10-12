@@ -56,6 +56,7 @@ def train(run_name: str, job: str, overrides: dict) -> bytes:
     root = VOL / run_name
     args = {**BASE_ARGS, **overrides}
     model = YOLO(str(root / "base.pt"))
+    model.model.yaml["end2end"] = False  # train the head NCNN ships (kitchen_training.training)
     # modal-data.yaml was rewritten at upload time to point inside /vol.
     # Results go to container-local /tmp: the weights travel home as the
     # return value, so nothing needs to persist in the Volume.

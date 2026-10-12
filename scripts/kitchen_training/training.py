@@ -32,6 +32,13 @@ def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int,
     log(f"training from {init.name} locally: epochs<={epochs}, "
         f"freeze={freeze}, device={device()}")
     model = YOLO(str(init))
+    # Train only the classic (one-to-many) head, the one the Pi runs: NCNN has
+    # no top-k op, so the export drops YOLO26's end-to-end head, while YOLO26's
+    # loss phases the classic head out (weight 0.8 -> 0.1 over the epochs). The
+    # Oct 11 120-epoch run starved it and lost the gate (2026-10-11). With
+    # end2end off the trainer rebuilds the model without that branch and uses
+    # the classic YOLO loss; best.pt selection then measures the shipped head.
+    model.model.yaml["end2end"] = False
     # cache=True decodes each image once into RAM instead of once per epoch
     # -- a 200-epoch run reads the dataset 200x otherwise.
     model.train(data=str(run_dir / "dataset/data.yaml"),

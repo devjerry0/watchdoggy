@@ -91,6 +91,7 @@ def evaluate(run_dir: Path, weights_by_name: dict[str, Path]) -> dict:
 
     for name, weights in weights_by_name.items():
         model = YOLO(str(weights))
+        model.model.end2end = False  # score the head NCNN ships (training._train_local)
         confs = dog_confs(model, frames, device())
         result["models"][name] = {"map50_val": _val_map50(model, run_dir),
                                   "confs": confs,

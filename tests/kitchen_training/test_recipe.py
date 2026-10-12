@@ -293,3 +293,59 @@ def test_ncnn_threads_capped_at_the_container_allowance(monkeypatch):
     cap_ncnn_threads()
     cap_ncnn_threads()                           # idempotent
     assert fake.Net().opt.num_threads == 8 and fake.Net.__mro__[1] is Net
+
+
+def test_training_trains_only_the_head_ncnn_deploys(monkeypatch, tmp_path):
+    """NCNN cannot run YOLO26's end-to-end head and exports the classic one,
+    while YOLO26's loss phases the classic head out over the epochs: the Oct 11
+    120-epoch run starved it and lost the gate. Training must switch the
+    end-to-end branch off so the trainer uses the classic loss."""
+    import sys, types
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, path):
+            self.model = types.SimpleNamespace(yaml={"end2end": True})
+
+        def train(self, **kwargs):
+            seen["end2end"] = self.model.yaml["end2end"]
+            raise SystemExit  # stop before the save-dir lookup
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=FakeModel))
+    import pytest
+    with pytest.raises(SystemExit):
+        training._train_local(tmp_path, epochs=1, batch=8, freeze=10, init=tmp_path / "w.pt")
+    assert seen["end2end"] is False
+
+
+def test_a_classic_only_model_uses_the_classic_loss_and_keeps_every_classic_weight():
+    from ultralytics.cfg import get_cfg
+    from ultralytics.nn.tasks import DetectionModel
+    from ultralytics.utils.loss import v8DetectionLoss
+    from ultralytics.utils.torch_utils import intersect_dicts
+    full = DetectionModel("yolo26n.yaml", nc=80, verbose=False)
+    cfg = dict(full.yaml, end2end=False)
+    classic = DetectionModel(cfg, nc=80, verbose=False)
+    classic.args = get_cfg()
+    assert isinstance(classic.init_criterion(), v8DetectionLoss)
+    kept = intersect_dicts(full.state_dict(), classic.state_dict())
+    assert len(kept) == len(classic.state_dict())
+    assert all("one2one" in k for k in full.state_dict() if k not in kept)
+
+
+def test_pt_models_are_scored_with_the_deployed_head(monkeypatch, tmp_path):
+    import sys, types
+    evaluation = importlib.import_module("kitchen_training.evaluation")
+    heads = []
+
+    class FakeModel:
+        def __init__(self, path):
+            self.model = types.SimpleNamespace(end2end=True)
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=FakeModel))
+    monkeypatch.setattr(evaluation, "eval_frames", lambda run_dir: [])
+    monkeypatch.setattr(evaluation, "dog_confs", lambda model, frames, dev: heads.append(model.model.end2end) or {})
+    monkeypatch.setattr(evaluation, "_val_map50", lambda model, run_dir: None)
+    monkeypatch.setattr(evaluation, "curve", lambda frames, confs: {"0.7": {"heldout": {"caught": 0, "missed": 0, "false_fires": 0}}})
+    evaluation.evaluate(tmp_path, {"fine-tune": tmp_path / "a.pt", "baseline": tmp_path / "b.pt"})
+    assert heads == [False, False]
