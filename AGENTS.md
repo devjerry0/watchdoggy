@@ -334,3 +334,20 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   subclasses `ncnn.Net` so every net ultralytics creates gets
   `num_threads = OMP_NUM_THREADS`. Check `nproc` (honors OMP_NUM_THREADS)
   against `os.cpu_count()` before blaming the GIL or the model.
+- **2026-10-12 — Train the head NCNN ships; YOLO26 phases it out.** NCNN
+  has no top-k op, so `export` drops YOLO26's end-to-end head and the Pi
+  runs the classic one-to-many head. YOLO26's `E2ELoss` decays that head's
+  loss weight 0.8 -> 0.1 over the configured epochs (ultralytics
+  `utils/loss.py` E2ELoss.decay, updated per epoch), and Ultralytics' val
+  (best.pt selection) scores the end-to-end head. The Oct 11 120-epoch run
+  ended with a starved classic head: on the 190-dog exam its classic head
+  caught 132 @0.7 vs 156 for its own end-to-end head; the epoch-91 snapshot
+  (weight ~0.27) caught 153 and beat the champion; the NCNN gate lost 26 vs
+  21 errors. Labels and the missing blur copies were ruled out (epoch 91
+  matched the champion on the same data; missed dogs were no blurrier).
+  Fix: `training._train_local` and `scripts/modal_train.py` set
+  `model.model.yaml["end2end"] = False` before `train()` (the trainer
+  rebuilds from that yaml: classic `v8DetectionLoss`, every classic weight
+  transfers, only `one2one_*` keys drop), and `evaluation.evaluate` scores
+  `.pt` models with `end2end = False`. When a PyTorch score and an NCNN
+  score disagree, compare `end2end` on vs off before blaming the export.
