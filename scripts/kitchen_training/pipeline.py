@@ -102,6 +102,18 @@ def pick_start(run_dir: Path, warm_best: Path, recipe: dict,
                      "init": (BASE_MODEL if picked == "fresh" else CHAMPION_MODEL).name}
 
 
+def checkpoints(run_dir: Path) -> dict[str, Path]:
+    """Mid-run and final weights of the main training, for the report's
+    leaderboard. epoch0.pt (after one epoch, about the champion) is left
+    out. The gate still judges best.pt alone."""
+    weights = run_dir / "train" / "weights"
+    found = {p.stem: p for p in weights.glob("epoch*.pt") if p.stem != "epoch0"}
+    found = dict(sorted(found.items(), key=lambda item: int(item[0][5:])))
+    if (weights / "last.pt").is_file():
+        found["last"] = weights / "last.pt"
+    return found
+
+
 def full_run(run_name: str, recipe: dict, fire_conf: float,
              run_root: Path) -> tuple[dict, Path | None]:
     """Build -> train -> evaluate -> export -> gate -> report. Returns the
@@ -148,7 +160,8 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
                                       run_root / "deployed_ncnn_model",
                                       fire_conf)
     with phase("evaluate", timings):
-        metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL})
+        metrics = evaluate(run_dir, {"fine-tune": best, "baseline": BASE_MODEL,
+                                     **checkpoints(run_dir)})
     with phase("export", timings):
         bundle = export(run_dir, best)
     with phase("ncnn truth", timings):

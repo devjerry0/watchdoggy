@@ -262,3 +262,12 @@ def test_phase_timing_helpers(capsys):
     with phase("build", timings):
         pass
     assert "build" in timings and "[train] build took 0s" in capsys.readouterr().out
+
+
+def test_report_scores_mid_run_checkpoints(tmp_path):
+    weights = tmp_path / "train" / "weights"
+    weights.mkdir(parents=True)
+    for name in ("epoch0", "epoch80", "epoch40", "last", "best"):
+        (weights / f"{name}.pt").write_bytes(b"")
+    assert list(pipeline.checkpoints(tmp_path)) == ["epoch40", "epoch80", "last"]
+    assert training.CHECKPOINT_EVERY == 40
