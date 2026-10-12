@@ -19,6 +19,12 @@ def start_weights() -> Path:
     return CHAMPION_MODEL if CHAMPION_MODEL.is_file() else BASE_MODEL
 
 
+# Mid-run checkpoints (epoch40.pt, epoch80.pt; ultralytics counts from 0):
+# the report scores them beside best.pt and last.pt, so every run shows
+# whether the later epochs paid off on the exam.
+CHECKPOINT_EVERY = 40
+
+
 def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int,
                  init: Path | None = None, tag: str = "") -> None:
     from ultralytics import YOLO
@@ -38,6 +44,7 @@ def _train_local(run_dir: Path, epochs: int, batch: int, freeze: int,
                 patience=epochs,
                 imgsz=IMAGE_SIZE, batch=batch, freeze=freeze, device=device(),
                 cache=True, project=str(run_dir), name=f"train{tag}", exist_ok=True,
+                save_period=CHECKPOINT_EVERY,
                 verbose=False, plots=True)
     # Ultralytics decides the save dir (its settings can reroute project
     # paths); ask the trainer where it actually wrote instead of guessing.
