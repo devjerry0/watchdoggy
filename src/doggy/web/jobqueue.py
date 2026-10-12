@@ -30,6 +30,10 @@ _INT_BOUNDS = {"epochs": (10, 500), "freeze": (0, 23),
                "train_interval_hours": (6, 720), "label_interval_hours": (24, 720),
                "min_new_labels": (1, 100000),
                "nightly_prelabel_hour": (0, 23), "monthly_credits": (0, 100000)}
+# A labeler job's own knobs, job params only (never saved settings). Epochs
+# reach down to 1 so a probe run checks the whole path cheaply; the agreed
+# auto-labels number ~33k after dedup, so a bigger sample means nothing.
+_LABELER_BOUNDS = {"epochs": (1, 500), "auto_sample": (1, 50000)}
 
 
 def list_jobs(jobs_dir: Path) -> list[dict]:
@@ -80,15 +84,7 @@ def save_trainer_settings(jobs_dir: Path, updates: dict) -> dict:
 def validated(body: dict) -> dict:
     """The subset of a settings body that is known and in bounds (422 on
     anything out of range); unknown keys are dropped."""
-    clean = {}
-    for key, (low, high) in _INT_BOUNDS.items():
-        if key not in body:
-            continue
-        value = body[key]
-        if not isinstance(value, int) or not low <= value <= high:
-            raise HTTPException(status_code=422,
-                                detail=f"{key} must be {low}..{high}")
-        clean[key] = value
+    clean = _bounded_ints(body, _INT_BOUNDS)
     if "auto_update" in body:
         if not isinstance(body["auto_update"], bool):
             raise HTTPException(status_code=422, detail="auto_update must be bool")
@@ -109,6 +105,25 @@ def validated(body: dict) -> dict:
             raise HTTPException(status_code=422,
                                 detail="batch must be auto, 8, 16, 32, 64, or 128")
         clean["batch"] = body["batch"]
+    return clean
+
+
+def labeler_params(body: dict) -> dict:
+    """A labeler job's params (epochs, auto_sample), 422 when out of range;
+    everything else is dropped."""
+    return _bounded_ints(body, _LABELER_BOUNDS)
+
+
+def _bounded_ints(body: dict, bounds: dict) -> dict:
+    clean = {}
+    for key, (low, high) in bounds.items():
+        if key not in body:
+            continue
+        value = body[key]
+        if not isinstance(value, int) or not low <= value <= high:
+            raise HTTPException(status_code=422,
+                                detail=f"{key} must be {low}..{high}")
+        clean[key] = value
     return clean
 
 

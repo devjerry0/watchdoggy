@@ -15,8 +15,10 @@ from doggy.web.sidecar_index import SidecarIndex
 # (prelabel + build + fine-tune + eval + gated deploy); "prelabel" = fresh
 # big-model boxes only, so the label page is stocked before a labeling
 # session; "update" = self-update from the latest GitHub release (health-
-# gated install with rollback, run by the trainer daemon).
-_KINDS = {"train", "prelabel", "update"}
+# gated install with rollback, run by the trainer daemon); "labeler" =
+# fine-tune the big labeling model and swap it in on a clear exam win
+# (by hand only, never scheduled).
+_KINDS = {"train", "prelabel", "update", "labeler"}
 _HISTORY_SHOWN = 10
 _LOG_TAIL_LINES = 200
 SECONDS_PER_HOUR = 3600.0
@@ -51,7 +53,9 @@ def _cloud_failure_streak(jobs: list[dict]) -> int:
     per kind (trainer_daemon.queue.failure_backoff): a nightly prelabel
     success must not hide three failed trains, and interleaved sub-threshold
     failures of both kinds must not read as one long streak. Statuses other
-    than failed/done (queued, running, refused) don't affect a streak."""
+    than failed/done (queued, running, refused) don't affect a streak.
+    Labeler jobs run by hand only and never back off, so their failures
+    show on their own rows."""
     streaks = {"train": 0, "prelabel": 0}
     counting = {"train": True, "prelabel": True}
     for job in jobs:
@@ -156,8 +160,11 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
         kind = body.get("kind")
         if kind not in _KINDS:
             raise HTTPException(status_code=422,
-                                detail="kind must be train or prelabel")
-        params = jobqueue.validated(body.get("params") or {})
+                                detail=f"kind must be one of {sorted(_KINDS)}")
+        if kind == "labeler":
+            params = jobqueue.labeler_params(body.get("params") or {})
+        else:
+            params = jobqueue.validated(body.get("params") or {})
         # One-off experiment flag, accepted on a train JOB only and never as a
         # saved setting (it doubles that run's training): train a fresh model
         # beside the warm start and keep the better one.

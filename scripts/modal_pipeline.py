@@ -13,7 +13,9 @@ kitchen_training.pipeline (plus gate/consensus); this file only wraps it
 in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
 review page), labeler.json (the labeler that drew them), and
-kitchen_ncnn_model/ when the gate passes.
+kitchen_ncnn_model/ when the gate passes. kickoff_labeler runs the
+labeler job (kitchen_training.labeler) and writes labeler-run.json (its
+results) and report.md.
 
 The Volume ("watchdoggy-train-3", v2) holds the model weights (seed once with
 kickoff --seed-models, from a machine that has models/yolo26?.pt), the
@@ -128,6 +130,23 @@ def run_prelabels(run_name: str) -> dict:
 
     results = prelabel_phase(run_name, run_root)
     volume.commit()
+    return results
+
+
+# memory is a floor: the RAM cache of ~11.5k 640x480 frames is ~11 GB, and
+# the probe run says whether it needs more.
+@app.function(image=image, gpu=GPU, cpu=8, memory=32768,
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
+def run_labeler(run_name: str, epochs: int, sample_size: int, gpu: str) -> dict:
+    """The labeler job in one container: build, fine-tune, gate, and promote
+    labeler.pt on a clear win. The replay runs the deployed NCNN nano on CPU
+    here, so its threads must be capped (_point_kitchen_training_at_volume)."""
+    run_root = PIPELINE_ROOT / "runs" / run_name
+    _point_kitchen_training_at_volume(run_root)
+    from kitchen_training import labeler
+
+    results = labeler.run_labeler(run_name, run_root, epochs, sample_size, gpu)
+    volume.commit()  # a promoted labeler.pt must outlive the container
     return results
 
 
@@ -257,6 +276,23 @@ def kickoff_prelabels(dataset_dir: str, out_dir: str,
     _write_label_results(Path(out_dir), call.get())
 
 
+@app.local_entrypoint()
+def kickoff_labeler(dataset_dir: str, out_dir: str, deployed_dir: str = "",
+                    epochs: int = 100, auto_sample: int = 8000,
+                    call_file: str = "") -> None:
+    """Labeler run: fine-tune yolo26x on the kitchen and swap it in when it
+    beats the active labeler on the exam. --deployed-dir is the small model
+    the jury replay needs. The defaults are labeler.LABELER_EPOCHS and
+    AUTO_SAMPLE_SIZE; a probe passes a few epochs."""
+    run_name = _upload(Path(dataset_dir),
+                       Path(deployed_dir) if deployed_dir else None, None)
+    print(f"[pipeline] training the labeler in the cloud ({epochs} epochs, "
+          f"{auto_sample} auto-labels sampled) ...")
+    call = run_labeler.spawn(run_name, epochs, auto_sample, GPU)
+    _remember_call(call_file, call)
+    _write_labeler_results(Path(out_dir), call.get())
+
+
 def _remember_call(call_file: str, call) -> None:
     """Save the spawned call's id before waiting on it: if the connection
     drops (Pi Wi-Fi, a heartbeat stall), the run keeps going in the cloud
@@ -275,8 +311,20 @@ def collect(call_id: str, out_dir: str, kind: str) -> None:
     result = modal.FunctionCall.from_id(call_id).get()
     if kind == "train":
         _write_results(Path(out_dir), *result)
-        return
-    _write_label_results(Path(out_dir), result)
+    elif kind == "labeler":
+        _write_labeler_results(Path(out_dir), result)
+    else:
+        _write_label_results(Path(out_dir), result)
+
+
+def _write_labeler_results(out: Path, results: dict) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "labeler-run.json").write_text(json.dumps(
+        {key: value for key, value in results.items() if key != "report_md"},
+        indent=1))
+    (out / "report.md").write_text(results["report_md"])
+    print(f"[pipeline] labeler {results['decision']}: {results['reason']} "
+          f"-> {out}")
 
 
 def _write_label_results(out: Path, results: dict) -> None:

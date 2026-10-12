@@ -20,6 +20,10 @@ from trainer_daemon.env import (
 )
 from trainer_daemon.queue import sidecar_stats
 
+# The modal_pipeline.collect kind that writes each kickoff's out_dir files.
+COLLECT_KINDS = {"kickoff": "train", "kickoff_prelabels": "label",
+                 "kickoff_labeler": "labeler"}
+
 
 def gpu() -> str:
     chosen = settings().get("gpu", "auto")
@@ -63,7 +67,7 @@ def modal_run(entrypoint: str, arguments: list[str], job_id: str) -> None:
         _run_modal(["run", f"{PIPELINE}::collect",
                     "--call-id", call_file.read_text().strip(),
                     "--out-dir", _out_dir(arguments),
-                    "--kind", "label" if labeling else "train"], job_id, env)
+                    "--kind", COLLECT_KINDS[entrypoint]], job_id, env)
     call_file.unlink(missing_ok=True)
 
 

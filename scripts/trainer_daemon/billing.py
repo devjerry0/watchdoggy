@@ -15,7 +15,7 @@ import time
 from trainer_daemon import env
 
 BILLING_CLI_TIMEOUT_S = 60
-CLOUD_KINDS = ("train", "prelabel")  # job kinds that spend Modal compute
+CLOUD_KINDS = ("train", "prelabel", "labeler")  # job kinds that spend Modal compute
 
 
 def billing_summary() -> dict | None:

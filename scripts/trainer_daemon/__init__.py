@@ -12,12 +12,15 @@ rules, then send it to Modal and apply the results:
             NCNN bundle is installed and the detector restarted.
             Auto rule: >= MIN_NEW_LABELS frames labeled since the last done
             train job AND that job is older than TRAIN_INTERVAL seconds.
+  labeler   fine-tune the big labeling model; on a clear exam win the cloud
+            swaps it in and the Pi queues one prelabel pass to relabel
+            every frame. By hand from the training page only.
 
 Stdlib only. Progress is written to job_<id>.result.json files, which the
 web's /api/training/status overlays on the originals (different users can't
 edit each other's files). Modules: `env` (paths/settings/local API),
 `queue` (job files + auto rules), `cloud` (Modal runs), `billing`
 (spend tracking + the monthly credit gate on cloud jobs), `apply`
-(pushing results back into the appliance), `runs` (the two job runners),
+(pushing results back into the appliance), `runs` (the job runners),
 `daemon` (main).
 """
