@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from kitchen_training.config import CLASS_IDS, VAL_FRACTION_MOD, log
+from kitchen_training.consensus import nano_dog_boxes
 from kitchen_training.dataset import labeled_sidecars, prelabel, read_frames
 from kitchen_training.fusion import fuse
 from kitchen_training.perturb import TRAIN_VARIANTS, train_variants
@@ -156,7 +157,11 @@ def _log_build(stats: dict) -> None:
         log(f"  NEEDS BOXES: {stem} ({why})")
 
 
-def build(run_dir: Path, augment: bool | str = False) -> dict:
+def build(run_dir: Path, augment: bool | str = False,
+          deployed_dir: Path | None = None) -> dict:
+    """deployed_dir: the deployed NCNN bundle, asked for dog boxes on
+    auto-labeled dog frames no other source boxed (312 frames on
+    2026-10-11, all labeled by the nano alone)."""
     samples = labeled_sidecars(include_auto=True)
     mode = augment_mode(augment, len(samples))
     log(f"building dataset from {len(samples)} verdicted frames "
@@ -174,6 +179,7 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
     stats = _new_stats()
     source_counters = {"hand": "hand_boxed", "fallback": "fallback"}
     seen_hashes: list[int] = []
+    nano = None  # loaded on the first frame that needs it
     # Humans first: with dedup active, a human-labeled frame must never be
     # the one dropped when an auto near-duplicate exists.
     ordered = sorted(samples, key=lambda s: not s[2].get("human_label"))
@@ -184,6 +190,13 @@ def build(run_dir: Path, augment: bool | str = False) -> dict:
             continue
         stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
         lines, source = fuse(stem, verdict, meta, prelabels_by_stem[stem])
+        if lines is None and not meta.get("human_label") \
+                and deployed_dir is not None and deployed_dir.is_dir():
+            if nano is None:
+                from ultralytics import YOLO
+                nano = YOLO(str(deployed_dir), task="detect")
+            lines, source = fuse(stem, verdict, meta, prelabels_by_stem[stem],
+                                 nano_dog_boxes(nano, image))
         if lines is None:
             stats["dropped"].append(
                 (stem, "dog verdict but no model drew a box -- "
