@@ -271,3 +271,25 @@ def test_report_scores_mid_run_checkpoints(tmp_path):
         (weights / f"{name}.pt").write_bytes(b"")
     assert list(pipeline.checkpoints(tmp_path)) == ["epoch40", "epoch80", "last"]
     assert training.CHECKPOINT_EVERY == 40
+
+
+def test_ncnn_threads_capped_at_the_container_allowance(monkeypatch):
+    import sys, types
+    from kitchen_training.config import cap_ncnn_threads
+
+    class Opt:
+        num_threads = 21
+
+    class Net:
+        def __init__(self):
+            self.opt = Opt()
+
+    fake = types.SimpleNamespace(Net=Net)
+    monkeypatch.setitem(sys.modules, "ncnn", fake)
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    cap_ncnn_threads()
+    assert fake.Net is Net                       # no allowance known: untouched
+    monkeypatch.setenv("OMP_NUM_THREADS", "8")
+    cap_ncnn_threads()
+    cap_ncnn_threads()                           # idempotent
+    assert fake.Net().opt.num_threads == 8 and fake.Net.__mro__[1] is Net

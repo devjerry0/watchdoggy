@@ -116,6 +116,32 @@ def phase(name: str, timings: dict):
     log(f"{name} took {duration(timings[name])}")
 
 
+def cap_ncnn_threads() -> None:
+    """Cap every new ncnn.Net at the container's CPU allowance. NCNN sizes
+    its thread pool from the host's cores (21 on a Modal box with an 8-CPU
+    allowance) and ignores OMP_NUM_THREADS; the extra threads exhaust the
+    allowance and throttle the whole container: NCNN scoring crawled at ~3
+    frames/s and the Modal client missed its heartbeats (2026-10-11). Modal
+    sets OMP_NUM_THREADS to the allowance; without it (a Mac) nothing changes."""
+    limit = int(os.environ.get("OMP_NUM_THREADS") or 0)
+    try:
+        import ncnn
+    except ImportError:
+        return
+    if not limit or getattr(ncnn.Net, "capped_threads", None) == limit:
+        return
+    base = ncnn.Net
+
+    class Net(base):
+        capped_threads = limit
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.opt.num_threads = limit
+
+    ncnn.Net = Net  # ultralytics' NCNN backend calls ncnn.Net()
+
+
 def sh(command: list[str], env: dict | None = None) -> None:
     subprocess.run(command, check=True, env=env)
 

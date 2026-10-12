@@ -321,3 +321,16 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   label pass, mirror sync (scan, files/s, MB/s, index), the Pi apply
   (frames/s) and every trainer job ("done in N min") report the same way.
   Check these before guessing where a slow run spent its time.
+- **2026-10-11 — NCNN oversubscribes Modal containers; cap its threads.**
+  A Modal container with `cpu=8` shows 21 host cores to `os.cpu_count()`
+  and sched affinity; Modal sets `OMP_NUM_THREADS=8`, which torch honors,
+  but NCNN sizes `opt.num_threads` from the big-core count (21) and ignores
+  it. The extra threads exhaust the allowance and throttle the whole
+  container: post-training NCNN scoring ran at ~3 frames/s (deploy-truth
+  ~8 min, stress test 30+ min) and the container's Modal client missed its
+  heartbeats ("Modal Client -> Modal Worker ... Deadline exceeded"), which
+  is the likely cause of the Sep 7 run dying in that phase. Fix:
+  `config.cap_ncnn_threads()` (called from `_point_kitchen_training_at_volume`)
+  subclasses `ncnn.Net` so every net ultralytics creates gets
+  `num_threads = OMP_NUM_THREADS`. Check `nproc` (honors OMP_NUM_THREADS)
+  against `os.cpu_count()` before blaming the GIL or the model.
