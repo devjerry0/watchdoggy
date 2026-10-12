@@ -175,7 +175,7 @@ def test_labeling_runs_in_batches_and_skips_unreadable(monkeypatch, tmp_path, ca
     cache = dataset.prelabel([s for s, _, _ in frames])
     assert calls == [16, 16, 7]                       # 39 readable frames in batches
     assert cache["s5"]["unreadable"] is True and len(cache) == 40
-    assert "prelabels ready (40 frames, 40 newly computed)" in capsys.readouterr().out
+    assert "prelabels ready (40 frames, 40 newly computed, 40 frames in" in capsys.readouterr().out
 
 
 def test_boxes_the_pi_lacks_are_resent_even_when_cached(monkeypatch, tmp_path):
@@ -252,3 +252,13 @@ def test_live_small_model_box_trains_only_with_a_human_label():
     assert fusion.fuse("s", "dog", live, no_x) == (None, "drop")           # auto label
     lines, source = fusion.fuse("s", "dog", {**live, "human_label": "dog"}, no_x)
     assert source == "fallback" and lines[0].startswith("1 ")
+
+
+def test_phase_timing_helpers(capsys):
+    from kitchen_training.config import duration, phase, rate
+    assert (duration(42), duration(600), duration(3 * 3600)) == ("42s", "10.0 min", "3.00 h")
+    assert rate(3000, 60) == "3000 frames in 60s (50 frames/s)"
+    timings = {}
+    with phase("build", timings):
+        pass
+    assert "build" in timings and "[train] build took 0s" in capsys.readouterr().out

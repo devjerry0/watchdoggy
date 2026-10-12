@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from trainer_daemon.env import STAGING_BUNDLE, api_post, log
@@ -35,7 +36,7 @@ def apply_cloud_results(prelabels_file: Path,
     verdicts = _load(verdicts_file)
     disputes = _load(disputes_file)
     stems = sorted({*prelabels, *verdicts, *disputes})
-    totals = (0, 0, 0)
+    totals, started = (0, 0, 0), time.monotonic()
     for start in range(0, len(stems), APPLY_CHUNK):
         chunk = stems[start:start + APPLY_CHUNK]
         counts = _apply_chunk(
@@ -45,6 +46,9 @@ def apply_cloud_results(prelabels_file: Path,
         totals = tuple(a + b for a, b in zip(totals, counts))
         if len(stems) > APPLY_CHUNK:
             log(f"applied {start + len(chunk)}/{len(stems)} frames")
+    if stems:
+        took = max(time.monotonic() - started, 1e-6)
+        log(f"apply took {took:.0f}s ({len(stems) / took:.0f} frames/s)")
     return totals
 
 

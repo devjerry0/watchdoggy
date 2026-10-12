@@ -315,3 +315,9 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   changing a constant must change the tag, or the old jury's memory
   survives it. Also remember the build's dHash dedup: the Oct 11 epoch was
   34,515 images from 69,709 verdicted frames.
+- **2026-10-11 — Every phase logs its time.** `config.phase(name, timings)`
+  times a pipeline phase; `full_run` ends with a `[pipeline] timings:` line
+  and returns `timings` (in summary.json). Labeling, each jury chunk, the
+  label pass, mirror sync (scan, files/s, MB/s, index), the Pi apply
+  (frames/s) and every trainer job ("done in N min") report the same way.
+  Check these before guessing where a slow run spent its time.
