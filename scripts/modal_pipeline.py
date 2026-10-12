@@ -173,8 +173,7 @@ def run_label_pass(run_name: str) -> dict:
     for part in run_consensus_chunk.map([run_name] * len(chunks), chunks,
                                         order_outputs=False):
         parts.append(part)
-        judged += len(part["auto_verdicts"]) + len(part["disputes"]) \
-            + len(part["declined"])
+        judged += part["judged"]  # a disputed frame is also declined
         elapsed = time.monotonic() - jury_started
         print(f"[pipeline] jury {len(parts)}/{len(chunks)} chunks done "
               f"({judged}/{len(todo)} frames, {elapsed / 60:.1f} min, "
@@ -288,6 +287,9 @@ def _write_label_results(out: Path, results: dict) -> None:
     (out / "auto_verdicts.json").write_text(
         json.dumps(results.get("auto_verdicts", {})))
     (out / "disputes.json").write_text(json.dumps(results.get("disputes", {})))
+    (out / "clear_auto.json").write_text(
+        json.dumps(results.get("clear_auto", [])))
     print(f"[pipeline] {len(results['prelabels'])} new frames prelabeled, "
           f"{len(results.get('auto_verdicts', {}))} auto-labeled, "
-          f"{len(results.get('disputes', {}))} labels disputed -> {out}")
+          f"{len(results.get('disputes', {}))} labels disputed, "
+          f"{len(results.get('clear_auto', []))} auto-labels cleared -> {out}")

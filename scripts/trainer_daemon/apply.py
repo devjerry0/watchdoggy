@@ -39,22 +39,26 @@ def labeler_tag(out_dir: Path) -> str:
 def apply_cloud_results(prelabels_file: Path,
                         verdicts_file: Path | None = None,
                         disputes_file: Path | None = None,
-                        model: str = STOCK_LABELER_TAG) -> tuple[int, int, int]:
-    """(prelabeled, auto_labeled, disputed) counts, applied in batch
-    requests of APPLY_CHUNK frames. Per-frame HTTPS (a TLS handshake each)
-    took seconds per frame on a Pi busy with inference; a batch takes one.
-    A failed batch falls back to the per-frame endpoints for its frames."""
+                        clears_file: Path | None = None,
+                        model: str = STOCK_LABELER_TAG
+                        ) -> tuple[int, int, int, int]:
+    """(prelabeled, auto_labeled, disputed, auto_cleared) counts, applied in
+    batch requests of APPLY_CHUNK frames. Per-frame HTTPS (a TLS handshake
+    each) took seconds per frame on a Pi busy with inference; a batch takes
+    one. A failed batch falls back to the per-frame endpoints for its frames."""
     prelabels = _load(prelabels_file)
     verdicts = _load(verdicts_file)
     disputes = _load(disputes_file)
-    stems = sorted({*prelabels, *verdicts, *disputes})
-    totals, started = (0, 0, 0), time.monotonic()
+    clears = set(_load(clears_file))  # a list of stems
+    stems = sorted({*prelabels, *verdicts, *disputes, *clears})
+    totals, started = (0, 0, 0, 0), time.monotonic()
     for start in range(0, len(stems), APPLY_CHUNK):
         chunk = stems[start:start + APPLY_CHUNK]
         counts = _apply_chunk(
             {s: prelabels[s] for s in chunk if s in prelabels},
             {s: verdicts[s] for s in chunk if s in verdicts},
-            {s: disputes[s] for s in chunk if s in disputes}, model)
+            {s: disputes[s] for s in chunk if s in disputes},
+            [s for s in chunk if s in clears], model)
         totals = tuple(a + b for a, b in zip(totals, counts))
         if len(stems) > APPLY_CHUNK:
             log(f"applied {start + len(chunk)}/{len(stems)} frames")
@@ -65,18 +69,19 @@ def apply_cloud_results(prelabels_file: Path,
 
 
 def _apply_chunk(prelabels: dict, verdicts: dict, disputes: dict,
-                 model: str) -> tuple[int, int, int]:
+                 clears: list[str], model: str) -> tuple[int, int, int, int]:
     payload = {"model": model, "prelabels": prelabels,
-               "auto_verdicts": verdicts, "disputes": disputes}
+               "auto_verdicts": verdicts, "disputes": disputes,
+               "clear_auto": clears}
     try:
         counts = api_post("/api/dataset/apply-cloud-results", payload,
                           timeout=BATCH_APPLY_TIMEOUT_S)
         return (counts["prelabels"], counts["auto_verdicts"],
-                counts["disputes"])
+                counts["disputes"], counts["clear_auto"])
     except Exception as exc:
         log(f"WARNING: batch apply failed ({exc}); using per-frame endpoints")
         return (merge_prelabels(prelabels, model), apply_auto_verdicts(verdicts),
-                apply_disputes(disputes))
+                apply_disputes(disputes), clear_auto_labels(clears))
 
 
 def merge_prelabels(boxes_by_stem: dict, model: str) -> int:
@@ -100,6 +105,17 @@ def apply_auto_verdicts(verdicts: dict) -> int:
         except Exception as exc:
             log(f"WARNING: auto-label failed for {stem}: {exc}")
     return applied
+
+
+def clear_auto_labels(stems: list[str]) -> int:
+    cleared = 0
+    for stem in stems:
+        try:
+            api_post("/api/dataset/autolabel/clear", {"name": stem})
+            cleared += 1
+        except Exception as exc:
+            log(f"WARNING: auto-label clear failed for {stem}: {exc}")
+    return cleared
 
 
 def apply_disputes(disputes: dict) -> int:

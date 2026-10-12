@@ -265,6 +265,6 @@ def judge_chunk_phase(run_root: Path, stems: list[str]) -> dict:
 
 
 def finish_jury_phase(run_name: str, plan: dict, parts: list[dict]) -> dict:
-    auto_verdicts, disputes = finish_jury(plan, parts)
+    auto_verdicts, disputes, clear_auto = finish_jury(plan, parts)
     return {"run_name": run_name, "auto_verdicts": auto_verdicts,
-            "disputes": disputes}
+            "disputes": disputes, "clear_auto": clear_auto}

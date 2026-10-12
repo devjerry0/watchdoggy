@@ -22,6 +22,14 @@ from kitchen_training.dataset import read_frames
 # whole refused backlog every pass was most of a pass's compute. A new
 # champion or a rule change voids the memory automatically.
 JURY_MEMORY = RUNS / "jury-no-action.json"
+# The labeler (config.LABELER_DIGEST, null = stock) the last finished pass
+# judged with. When the active labeler differs, the jury re-judges every
+# auto-label once. A missing record is the stock labeler, so the first pass
+# after deploy re-judges nothing.
+JURY_LABELER = RUNS / "jury-labeler.json"
+# Auto-labels the jury stopped vouching for, re-sent each pass until the
+# shipped index shows them gone (results that never reached the Pi).
+PENDING_CLEARS = RUNS / "jury-pending-clears.json"
 
 # Bars backtested 2026-08-14 against 917 human-labeled frames with the
 # deployed champion as juror (scratch: rule_sim.py): this rule-set wrongly
@@ -108,6 +116,13 @@ def _load_no_action(jury: str) -> set[str]:
     return set(stored.get("stems", []))
 
 
+def _labeler_of_record() -> str | None:
+    try:
+        return json.loads(JURY_LABELER.read_text())["labeler"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None  # no record yet: the stock labeler
+
+
 def _entries(stems: list[str]) -> dict[str, list]:
     """Per-stem [human, auto, settled, disputed], from the shipped index
     when present (zero sidecar reads over the network filesystem), else
@@ -128,7 +143,7 @@ def _entries(stems: list[str]) -> dict[str, list]:
 
 
 def _needs_judging_entry(entry: list, x_entry: dict, no_action: set[str],
-                         stem: str) -> bool:
+                         stem: str, rejudge: bool) -> bool:
     human, auto, settled, disputed = entry[:4]
     if human:
         return (human in ("person", "empty", "no_dog")
@@ -136,7 +151,7 @@ def _needs_judging_entry(entry: list, x_entry: dict, no_action: set[str],
                 and bool(x_entry["dogs"])
                 and stem not in no_action)
     if auto:
-        return False
+        return rejudge  # a new labeler re-judges every auto-label once
     return stem not in no_action
 
 
@@ -149,13 +164,20 @@ def jury_plan(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
     jury = _jury_id(deployed_dir)
     no_action = _load_no_action(jury)
     entries = _entries(stems)
+    rejudge = _labeler_of_record() != LABELER_DIGEST
     todo = [stem for stem in stems
             if _needs_judging_entry(entries[stem], cache[stem], no_action,
-                                    stem)]
+                                    stem, rejudge)]
+    rejudged = sum(1 for stem in todo
+                   if entries[stem][1] and not entries[stem][0])
     print(f"[pipeline] jury {jury}: judging {len(todo)} frames, "
           f"{len(stems) - len(todo)} skipped (labeled, settled, or already "
           f"declined by this jury)", flush=True)
-    return {"jury": jury, "no_action": sorted(no_action), "todo": todo}
+    if rejudge:
+        print(f"[pipeline] the labeler changed since the last pass: "
+              f"re-judging {rejudged} auto-labeled frames", flush=True)
+    return {"jury": jury, "no_action": sorted(no_action), "todo": todo,
+            "rejudge": rejudged}
 
 
 def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
@@ -171,19 +193,27 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
     auto_verdicts: dict = {}
     disputes: dict = {}
     declined: list[str] = []
+    clear_auto: list[str] = []
+    changed = 0
     for stem, _, image in read_frames(stems):
         if image is None:  # empty/corrupt file: nothing to judge
             continue
         nano_dog, nano_person = _nano_scores(nano, image)
-        if not entries[stem][0]:  # no human label: the consensus path
+        human, auto = entries[stem][:2]
+        if not human:  # no human label: the consensus path
+            # auto is set only when a labeler change re-judges this frame.
             verdict = consensus_verdict(cache[stem], nano_dog, nano_person)
             if verdict:
-                auto_verdicts[stem] = verdict
+                if verdict != auto:
+                    auto_verdicts[stem] = verdict
+                    changed += bool(auto)
                 continue
             if nano_dog >= SOLO_DOG_DISPUTE_CONF and not cache[stem]["dogs"]:
                 disputes[stem] = {"model_says": "dog",
                                   "nano_conf": round(nano_dog, 3)}
             declined.append(stem)  # flagged once, never re-judged by this jury
+            if auto:  # the new jury does not vouch for this auto-label
+                clear_auto.append(stem)
             continue
         # Audit path: the prefilter already established eligibility
         # (non-dog human label, unsettled, undisputed, X sees a dog).
@@ -194,30 +224,64 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
         declined.append(stem)
     log(f"jury chunk: {rate(len(stems), time.monotonic() - started)}")
     return {"auto_verdicts": auto_verdicts, "disputes": disputes,
-            "declined": declined}
+            "declined": declined, "clear_auto": clear_auto,
+            "changed": changed, "judged": len(stems)}
 
 
-def finish_jury(plan: dict, parts: list[dict]) -> tuple[dict, dict]:
-    """Merge judged chunks and remember what this jury declined."""
+def _pending_clears(cleared: set[str], judged: list[str]) -> list[str]:
+    """This pass's clears plus earlier ones the shipped index still shows
+    as auto-labeled. A clear drops off once its auto-label is gone, a
+    human label stands, or this pass judged the frame again."""
+    try:
+        stored = set(json.loads(PENDING_CLEARS.read_text()))
+    except (OSError, ValueError):
+        stored = set()
+    still = {stem for stem, entry in _entries(sorted(stored)).items()
+             if entry[1] and not entry[0]} if stored else set()
+    pending = sorted((still - set(judged)) | cleared)
+    if stored or pending:
+        PENDING_CLEARS.write_text(json.dumps(pending))
+    return pending
+
+
+def finish_jury(plan: dict, parts: list[dict]) -> tuple[dict, dict, list[str]]:
+    """Merge judged chunks, remember what this jury declined, and collect
+    the auto-labels to clear. The labeler-of-record is written last, so a
+    pass that fails here re-judges the same frames next time."""
     auto_verdicts: dict = {}
     disputes: dict = {}
+    cleared: set[str] = set()
+    changed = 0
     no_action = set(plan["no_action"])
     for part in parts:
         auto_verdicts.update(part["auto_verdicts"])
         disputes.update(part["disputes"])
         no_action.update(part["declined"])
+        cleared.update(part["clear_auto"])
+        changed += part["changed"]
     if plan["jury"]:
         JURY_MEMORY.write_text(json.dumps({"jury": plan["jury"],
                                            "stems": sorted(no_action)}))
+    clear_auto = _pending_clears(cleared, plan["todo"])
     print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
           f"unlabeled frames; disputed {len(disputes)} existing labels",
           flush=True)
-    return auto_verdicts, disputes
+    if plan.get("rejudge"):
+        kept = plan["rejudge"] - changed - len(cleared)
+        print(f"[pipeline] re-judged {plan['rejudge']} auto-labels: {kept} "
+              f"kept, {changed} changed, {len(cleared)} cleared", flush=True)
+    if len(clear_auto) > len(cleared):
+        print(f"[pipeline] re-sending {len(clear_auto) - len(cleared)} "
+              f"auto-label clears the Pi has not applied", flush=True)
+    if plan["jury"]:
+        JURY_LABELER.write_text(json.dumps({"labeler": LABELER_DIGEST}))
+    return auto_verdicts, disputes, clear_auto
 
 
 def judge_frames(stems: list[str], cache: dict,
-                 deployed_dir: Path) -> tuple[dict, dict]:
-    """(auto_verdicts, disputes) in one process: plan, judge, finish."""
+                 deployed_dir: Path) -> tuple[dict, dict, list[str]]:
+    """(auto_verdicts, disputes, clear_auto) in one process: plan, judge,
+    finish."""
     plan = jury_plan(stems, cache, deployed_dir)
     parts = [judge_stems(plan["todo"], cache, deployed_dir)] if plan["todo"] else []
     return finish_jury(plan, parts)

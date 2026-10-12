@@ -1,5 +1,6 @@
 """One-request application of a whole cloud pass: prelabels, consensus
-auto-verdicts, and audit disputes for hundreds of frames at once.
+auto-verdicts, audit disputes, and auto-label clears for hundreds of frames
+at once.
 
 The per-frame endpoints stay (the label page uses them); this one exists
 for the trainer daemon. Per-frame HTTPS meant a fresh TLS handshake per
@@ -19,6 +20,7 @@ from doggy.core.priority import WEB_WORKER_NICE, lower_thread_priority
 from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers.dataset.sidecars import (
     apply_autolabel,
+    apply_clear_auto,
     apply_dispute,
     apply_prelabels,
     parse_boxes,
@@ -47,9 +49,14 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
                      for stem, raw in (body.get("prelabels") or {}).items()}
         verdicts = _validated_verdicts(body.get("auto_verdicts") or {})
         disputes = body.get("disputes") or {}
+        clears = body.get("clear_auto") or []  # stems the jury stopped vouching for
+        if not isinstance(clears, list):
+            raise HTTPException(status_code=422,
+                                detail="clear_auto must be a list of names")
+        clears = {str(stem) for stem in clears}
         applied = {"prelabels": 0, "auto_verdicts": 0, "disputes": 0,
-                   "missing": 0}
-        for stem in sorted({*prelabels, *verdicts, *disputes}):
+                   "clear_auto": 0, "missing": 0}
+        for stem in sorted({*prelabels, *verdicts, *disputes, *clears}):
             safe = Path(str(stem)).name  # traversal guard
             side = Path(settings.dataset_dir) / f"{safe}.json"
             if not safe.startswith("sample_") or not side.is_file():
@@ -68,6 +75,8 @@ def build_router(settings: Settings, index: SidecarIndex) -> APIRouter:
             if safe in verdicts:
                 applied["auto_verdicts"] += apply_autolabel(meta, verdicts[safe],
                                                             now)
+            if safe in clears:
+                applied["clear_auto"] += apply_clear_auto(meta)
             model_says = str((disputes.get(safe) or {}).get("model_says", ""))
             if model_says:
                 nano_conf = float(disputes[safe].get("nano_conf", 0))

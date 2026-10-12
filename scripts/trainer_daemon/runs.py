@@ -27,13 +27,14 @@ def run_prelabel_job(job: dict) -> str:
         if DEPLOYED_BUNDLE.is_dir():
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff_prelabels", arguments, job["id"])
-        merged, autos, disputes = apply_cloud_results(
+        merged, autos, disputes, cleared = apply_cloud_results(
             Path(tmp) / "prelabels.json",
             Path(tmp) / "auto_verdicts.json",
-            Path(tmp) / "disputes.json", model=labeler_tag(Path(tmp)))
+            Path(tmp) / "disputes.json", Path(tmp) / "clear_auto.json",
+            model=labeler_tag(Path(tmp)))
     cost = run_cost(before)
     return (f"{merged} frames prelabeled, {autos} auto-labeled, "
-            f"{disputes} labels disputed"
+            f"{disputes} labels disputed, {cleared} auto-labels cleared"
             + (f" (${cost:.2f})" if cost is not None else ""))
 
 
@@ -97,8 +98,8 @@ def run_train_job(job: dict) -> str:
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff", arguments, job["id"])
         out = Path(tmp)
-        merged, _, _ = apply_cloud_results(out / "prelabels.json",
-                                           model=labeler_tag(out))
+        merged = apply_cloud_results(out / "prelabels.json",
+                                     model=labeler_tag(out))[0]
         summary = json.loads((out / "summary.json").read_text())
         apply_exam_suspects(summary)
         (JOBS_DIR / f"{job['id']}.report.md").write_text(

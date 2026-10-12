@@ -16,6 +16,7 @@ from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers.dataset.sidecars import (
     VERDICTS,
     apply_autolabel,
+    apply_clear_auto,
     apply_dispute,
     apply_prelabels,
     parse_boxes,
@@ -119,6 +120,19 @@ def build_router(settings: Settings, event_store: EventStore,
         meta = json.loads(side.read_text())
         if not apply_autolabel(meta, verdict, time.time()):
             return {"ok": True, "skipped": "human label wins"}
+        side.write_text(json.dumps(meta))
+        index.upsert(side.stem)  # in-place edit: the dir mtime won't move
+        return {"ok": True}
+
+    @router.post("/api/dataset/autolabel/clear")
+    def api_clear_autolabel(body: dict) -> dict:
+        """The jury re-judged this frame after a labeler change and no
+        longer vouches for its auto-label: the frame returns to the human
+        queue. Never touches a frame a human has judged."""
+        _, side = sidecar_or_404(settings.dataset_dir, str(body.get("name", "")))
+        meta = json.loads(side.read_text())
+        if not apply_clear_auto(meta):
+            return {"ok": True, "skipped": "human label wins or no auto-label"}
         side.write_text(json.dumps(meta))
         index.upsert(side.stem)  # in-place edit: the dir mtime won't move
         return {"ok": True}
