@@ -10,6 +10,7 @@ from trainer_daemon.apply import (
     apply_cloud_results,
     apply_exam_suspects,
     install_bundle,
+    labeler_tag,
 )
 from trainer_daemon.billing import billing_summary, run_cost
 from trainer_daemon.cloud import batch, modal_run
@@ -29,7 +30,7 @@ def run_prelabel_job(job: dict) -> str:
         merged, autos, disputes = apply_cloud_results(
             Path(tmp) / "prelabels.json",
             Path(tmp) / "auto_verdicts.json",
-            Path(tmp) / "disputes.json")
+            Path(tmp) / "disputes.json", model=labeler_tag(Path(tmp)))
     cost = run_cost(before)
     return (f"{merged} frames prelabeled, {autos} auto-labeled, "
             f"{disputes} labels disputed"
@@ -96,7 +97,8 @@ def run_train_job(job: dict) -> str:
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff", arguments, job["id"])
         out = Path(tmp)
-        merged, _, _ = apply_cloud_results(out / "prelabels.json")
+        merged, _, _ = apply_cloud_results(out / "prelabels.json",
+                                           model=labeler_tag(out))
         summary = json.loads((out / "summary.json").read_text())
         apply_exam_suspects(summary)
         (JOBS_DIR / f"{job['id']}.report.md").write_text(

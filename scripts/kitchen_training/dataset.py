@@ -6,7 +6,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE, mirror_glob, mirror_path,
+from kitchen_training.config import (DATASET_MIRROR, IMAGE_SIZE, LABELER_TAG,
+                                     mirror_glob, mirror_path,
                                      PRELABEL_CACHE, PRELABEL_CONF,
                                      PRELABEL_MODEL, RUNS, device, log, rate, sh)
 
@@ -211,7 +212,7 @@ def prelabel_push(pi_url: str) -> None:
                  + [{"label": "person", "box": box} for box in prelabels["people"]])
         request = urllib.request.Request(
             f"{pi_url}/api/dataset/prelabels",
-            data=json.dumps({"name": stem, "model": PRELABEL_MODEL.stem,
+            data=json.dumps({"name": stem, "model": LABELER_TAG,
                              "boxes": boxes}).encode(),
             headers={"Content-Type": "application/json"}, method="POST")
         try:

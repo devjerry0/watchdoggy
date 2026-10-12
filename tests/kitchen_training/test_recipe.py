@@ -196,6 +196,97 @@ def test_boxes_the_pi_lacks_are_resent_even_when_cached(monkeypatch, tmp_path):
     assert sent["sample_lost"] == [{"label": "person", "box": [2, 2, 6, 6]}]
 
 
+def test_boxes_from_another_labeler_are_resent(monkeypatch, tmp_path):
+    # A rollback, or a relabel whose results never reached the Pi, leaves
+    # sidecars holding another labeler's boxes: the cached boxes go again.
+    import json
+    stems = ("sample_stock", "sample_kitchen", "sample_old_index")
+    (tmp_path / "cache.json").write_text(json.dumps(
+        {stem: {"dogs": [], "people": []} for stem in stems}))
+    (tmp_path / ".labeled-index.json").write_text(json.dumps({
+        "sample_stock": [None, None, 0, 0, 1, "yolo26x"],
+        "sample_kitchen": [None, None, 0, 0, 1, "yolo26x-kitchen-abcd1234"],
+        "sample_old_index": [None, None, 0, 0, 1]}))  # pre-tag index: leave it
+    monkeypatch.setattr(pipeline, "PRELABEL_CACHE", tmp_path / "cache.json")
+    monkeypatch.setattr(pipeline, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x")
+    assert sorted(pipeline.fresh_prelabels(set(stems))) == ["sample_kitchen"]
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x-kitchen-abcd1234")
+    assert sorted(pipeline.fresh_prelabels(set(stems))) == ["sample_stock"]
+
+
+def test_labeling_results_name_the_labeler(monkeypatch, tmp_path):
+    (tmp_path / "cache.json").write_text("{}")
+    monkeypatch.setattr(pipeline, "PRELABEL_CACHE", tmp_path / "cache.json")
+    monkeypatch.setattr(pipeline, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x-kitchen-abcd1234")
+    monkeypatch.setattr(pipeline, "_mirror_stems", lambda: [])
+    monkeypatch.setattr(pipeline, "prelabel", lambda stems: {})
+    assert pipeline.prelabel_phase("run")["labeler"] == "yolo26x-kitchen-abcd1234"
+
+
+def _legacy_jury_id(consensus, deployed):
+    """The jury id exactly as computed before labeler swaps existed."""
+    import hashlib
+    digest = hashlib.sha256(repr((
+        consensus.AUTO_DOG_NANO_CONF, "solo dog -> dispute",
+        consensus.SOLO_DOG_DISPUTE_CONF, consensus.AUTO_CLEAR_NANO_CONF,
+        consensus.AUTO_PERSON_NANO_CONF,
+        consensus.AUDIT_DOG_NANO_CONF)).encode())
+    for weights in sorted(deployed.glob("**/*.bin")):
+        digest.update(weights.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def _labeler_fixture(tmp_path):
+    stock = tmp_path / "models" / "yolo26x.pt"
+    stock.parent.mkdir()
+    stock.write_bytes(b"stock weights")
+    deployed = tmp_path / "deployed_ncnn_model"
+    deployed.mkdir()
+    (deployed / "model.ncnn.bin").write_bytes(b"nano weights")
+    return stock, deployed
+
+
+def test_stock_labeler_keeps_the_legacy_cache_and_jury_id(monkeypatch, tmp_path):
+    # Deploying labeler swaps changes nothing while only stock yolo26x
+    # exists: the same box cache (no relabel) and the same jury id (the
+    # jury keeps its memory).
+    config = importlib.import_module("kitchen_training.config")
+    consensus = importlib.import_module("kitchen_training.consensus")
+    stock, deployed = _labeler_fixture(tmp_path)
+    assert config.labeler_identity(stock, tmp_path) == (
+        stock, tmp_path / "prelabel-cache.json", "yolo26x", None)
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", None)
+    assert consensus._jury_id(deployed) == _legacy_jury_id(consensus, deployed)
+
+
+def test_a_labeler_swap_moves_the_cache_and_jury_and_rollback_restores_them(
+        monkeypatch, tmp_path):
+    import hashlib
+    config = importlib.import_module("kitchen_training.config")
+    consensus = importlib.import_module("kitchen_training.consensus")
+    stock, deployed = _labeler_fixture(tmp_path)
+    stock_identity = config.labeler_identity(stock, tmp_path)
+    legacy = _legacy_jury_id(consensus, deployed)
+    labeler = stock.with_name("labeler.pt")
+    labeler.write_bytes(b"kitchen weights")
+    sha = hashlib.sha256(b"kitchen weights").hexdigest()
+    weights, cache, tag, digest = config.labeler_identity(stock, tmp_path)
+    assert (weights, cache, tag, digest) == (
+        labeler, tmp_path / f"prelabel-cache-{sha[:12]}.json",
+        f"yolo26x-kitchen-{sha[:8]}", sha)
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", digest)
+    assert consensus._jury_id(deployed) != legacy
+    labeler.write_bytes(b"retrained kitchen weights")  # a second swap
+    assert config.labeler_identity(stock, tmp_path)[3] == hashlib.sha256(
+        b"retrained kitchen weights").hexdigest()
+    labeler.unlink()  # rollback
+    assert config.labeler_identity(stock, tmp_path) == stock_identity
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", None)
+    assert consensus._jury_id(deployed) == legacy
+
+
 def test_index_records_which_sidecars_have_boxes(tmp_path):
     import json
     from mirror_sync import _write_index
@@ -208,13 +299,14 @@ def test_index_records_which_sidecars_have_boxes(tmp_path):
                 def put_file(self, *a): pass
             return Up()
 
-    (tmp_path / "sample_1.json").write_text(json.dumps({"prelabels": {"boxes": []}}))
+    (tmp_path / "sample_1.json").write_text(json.dumps(
+        {"prelabels": {"model": "yolo26x", "boxes": []}}))
     (tmp_path / "sample_2.json").write_text(json.dumps({"human_label": "dog"}))
     (tmp_path / "sample_3.json").write_text("")    # power cut mid-write
     _write_index(FakeVolume(), tmp_path)
     index = json.loads((tmp_path / ".labeled-index.json").read_text())
-    assert index == {"sample_1": [None, None, 0, 0, 1],
-                     "sample_2": ["dog", None, 0, 0, 0]}
+    assert index == {"sample_1": [None, None, 0, 0, 1, "yolo26x"],
+                     "sample_2": ["dog", None, 0, 0, 0, None]}
 
 
 def test_uploads_are_sized_by_bytes():

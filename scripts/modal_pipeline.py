@@ -12,7 +12,8 @@ best-model-wins deploy gate. The actual pipeline logic lives in
 kitchen_training.pipeline (plus gate/consensus); this file only wraps it
 in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
-review page), and kitchen_ncnn_model/ when the gate passes.
+review page), labeler.json (the labeler that drew them), and
+kitchen_ncnn_model/ when the gate passes.
 
 The Volume ("watchdoggy-train-3", v2) holds the model weights (seed once with
 kickoff --seed-models, from a machine that has models/yolo26?.pt), the
@@ -86,6 +87,8 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     # yolo26n when absent) and a deployed run replaces them.
     os.environ["KT_CHAMPION_MODEL"] = str(PIPELINE_ROOT / "models/champion.pt")
     os.environ["KT_MIRROR_SHARDED"] = "1"  # day folders on the volume
+    # Stock yolo26x; a fine-tuned labeler.pt beside it takes over when
+    # present (config.labeler_identity).
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
     # The ceiling-fit epoch cap (kitchen_training.hygiene.fit_epochs) must
     # know the real function timeout so a run never overruns it.
@@ -213,6 +216,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
         | {"timings": results.get("timings")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
+    (out_dir / "labeler.json").write_text(json.dumps(results.get("labeler")))
     if bundle_tar:
         with tarfile.open(fileobj=io.BytesIO(bundle_tar), mode="r:gz") as tar:
             tar.extractall(out_dir / "kitchen_ncnn_model")
@@ -279,6 +283,8 @@ def collect(call_id: str, out_dir: str, kind: str) -> None:
 def _write_label_results(out: Path, results: dict) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
+    # The labeler that drew these boxes: the Pi tags each sidecar with it.
+    (out / "labeler.json").write_text(json.dumps(results.get("labeler")))
     (out / "auto_verdicts.json").write_text(
         json.dumps(results.get("auto_verdicts", {})))
     (out / "disputes.json").write_text(json.dumps(results.get("disputes", {})))

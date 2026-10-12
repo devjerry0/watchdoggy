@@ -17,6 +17,9 @@ BATCH_APPLY_TIMEOUT_S = 180
 # frame over HTTPS (~4/s, hours) while the server was still applying the
 # batch. 1,000 frames take well under a minute on a busy Pi.
 APPLY_CHUNK = 1000
+# The box-model tag of results that name no labeler (written before
+# labeler swaps existed): stock yolo26x drew them.
+STOCK_LABELER_TAG = "yolo26x"
 
 
 def _load(path: Path | None) -> dict:
@@ -25,9 +28,18 @@ def _load(path: Path | None) -> dict:
     return json.loads(path.read_text())
 
 
+def labeler_tag(out_dir: Path) -> str:
+    """The labeler that drew a cloud pass's boxes (modal_pipeline writes
+    labeler.json beside them)."""
+    path = out_dir / "labeler.json"
+    tag = json.loads(path.read_text()) if path.is_file() else None
+    return tag or STOCK_LABELER_TAG
+
+
 def apply_cloud_results(prelabels_file: Path,
                         verdicts_file: Path | None = None,
-                        disputes_file: Path | None = None) -> tuple[int, int, int]:
+                        disputes_file: Path | None = None,
+                        model: str = STOCK_LABELER_TAG) -> tuple[int, int, int]:
     """(prelabeled, auto_labeled, disputed) counts, applied in batch
     requests of APPLY_CHUNK frames. Per-frame HTTPS (a TLS handshake each)
     took seconds per frame on a Pi busy with inference; a batch takes one.
@@ -42,7 +54,7 @@ def apply_cloud_results(prelabels_file: Path,
         counts = _apply_chunk(
             {s: prelabels[s] for s in chunk if s in prelabels},
             {s: verdicts[s] for s in chunk if s in verdicts},
-            {s: disputes[s] for s in chunk if s in disputes})
+            {s: disputes[s] for s in chunk if s in disputes}, model)
         totals = tuple(a + b for a, b in zip(totals, counts))
         if len(stems) > APPLY_CHUNK:
             log(f"applied {start + len(chunk)}/{len(stems)} frames")
@@ -52,9 +64,9 @@ def apply_cloud_results(prelabels_file: Path,
     return totals
 
 
-def _apply_chunk(prelabels: dict, verdicts: dict,
-                 disputes: dict) -> tuple[int, int, int]:
-    payload = {"model": "yolo26x", "prelabels": prelabels,
+def _apply_chunk(prelabels: dict, verdicts: dict, disputes: dict,
+                 model: str) -> tuple[int, int, int]:
+    payload = {"model": model, "prelabels": prelabels,
                "auto_verdicts": verdicts, "disputes": disputes}
     try:
         counts = api_post("/api/dataset/apply-cloud-results", payload,
@@ -63,16 +75,16 @@ def _apply_chunk(prelabels: dict, verdicts: dict,
                 counts["disputes"])
     except Exception as exc:
         log(f"WARNING: batch apply failed ({exc}); using per-frame endpoints")
-        return (merge_prelabels(prelabels), apply_auto_verdicts(verdicts),
+        return (merge_prelabels(prelabels, model), apply_auto_verdicts(verdicts),
                 apply_disputes(disputes))
 
 
-def merge_prelabels(boxes_by_stem: dict) -> int:
+def merge_prelabels(boxes_by_stem: dict, model: str) -> int:
     merged = 0
     for stem, boxes in boxes_by_stem.items():
         try:
             api_post("/api/dataset/prelabels",
-                     {"name": stem, "model": "yolo26x", "boxes": boxes})
+                     {"name": stem, "model": model, "boxes": boxes})
             merged += 1
         except Exception as exc:
             log(f"WARNING: prelabel merge failed for {stem}: {exc}")

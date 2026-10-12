@@ -80,10 +80,11 @@ def _put_chunk(volume, dataset_dir: Path, chunk: list[str]) -> None:
 
 
 def _write_index(volume, dataset_dir: Path) -> None:
-    """{stem: [human_label, auto_verdict, settled, disputed, has_boxes]}
-    for every frame -- everything the cloud's build, jury prefilters, and
-    box re-send need without opening a single sidecar over the network
-    filesystem."""
+    """{stem: [human_label, auto_verdict, settled, disputed, has_boxes,
+    box_model]} for every frame -- everything the cloud's build, jury
+    prefilters, and box re-send need without opening a single sidecar over
+    the network filesystem. box_model is the labeler tag on the sidecar's
+    boxes (null without boxes)."""
     index: dict = {}
     for side in dataset_dir.glob("sample_*.json"):
         try:
@@ -96,6 +97,7 @@ def _write_index(volume, dataset_dir: Path) -> None:
             1 if meta.get("dispute_settled_at") else 0,
             1 if meta.get("disputed") else 0,
             1 if "prelabels" in meta else 0,
+            (meta.get("prelabels") or {}).get("model"),
         ]
     local = _state_dir(dataset_dir) / ".labeled-index.json"
     local.write_text(json.dumps(index))

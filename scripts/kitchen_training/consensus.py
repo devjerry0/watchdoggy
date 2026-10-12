@@ -12,7 +12,8 @@ import json
 import time
 from pathlib import Path
 
-from kitchen_training.config import DATASET_MIRROR, RUNS, log, mirror_path, rate
+from kitchen_training.config import (DATASET_MIRROR, LABELER_DIGEST, RUNS, log,
+                                     mirror_path, rate)
 from kitchen_training.dataset import read_frames
 
 # A jury's verdict on an unchanged frame cannot change until the jury does.
@@ -80,15 +81,20 @@ def _nano_scores(nano, image) -> tuple[float, float]:
 
 
 def _jury_id(deployed_dir: Path) -> str:
-    """The jury's identity: deployed weights + rules. A rule that changes
-    meaning without changing a number needs its own tag here, or the old
-    jury's memory survives it."""
+    """The jury's identity: deployed weights + rules, plus the labeler's
+    digest when a fine-tuned labeler.pt is active. The stock labeler adds
+    nothing, so its id matches the one from before labeler swaps existed; a
+    swap or a rollback changes the id and voids the memory. A rule that
+    changes meaning without changing a number needs its own tag here, or
+    the old jury's memory survives it."""
     digest = hashlib.sha256(repr((
         AUTO_DOG_NANO_CONF, "solo dog -> dispute", SOLO_DOG_DISPUTE_CONF,
         AUTO_CLEAR_NANO_CONF, AUTO_PERSON_NANO_CONF,
         AUDIT_DOG_NANO_CONF)).encode())
     for weights in sorted(deployed_dir.glob("**/*.bin")):
         digest.update(weights.read_bytes())
+    if LABELER_DIGEST:
+        digest.update(LABELER_DIGEST.encode())
     return digest.hexdigest()[:16]
 
 
