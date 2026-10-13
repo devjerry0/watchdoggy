@@ -118,7 +118,7 @@ is a closed loop that lives on the appliance:
    unsure about goes to the human.
 3. **Human labeling, only the disagreements.** The `/label` page is a fixed
    stage with a filmstrip and filter chips: the Queue (what the jury couldn't
-   settle), Disputed, Auto (spot-check the machine's work; one tap overrules
+   settle), Disputed (your own labels a model doubts come first), Auto (spot-check the machine's work; one tap overrules
    forever), and Needs-boxes finders. Verdicts are one keystroke; a full box
    editor handles frames needing hand-drawn truth, which then outranks every
    model. In training, your labels count double the jury's.

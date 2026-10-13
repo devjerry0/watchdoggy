@@ -134,6 +134,9 @@ def apply_autolabel(meta: dict, verdict: str, now: float) -> bool:
         return False
     meta["auto_label"] = {"verdict": verdict, "labeled_at": now,
                           "source": "nano+x consensus"}
+    # The jurors agree now, so a dispute raised while they disagreed (a
+    # solo nano dog) is answered and leaves the Disputed queue.
+    meta.pop("disputed", None)
     return True
 
 

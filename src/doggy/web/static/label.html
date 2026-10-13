@@ -256,7 +256,7 @@
 // training page's dataset callouts use this).
 const _param = new URLSearchParams(location.search).get("filter");
 let _wantFrame = new URLSearchParams(location.search).get("frame");
-let filter = ["unlabeled", "needs_boxes", "no_prelabels", "dog", "dog_mixed",
+let filter = ["unlabeled", "disputed", "needs_boxes", "no_prelabels", "dog", "dog_mixed",
               "person", "empty", "skip", "all"].includes(_param)
              ? _param : "unlabeled";
 let frames = [];          // light rows for the current filter
