@@ -27,12 +27,9 @@ def yolo_line(class_id: int, box, width: int, height: int) -> str:
             f"{(right-left)/width:.6f} {(bottom-top)/height:.6f}")
 
 
-def _person_lines(people, width: int, height: int) -> list[str]:
-    return [yolo_line(CLASS_IDS["person"], box, width, height) for box in people]
-
-
-def _dog_lines(dogs, width: int, height: int) -> list[str]:
-    return [yolo_line(CLASS_IDS["dog"], box, width, height) for box in dogs]
+def _lines(label: str, boxes, width: int, height: int,
+           class_ids: dict) -> list[str]:
+    return [yolo_line(class_ids[label], box, width, height) for box in boxes]
 
 
 def _real_dogs(dogs, people, verdict) -> list:
@@ -57,19 +54,22 @@ def _fallback_dogs(meta: dict) -> list:
     return [list(map(float, box)) for box in boxes]
 
 
-def fuse(stem: str, verdict: str, meta: dict,
-         prelabels: dict) -> tuple[list[str] | None, str]:
+def fuse(stem: str, verdict: str, meta: dict, prelabels: dict,
+         class_ids: dict = CLASS_IDS) -> tuple[list[str] | None, str]:
     """Label lines for one frame plus their provenance:
-    'hand' | 'fused' | 'fallback' | 'drop' (lines=None means drop)."""
+    'hand' | 'fused' | 'fallback' | 'drop' (lines=None means drop).
+    class_ids maps "person" and "dog" to the ids the lines carry (the
+    labeler keeps COCO's ids)."""
     height, width = prelabels["shape"]
     hand_boxes = meta.get("human_boxes")
     if isinstance(hand_boxes, list):
         # Hand-drawn boxes are the complete truth for this frame; no model,
         # fallback, or overlap heuristic gets a say.
-        return [yolo_line(CLASS_IDS[b["label"]], b["box"], width, height)
+        return [yolo_line(class_ids[b["label"]], b["box"], width, height)
                 for b in hand_boxes], "hand"
+    people = _lines("person", prelabels["people"], width, height, class_ids)
     if verdict in ("person", "no_dog"):
-        return _person_lines(prelabels["people"], width, height), "fused"
+        return people, "fused"
     if verdict == "empty":
         return [], "fused"
     # dog / dog_mixed
@@ -80,5 +80,4 @@ def fuse(stem: str, verdict: str, meta: dict,
         source = "fallback"
     if not dogs:
         return None, "drop"
-    return (_dog_lines(dogs, width, height)
-            + _person_lines(prelabels["people"], width, height)), source
+    return _lines("dog", dogs, width, height, class_ids) + people, source

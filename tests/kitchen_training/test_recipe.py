@@ -196,6 +196,97 @@ def test_boxes_the_pi_lacks_are_resent_even_when_cached(monkeypatch, tmp_path):
     assert sent["sample_lost"] == [{"label": "person", "box": [2, 2, 6, 6]}]
 
 
+def test_boxes_from_another_labeler_are_resent(monkeypatch, tmp_path):
+    # A rollback, or a relabel whose results never reached the Pi, leaves
+    # sidecars holding another labeler's boxes: the cached boxes go again.
+    import json
+    stems = ("sample_stock", "sample_kitchen", "sample_old_index")
+    (tmp_path / "cache.json").write_text(json.dumps(
+        {stem: {"dogs": [], "people": []} for stem in stems}))
+    (tmp_path / ".labeled-index.json").write_text(json.dumps({
+        "sample_stock": [None, None, 0, 0, 1, "yolo26x"],
+        "sample_kitchen": [None, None, 0, 0, 1, "yolo26x-kitchen-abcd1234"],
+        "sample_old_index": [None, None, 0, 0, 1]}))  # pre-tag index: leave it
+    monkeypatch.setattr(pipeline, "PRELABEL_CACHE", tmp_path / "cache.json")
+    monkeypatch.setattr(pipeline, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x")
+    assert sorted(pipeline.fresh_prelabels(set(stems))) == ["sample_kitchen"]
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x-kitchen-abcd1234")
+    assert sorted(pipeline.fresh_prelabels(set(stems))) == ["sample_stock"]
+
+
+def test_labeling_results_name_the_labeler(monkeypatch, tmp_path):
+    (tmp_path / "cache.json").write_text("{}")
+    monkeypatch.setattr(pipeline, "PRELABEL_CACHE", tmp_path / "cache.json")
+    monkeypatch.setattr(pipeline, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(pipeline, "LABELER_TAG", "yolo26x-kitchen-abcd1234")
+    monkeypatch.setattr(pipeline, "_mirror_stems", lambda: [])
+    monkeypatch.setattr(pipeline, "prelabel", lambda stems: {})
+    assert pipeline.prelabel_phase("run")["labeler"] == "yolo26x-kitchen-abcd1234"
+
+
+def _legacy_jury_id(consensus, deployed):
+    """The jury id exactly as computed before labeler swaps existed."""
+    import hashlib
+    digest = hashlib.sha256(repr((
+        consensus.AUTO_DOG_NANO_CONF, "solo dog -> dispute",
+        consensus.SOLO_DOG_DISPUTE_CONF, consensus.AUTO_CLEAR_NANO_CONF,
+        consensus.AUTO_PERSON_NANO_CONF,
+        consensus.AUDIT_DOG_NANO_CONF)).encode())
+    for weights in sorted(deployed.glob("**/*.bin")):
+        digest.update(weights.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def _labeler_fixture(tmp_path):
+    stock = tmp_path / "models" / "yolo26x.pt"
+    stock.parent.mkdir()
+    stock.write_bytes(b"stock weights")
+    deployed = tmp_path / "deployed_ncnn_model"
+    deployed.mkdir()
+    (deployed / "model.ncnn.bin").write_bytes(b"nano weights")
+    return stock, deployed
+
+
+def test_stock_labeler_keeps_the_legacy_cache_and_jury_id(monkeypatch, tmp_path):
+    # Deploying labeler swaps changes nothing while only stock yolo26x
+    # exists: the same box cache (no relabel) and the same jury id (the
+    # jury keeps its memory).
+    config = importlib.import_module("kitchen_training.config")
+    consensus = importlib.import_module("kitchen_training.consensus")
+    stock, deployed = _labeler_fixture(tmp_path)
+    assert config.labeler_identity(stock, tmp_path) == (
+        stock, tmp_path / "prelabel-cache.json", "yolo26x", None)
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", None)
+    assert consensus._jury_id(deployed) == _legacy_jury_id(consensus, deployed)
+
+
+def test_a_labeler_swap_moves_the_cache_and_jury_and_rollback_restores_them(
+        monkeypatch, tmp_path):
+    import hashlib
+    config = importlib.import_module("kitchen_training.config")
+    consensus = importlib.import_module("kitchen_training.consensus")
+    stock, deployed = _labeler_fixture(tmp_path)
+    stock_identity = config.labeler_identity(stock, tmp_path)
+    legacy = _legacy_jury_id(consensus, deployed)
+    labeler = stock.with_name("labeler.pt")
+    labeler.write_bytes(b"kitchen weights")
+    sha = hashlib.sha256(b"kitchen weights").hexdigest()
+    weights, cache, tag, digest = config.labeler_identity(stock, tmp_path)
+    assert (weights, cache, tag, digest) == (
+        labeler, tmp_path / f"prelabel-cache-{sha[:12]}.json",
+        f"yolo26x-kitchen-{sha[:8]}", sha)
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", digest)
+    assert consensus._jury_id(deployed) != legacy
+    labeler.write_bytes(b"retrained kitchen weights")  # a second swap
+    assert config.labeler_identity(stock, tmp_path)[3] == hashlib.sha256(
+        b"retrained kitchen weights").hexdigest()
+    labeler.unlink()  # rollback
+    assert config.labeler_identity(stock, tmp_path) == stock_identity
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", None)
+    assert consensus._jury_id(deployed) == legacy
+
+
 def test_index_records_which_sidecars_have_boxes(tmp_path):
     import json
     from mirror_sync import _write_index
@@ -208,13 +299,14 @@ def test_index_records_which_sidecars_have_boxes(tmp_path):
                 def put_file(self, *a): pass
             return Up()
 
-    (tmp_path / "sample_1.json").write_text(json.dumps({"prelabels": {"boxes": []}}))
+    (tmp_path / "sample_1.json").write_text(json.dumps(
+        {"prelabels": {"model": "yolo26x", "boxes": []}}))
     (tmp_path / "sample_2.json").write_text(json.dumps({"human_label": "dog"}))
     (tmp_path / "sample_3.json").write_text("")    # power cut mid-write
     _write_index(FakeVolume(), tmp_path)
     index = json.loads((tmp_path / ".labeled-index.json").read_text())
-    assert index == {"sample_1": [None, None, 0, 0, 1],
-                     "sample_2": ["dog", None, 0, 0, 0]}
+    assert index == {"sample_1": [None, None, 0, 0, 1, "yolo26x"],
+                     "sample_2": ["dog", None, 0, 0, 0, None]}
 
 
 def test_uploads_are_sized_by_bytes():
@@ -243,6 +335,124 @@ def test_a_dog_only_the_small_model_sees_is_disputed_not_auto_labeled(monkeypatc
     assert out["auto_verdicts"] == {}
     assert out["disputes"] == {"sure": {"model_says": "dog", "nano_conf": 0.95}}
     assert sorted(out["declined"]) == ["sure", "unsure"]
+    # The disputed frame is also declined: progress counts it once.
+    assert out["judged"] == 2 and out["clear_auto"] == []
+
+
+def _jury_volume(monkeypatch, tmp_path, index, record=..., active=None):
+    """A volume with a shipped index, a deployed nano, and (unless left
+    out) a labeler-of-record. Returns (consensus, deployed dir, cache)."""
+    import json
+    consensus = importlib.import_module("kitchen_training.consensus")
+    _, deployed = _labeler_fixture(tmp_path)
+    (tmp_path / ".labeled-index.json").write_text(json.dumps(index))
+    monkeypatch.setattr(consensus, "DATASET_MIRROR", tmp_path)
+    monkeypatch.setattr(consensus, "JURY_MEMORY", tmp_path / "jury-no-action.json")
+    monkeypatch.setattr(consensus, "JURY_LABELER", tmp_path / "jury-labeler.json")
+    monkeypatch.setattr(consensus, "PENDING_REJUDGE", tmp_path / "pending.json")
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", active)
+    if record is not ...:
+        consensus.JURY_LABELER.write_text(json.dumps({"labeler": record}))
+    return consensus, deployed, {stem: {"dogs": [], "people": []} for stem in index}
+
+
+_JURY_INDEX = {"sample_auto": [None, "dog", 0, 0, 1, "yolo26x"],
+               "sample_new": [None, None, 0, 0, 0, None],
+               "sample_hand": ["empty", None, 0, 0, 1, "yolo26x"]}
+
+
+def test_first_pass_after_deploy_rejudges_nothing_and_records_stock(monkeypatch, tmp_path):
+    import json
+    consensus, deployed, cache = _jury_volume(monkeypatch, tmp_path, _JURY_INDEX)
+    plan = consensus.jury_plan(list(_JURY_INDEX), cache, deployed)
+    assert plan["todo"] == ["sample_new"]
+    consensus.finish_jury(plan, [])
+    assert json.loads(consensus.JURY_LABELER.read_text()) == {"labeler": None}
+
+
+def test_auto_labels_are_rejudged_only_when_the_labeler_changed(monkeypatch, tmp_path):
+    consensus, deployed, cache = _jury_volume(
+        monkeypatch, tmp_path, _JURY_INDEX, record="aaa", active="aaa")
+    assert consensus.jury_plan(list(_JURY_INDEX), cache, deployed)["todo"] == ["sample_new"]
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", "bbb")     # a swap
+    plan = consensus.jury_plan(list(_JURY_INDEX), cache, deployed)
+    assert plan["todo"] == ["sample_auto", "sample_new"]        # hand label: audit path only
+    assert plan["rejudge"] == 1
+    monkeypatch.setattr(consensus, "LABELER_DIGEST", None)      # rollback to stock
+    assert consensus.jury_plan(list(_JURY_INDEX), cache, deployed)["todo"] == [
+        "sample_auto", "sample_new"]
+
+
+def test_a_new_labeler_clears_auto_labels_the_jury_no_longer_vouches_for(
+        monkeypatch, tmp_path, capsys):
+    import json
+    import sys
+    import types
+    index = {"dog_lost": [None, "dog", 0, 0, 1, "yolo26x"],       # X now sees no dog
+             "empty_now_dog": [None, "empty", 0, 0, 1, "yolo26x"],
+             "dog_kept": [None, "dog", 0, 0, 1, "yolo26x"],
+             "solo_dog": [None, "dog", 0, 0, 1, "yolo26x"],      # nano alone: dispute
+             "fresh": [None, None, 0, 0, 1, "yolo26x"]}
+    consensus, deployed, cache = _jury_volume(
+        monkeypatch, tmp_path, index, record=None, active="bbb")
+    x_dog = {"dogs": [[1, 1, 5, 5]], "people": []}
+    cache.update(empty_now_dog=x_dog, dog_kept=x_dog)
+    scores = {"dog_lost": (0.5, 0.0), "empty_now_dog": (0.6, 0.0),
+              "dog_kept": (0.9, 0.0), "solo_dog": (0.95, 0.0), "fresh": (0.5, 0.0)}
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=lambda *a, **k: None))
+    monkeypatch.setattr(consensus, "read_frames", lambda stems: iter((s, b"", s) for s in stems))
+    monkeypatch.setattr(consensus, "_nano_scores", lambda nano, image: scores[image])
+    plan = consensus.jury_plan(list(index), cache, deployed)
+    assert plan["rejudge"] == 4
+    part = consensus.judge_stems(plan["todo"], cache, deployed)
+    assert part["auto_verdicts"] == {"empty_now_dog": "dog"}
+    assert sorted(part["clear_auto"]) == ["dog_lost", "solo_dog"]
+    assert part["disputes"] == {"solo_dog": {"model_says": "dog", "nano_conf": 0.95}}
+    assert part["judged"] == 5
+    verdicts, disputes, clears = consensus.finish_jury(plan, [part])
+    assert verdicts == {"empty_now_dog": "dog"} and clears == ["dog_lost", "solo_dog"]
+    assert "re-judged 4 auto-labels: 1 kept, 1 changed, 2 cleared" in capsys.readouterr().out
+    assert json.loads(consensus.JURY_LABELER.read_text()) == {"labeler": "bbb"}
+    assert consensus.jury_plan(list(index), cache, deployed)["rejudge"] == 0
+
+
+def test_rejudge_results_are_resent_until_the_index_shows_them(monkeypatch, tmp_path):
+    import json
+    index = {"lost": [None, "dog", 0, 0, 1, "yolo26x"],      # clear never arrived
+             "done": [None, None, 0, 0, 1, "yolo26x"],       # the Pi cleared it
+             "human": ["dog", "dog", 0, 0, 1, "yolo26x"],    # a human label stands
+             "relabeled": [None, "dog", 0, 0, 1, "yolo26x"],
+             "vouched": [None, "dog", 0, 0, 1, "yolo26x"],   # a rollback re-judged it
+             "lost_change": [None, "empty", 0, 0, 1, "yolo26x"],  # change never arrived
+             "applied_change": [None, "dog", 0, 0, 1, "yolo26x"]}
+    consensus, _, _ = _jury_volume(monkeypatch, tmp_path, index)
+    consensus.PENDING_REJUDGE.write_text(json.dumps(
+        {"done": None, "gone": None, "human": None, "lost": None,
+         "relabeled": None, "vouched": None, "lost_change": "dog",
+         "applied_change": "dog"}))
+    part = {"auto_verdicts": {"relabeled": "empty", "fresh": "person"},
+            "disputes": {}, "declined": ["new_clear"], "clear_auto": ["new_clear"],
+            "changed": ["relabeled"], "judged": 4}
+    verdicts, _, clears = consensus.finish_jury(
+        {"jury": "j", "no_action": [],
+         "todo": ["new_clear", "relabeled", "vouched", "fresh"]}, [part])
+    assert clears == ["lost", "new_clear"]
+    assert verdicts == {"relabeled": "empty", "fresh": "person", "lost_change": "dog"}
+    assert json.loads(consensus.PENDING_REJUDGE.read_text()) == {
+        "lost": None, "lost_change": "dog", "new_clear": None, "relabeled": "empty"}
+
+
+def test_a_pass_that_fails_after_judging_keeps_the_labeler_of_record(monkeypatch, tmp_path):
+    import json
+    import pytest
+    consensus, deployed, cache = _jury_volume(
+        monkeypatch, tmp_path, _JURY_INDEX, record="aaa", active="bbb")
+    plan = consensus.jury_plan(list(_JURY_INDEX), cache, deployed)
+    monkeypatch.setattr(consensus, "JURY_MEMORY", tmp_path / "missing" / "memory.json")
+    with pytest.raises(OSError):
+        consensus.finish_jury(plan, [])
+    assert json.loads(consensus.JURY_LABELER.read_text()) == {"labeler": "aaa"}
+    assert "sample_auto" in consensus.jury_plan(list(_JURY_INDEX), cache, deployed)["todo"]
 
 
 def test_live_small_model_box_trains_only_with_a_human_label():

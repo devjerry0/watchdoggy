@@ -58,6 +58,28 @@ def test_autolabel_lifecycle(tmp_path):
                   json={"name": "sample_404", "verdict": "dog"}).status_code == 404
 
 
+def test_clearing_an_auto_label_returns_the_frame_to_the_queue(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1")
+    _seed_full(ddir, "sample_2", verdict="dog")
+    c.post("/api/dataset/autolabel", json={"name": "sample_1", "verdict": "dog"})
+    r = c.post("/api/dataset/autolabel/clear", json={"name": "sample_1"})
+    assert r.json() == {"ok": True}
+    assert "auto_label" not in json.loads((ddir / "sample_1.json").read_text())
+    d = c.get("/api/dataset/frames?filter=unlabeled").json()
+    assert d["counts"]["unlabeled"] == 1 and d["counts"]["auto"] == 0
+    # a repeat, or a human-labeled frame, is a harmless no-op
+    assert "skipped" in c.post("/api/dataset/autolabel/clear",
+                               json={"name": "sample_1"}).json()
+    before = (ddir / "sample_2.json").read_text()
+    assert "skipped" in c.post("/api/dataset/autolabel/clear",
+                               json={"name": "sample_2"}).json()
+    assert (ddir / "sample_2.json").read_text() == before
+    for name in ("sample_404", "../../etc/passwd", ""):
+        assert c.post("/api/dataset/autolabel/clear",
+                      json={"name": name}).status_code == 404
+
+
 def test_dispute_lifecycle(tmp_path):
     c, _, ddir = _client(tmp_path)
     _seed_full(ddir, "sample_1", verdict="person", prelabel_dogs=1)

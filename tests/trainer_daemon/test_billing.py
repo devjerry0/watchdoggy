@@ -24,6 +24,7 @@ def test_refuses_cloud_kinds_when_credits_spent(tmp_path, monkeypatch):
           {"metered_cost": 30.0, "billed_cost": 0.0, "credits_used": 30.0})
     assert "no Modal credits left" in billing.credit_refusal("train")
     assert "no Modal credits left" in billing.credit_refusal("prelabel")
+    assert "no Modal credits left" in billing.credit_refusal("labeler")
 
 
 def test_update_jobs_never_refused(tmp_path, monkeypatch):
@@ -135,3 +136,10 @@ def test_hung_client_timeout_also_collects(monkeypatch, tmp_path):
     monkeypatch.setattr(cloud.subprocess, "run", run)
     cloud.modal_run("kickoff_prelabels", ["--out-dir", "/tmp/y"], "job_2")
     assert calls[1][calls[1].index("--kind") + 1] == "label"
+
+
+def test_dropped_labeler_run_collects_with_the_labeler_kind(monkeypatch, tmp_path):
+    cloud, calls = _fake_modal(monkeypatch, tmp_path, fail_first=True, write_call=True)
+    cloud.modal_run("kickoff_labeler", ["--out-dir", "/tmp/z"], "job_1")
+    assert calls[1][calls[1].index("--call-id") + 1] == "fc-123"
+    assert calls[1][calls[1].index("--kind") + 1] == "labeler"

@@ -5,6 +5,8 @@ Paths honor KT_* environment overrides so the same package runs on the Mac
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import os
 import subprocess
 import time
@@ -36,7 +38,6 @@ def mirror_glob(pattern: str):
     """Mirror files matching a sample_* pattern across the layout."""
     return DATASET_MIRROR.glob(f"*/{pattern}" if MIRROR_SHARDED else pattern)
 RUNS = _path_from_env("KT_RUNS_DIR", REPO / "training-runs")
-PRELABEL_CACHE = RUNS / "prelabel-cache.json"
 
 BASE_MODEL = _path_from_env("KT_BASE_MODEL", REPO / "models/yolo26n.pt")
 # Weights of the deployed model: every training run starts here, on the FULL
@@ -45,7 +46,33 @@ BASE_MODEL = _path_from_env("KT_BASE_MODEL", REPO / "models/yolo26n.pt")
 # it saved ~$1-3/run for a forgetting risk and extra bookkeeping), and a run
 # the gate deploys replaces it. Missing -> BASE_MODEL (fresh run).
 CHAMPION_MODEL = _path_from_env("KT_CHAMPION_MODEL", REPO / "models/champion.pt")
-PRELABEL_MODEL = _path_from_env("KT_PRELABEL_MODEL", REPO / "models/yolo26x.pt")
+STOCK_PRELABEL_MODEL = _path_from_env("KT_PRELABEL_MODEL", REPO / "models/yolo26x.pt")
+
+
+@functools.cache
+def _sha256(path: Path, mtime_ns: int, size: int) -> str:
+    """Keyed on the file's stat too, so a re-promoted file hashes again."""
+    with path.open("rb") as weights:
+        return hashlib.file_digest(weights, "sha256").hexdigest()
+
+
+def labeler_identity(stock: Path, runs: Path) -> tuple[Path, Path, str, str | None]:
+    """(weights, box cache, tag, digest) of the active labeler: a fine-tuned
+    labeler.pt beside the stock model when present, else the stock model.
+    Stock keeps the legacy cache name and has no digest, so deploying this
+    relabels nothing and keeps the jury id (consensus._jury_id). Removing
+    labeler.pt is the rollback."""
+    labeler = stock.with_name("labeler.pt")
+    if not labeler.is_file():
+        return stock, runs / "prelabel-cache.json", stock.stem, None
+    stat = labeler.stat()
+    digest = _sha256(labeler, stat.st_mtime_ns, stat.st_size)
+    return (labeler, runs / f"prelabel-cache-{digest[:12]}.json",
+            f"{stock.stem}-kitchen-{digest[:8]}", digest)
+
+
+PRELABEL_MODEL, PRELABEL_CACHE, LABELER_TAG, LABELER_DIGEST = labeler_identity(
+    STOCK_PRELABEL_MODEL, RUNS)
 
 PRELABEL_CONF = 0.45      # big-model boxes below this aren't trusted as labels
 FIRE_CONF = 0.7           # the appliance's default alarm threshold

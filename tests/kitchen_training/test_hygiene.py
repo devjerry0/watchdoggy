@@ -141,3 +141,17 @@ def test_epoch_cap_follows_the_gpu():
     # halves the assumed rate; a bigger batch never inflates it.
     assert hygiene.fit_epochs(80, 120_000, ceiling, "L40S", batch=16) == 44
     assert hygiene.fit_epochs(80, 120_000, ceiling, "L4", batch=64) == 38
+
+
+def test_labeler_epochs_fit_the_ceiling_at_its_own_rate():
+    ceiling = 10 * 3600
+    assert hygiene.LABELER_UNMEASURED_IMAGES_PER_SECOND == 40
+    assert hygiene.LABELER_IMAGES_PER_SECOND == {"L40S": 89}  # the Oct 12 probe
+    # ~11k labeler images x 100 epochs fits 8.5 h on the measured L40S...
+    assert hygiene.fit_epochs(100, 11_000, ceiling, "L40S", 16, model="labeler") == 100
+    # ...while an unmeasured GPU at 40 img/s trims a bigger epoch to what fits,
+    # where the small model's table would have kept all 100.
+    assert hygiene.fit_epochs(100, 20_000, ceiling, "L4", 16, model="labeler") == 61
+    assert hygiene.fit_epochs(100, 20_000, ceiling, "L40S", 32) == 100
+    # A 3-epoch probe runs as requested.
+    assert hygiene.fit_epochs(3, 11_000, ceiling, "L40S", 16, model="labeler") == 3

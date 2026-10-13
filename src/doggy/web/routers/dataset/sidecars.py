@@ -137,6 +137,15 @@ def apply_autolabel(meta: dict, verdict: str, now: float) -> bool:
     return True
 
 
+def apply_clear_auto(meta: dict) -> bool:
+    """Drop an auto-label the jury no longer vouches for. False when a human
+    label stands (human always wins) or there is no auto-label to drop."""
+    if meta.get("human_label") or "auto_label" not in meta:
+        return False
+    del meta["auto_label"]
+    return True
+
+
 def apply_dispute(meta: dict, model_says: str, nano_conf: float,
                   now: float) -> bool:
     """False when a human already arbitrated (never ask twice)."""

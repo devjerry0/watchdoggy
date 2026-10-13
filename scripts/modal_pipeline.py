@@ -12,7 +12,10 @@ best-model-wins deploy gate. The actual pipeline logic lives in
 kitchen_training.pipeline (plus gate/consensus); this file only wraps it
 in Modal functions and moves bytes. Results land in --out-dir:
 summary.json, report.md, prelabels.json (fresh big-model boxes for the
-review page), and kitchen_ncnn_model/ when the gate passes.
+review page), labeler.json (the labeler that drew them), and
+kitchen_ncnn_model/ when the gate passes. kickoff_labeler runs the
+labeler job (kitchen_training.labeler) and writes labeler-run.json (its
+results) and report.md.
 
 The Volume ("watchdoggy-train-3", v2) holds the model weights (seed once with
 kickoff --seed-models, from a machine that has models/yolo26?.pt), the
@@ -86,6 +89,8 @@ def _point_kitchen_training_at_volume(run_root: Path) -> None:
     # yolo26n when absent) and a deployed run replaces them.
     os.environ["KT_CHAMPION_MODEL"] = str(PIPELINE_ROOT / "models/champion.pt")
     os.environ["KT_MIRROR_SHARDED"] = "1"  # day folders on the volume
+    # Stock yolo26x; a fine-tuned labeler.pt beside it takes over when
+    # present (config.labeler_identity).
     os.environ["KT_PRELABEL_MODEL"] = str(PIPELINE_ROOT / "models/yolo26x.pt")
     # The ceiling-fit epoch cap (kitchen_training.hygiene.fit_epochs) must
     # know the real function timeout so a run never overruns it.
@@ -125,6 +130,23 @@ def run_prelabels(run_name: str) -> dict:
 
     results = prelabel_phase(run_name, run_root)
     volume.commit()
+    return results
+
+
+# memory is a floor: the RAM cache of ~11.5k 640x480 frames is ~11 GB, and
+# the probe run says whether it needs more.
+@app.function(image=image, gpu=GPU, cpu=8, memory=32768,
+              volumes={str(VOL): volume}, timeout=CLOUD_JOB_CEILING)
+def run_labeler(run_name: str, epochs: int, sample_size: int, gpu: str) -> dict:
+    """The labeler job in one container: build, fine-tune, gate, and promote
+    labeler.pt on a clear win. The replay runs the deployed NCNN nano on CPU
+    here, so its threads must be capped (_point_kitchen_training_at_volume)."""
+    run_root = PIPELINE_ROOT / "runs" / run_name
+    _point_kitchen_training_at_volume(run_root)
+    from kitchen_training import labeler
+
+    results = labeler.run_labeler(run_name, run_root, epochs, sample_size, gpu)
+    volume.commit()  # a promoted labeler.pt must outlive the container
     return results
 
 
@@ -170,8 +192,7 @@ def run_label_pass(run_name: str) -> dict:
     for part in run_consensus_chunk.map([run_name] * len(chunks), chunks,
                                         order_outputs=False):
         parts.append(part)
-        judged += len(part["auto_verdicts"]) + len(part["disputes"]) \
-            + len(part["declined"])
+        judged += part["judged"]  # a disputed frame is also declined
         elapsed = time.monotonic() - jury_started
         print(f"[pipeline] jury {len(parts)}/{len(chunks)} chunks done "
               f"({judged}/{len(todo)} frames, {elapsed / 60:.1f} min, "
@@ -213,6 +234,7 @@ def _write_results(out_dir: Path, results: dict, bundle_tar: bytes | None) -> No
         | {"timings": results.get("timings")}, indent=1))
     (out_dir / "report.md").write_text(results["report_md"])
     (out_dir / "prelabels.json").write_text(json.dumps(results["prelabels"]))
+    (out_dir / "labeler.json").write_text(json.dumps(results.get("labeler")))
     if bundle_tar:
         with tarfile.open(fileobj=io.BytesIO(bundle_tar), mode="r:gz") as tar:
             tar.extractall(out_dir / "kitchen_ncnn_model")
@@ -237,7 +259,7 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
           f"(gate @ {fire_conf}) ...")
     call = run_pipeline.spawn(run_name, recipe, fire_conf)
     _remember_call(call_file, call)
-    results, bundle_tar = call.get()
+    results, bundle_tar = _wait(call)
     _write_results(Path(out_dir), results, bundle_tar)
 
 
@@ -251,7 +273,55 @@ def kickoff_prelabels(dataset_dir: str, out_dir: str,
     print("[pipeline] labeling in the cloud ...")
     call = run_label_pass.spawn(run_name)
     _remember_call(call_file, call)
-    _write_label_results(Path(out_dir), call.get())
+    _write_label_results(Path(out_dir), _wait(call))
+
+
+@app.local_entrypoint()
+def kickoff_labeler(dataset_dir: str, out_dir: str, deployed_dir: str = "",
+                    epochs: int = 100, auto_sample: int = 8000,
+                    call_file: str = "") -> None:
+    """Labeler run: fine-tune yolo26x on the kitchen and swap it in when it
+    beats the active labeler on the exam. --deployed-dir is the small model
+    the jury replay needs. The defaults are labeler.LABELER_EPOCHS and
+    AUTO_SAMPLE_SIZE; a probe passes a few epochs."""
+    run_name = _upload(Path(dataset_dir),
+                       Path(deployed_dir) if deployed_dir else None, None)
+    print(f"[pipeline] training the labeler in the cloud ({epochs} epochs, "
+          f"{auto_sample} auto-labels sampled) ...")
+    call = run_labeler.spawn(run_name, epochs, auto_sample, GPU)
+    _remember_call(call_file, call)
+    _write_labeler_results(Path(out_dir), _wait(call))
+
+
+# A waiting kickoff checks its cloud call this often, and gives up after
+# DEAD_CHECKS checks in a row find it ended (one could race the result).
+WAIT_POLL_SECONDS = 60
+DEAD_CHECKS = 2
+DEAD_STATUSES = {"FAILURE", "INIT_FAILURE", "TERMINATED", "TIMEOUT"}
+
+
+def _wait(call):
+    """call.get() that notices a dead run. On 2026-10-13 a labeler
+    container vanished mid-epoch: Modal marked the input FAILURE but get()
+    never returned, and the Pi waited 12 h with every other job queued."""
+    dead = 0
+    while True:
+        try:
+            return call.get(timeout=WAIT_POLL_SECONDS)
+        except TimeoutError:
+            statuses = _statuses(call.get_call_graph())
+            dead = dead + 1 if statuses & DEAD_STATUSES else 0
+            if dead >= DEAD_CHECKS:
+                raise RuntimeError(
+                    f"cloud call {call.object_id} ended without a result "
+                    f"({', '.join(sorted(statuses))})") from None
+
+
+def _statuses(nodes) -> set[str]:
+    """Every status in a call graph, children included: run_label_pass maps
+    run_consensus_chunk, and a dead chunk leaves the parent PENDING."""
+    return {status for node in nodes
+            for status in (node.status.name, *_statuses(node.children))}
 
 
 def _remember_call(call_file: str, call) -> None:
@@ -267,21 +337,39 @@ def _remember_call(call_file: str, call) -> None:
 @app.local_entrypoint()
 def collect(call_id: str, out_dir: str, kind: str) -> None:
     """Fetch a spawned run's result by call id (waits if it is still
-    running) and write the same out_dir files its kickoff would have."""
+    running, fails if it ended without a result) and write the same out_dir
+    files its kickoff would have."""
     print(f"[pipeline] collecting cloud call {call_id} ...", flush=True)
-    result = modal.FunctionCall.from_id(call_id).get()
+    result = _wait(modal.FunctionCall.from_id(call_id))
     if kind == "train":
         _write_results(Path(out_dir), *result)
-        return
-    _write_label_results(Path(out_dir), result)
+    elif kind == "labeler":
+        _write_labeler_results(Path(out_dir), result)
+    else:
+        _write_label_results(Path(out_dir), result)
+
+
+def _write_labeler_results(out: Path, results: dict) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "labeler-run.json").write_text(json.dumps(
+        {key: value for key, value in results.items() if key != "report_md"},
+        indent=1))
+    (out / "report.md").write_text(results["report_md"])
+    print(f"[pipeline] labeler {results['decision']}: {results['reason']} "
+          f"-> {out}")
 
 
 def _write_label_results(out: Path, results: dict) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "prelabels.json").write_text(json.dumps(results["prelabels"]))
+    # The labeler that drew these boxes: the Pi tags each sidecar with it.
+    (out / "labeler.json").write_text(json.dumps(results.get("labeler")))
     (out / "auto_verdicts.json").write_text(
         json.dumps(results.get("auto_verdicts", {})))
     (out / "disputes.json").write_text(json.dumps(results.get("disputes", {})))
+    (out / "clear_auto.json").write_text(
+        json.dumps(results.get("clear_auto", [])))
     print(f"[pipeline] {len(results['prelabels'])} new frames prelabeled, "
           f"{len(results.get('auto_verdicts', {}))} auto-labeled, "
-          f"{len(results.get('disputes', {}))} labels disputed -> {out}")
+          f"{len(results.get('disputes', {}))} labels disputed, "
+          f"{len(results.get('clear_auto', []))} auto-labels cleared -> {out}")

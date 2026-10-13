@@ -96,3 +96,34 @@ def test_compare_init_is_a_train_job_flag_only(tmp_path):
     # Never a saved setting: it would double every run's training.
     c.post("/api/training/settings", json={"compare_init": True})
     assert "compare_init" not in c.get("/api/training/settings").json()
+
+
+def test_labeler_job_takes_job_only_epochs_and_sample(tmp_path):
+    c, _ = _client(tmp_path)
+    d = c.post("/api/training/request",
+               json={"kind": "labeler",
+                     "params": {"epochs": 3, "auto_sample": 2000,
+                                "batch": 64}}).json()
+    # A 3-epoch probe passes its own 1..500 bound (train jobs start at 10);
+    # the small model's recipe knobs never ride along.
+    assert d["job"]["kind"] == "labeler"
+    assert d["job"]["params"] == {"epochs": 3, "auto_sample": 2000}
+    again = c.post("/api/training/request", json={"kind": "labeler"}).json()
+    assert again["already_pending"] and again["job"]["id"] == d["job"]["id"]
+    # Job params only: the saved recipe is untouched.
+    saved = c.get("/api/training/settings").json()
+    assert saved["epochs"] == 120 and "auto_sample" not in saved
+    c.post("/api/training/settings", json={"auto_sample": 2000})
+    assert "auto_sample" not in c.get("/api/training/settings").json()
+
+
+def test_labeler_job_params_are_bounded(tmp_path):
+    c, _ = _client(tmp_path)
+    for params in ({"epochs": 0}, {"epochs": 501}, {"auto_sample": 0},
+                   {"auto_sample": 50001}, {"epochs": "3"}):
+        assert c.post("/api/training/request",
+                      json={"kind": "labeler", "params": params}).status_code == 422
+    assert c.post("/api/training/request",
+                  json={"kind": "train", "params": {"epochs": 3}}).status_code == 422
+    assert c.post("/api/training/request",
+                  json={"kind": "labelr"}).status_code == 422

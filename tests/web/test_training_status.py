@@ -205,3 +205,14 @@ def test_refused_and_running_jobs_leave_the_streak_alone(tmp_path):
     _seed_job(root, "job_1005", "train", "running")
     d = c.get("/api/training/status").json()
     assert d["cloud_failure_streak"] == 3
+
+
+def test_labeler_failures_stay_off_the_backoff_banner(tmp_path):
+    # The banner says auto jobs are backing off; labeler jobs are manual
+    # only and never backed off, so their failures show on their own rows.
+    c, root = _client(tmp_path)
+    for i in range(3):
+        _seed_job(root, f"job_100{i}", "labeler", "failed")
+    d = c.get("/api/training/status").json()
+    assert d["cloud_failure_streak"] == 0
+    assert [j["kind"] for j in d["jobs"]] == ["labeler"] * 3

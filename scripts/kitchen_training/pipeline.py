@@ -17,8 +17,8 @@ from pathlib import Path
 
 from kitchen_training.build import build
 from kitchen_training.config import (BASE_MODEL, CHAMPION_MODEL, DATASET_MIRROR,
-                                     PRELABEL_CACHE, RUNS, duration,
-                                     mirror_glob, phase)
+                                     LABELER_TAG, PRELABEL_CACHE, RUNS,
+                                     duration, mirror_glob, phase)
 from kitchen_training.consensus import finish_jury, judge_stems, jury_plan
 from kitchen_training.dataset import prelabel
 from kitchen_training.evaluation import eval_frames, evaluate, ncnn_truth, robustness
@@ -46,14 +46,16 @@ def cached_stems() -> set[str]:
 
 def fresh_prelabels(cache_before: set[str]) -> dict:
     """Boxes for the Pi: this pass's new ones, plus cached frames the Pi's
-    index says still lack boxes. A pass that dies before its results reach
-    the Pi has already cached its boxes, so they never count as new again
-    (Oct 2026: 46k frames went missing that way)."""
+    index says still lack boxes or hold another labeler's boxes (a rollback,
+    or a relabel whose results never arrived). A pass that dies before its
+    results reach the Pi has already cached its boxes, so they never count
+    as new again (Oct 2026: 46k frames went missing that way)."""
     cache = json.loads(PRELABEL_CACHE.read_text())
     index_file = DATASET_MIRROR / ".labeled-index.json"
     index = json.loads(index_file.read_text()) if index_file.is_file() else {}
     lacking = {stem for stem, entry in index.items()
-               if len(entry) > 4 and not entry[4]}
+               if (len(entry) > 4 and not entry[4])
+               or (len(entry) > 5 and entry[5] != LABELER_TAG)}
     fresh = {}
     for stem in (set(cache) - cache_before) | (lacking & set(cache)):
         entry = cache[stem]
@@ -193,6 +195,7 @@ def full_run(run_name: str, recipe: dict, fire_conf: float,
         "run_name": run_name,
         "gate": gate,
         "prelabels": fresh_prelabels(cache_before),
+        "labeler": LABELER_TAG,
         "report_md": (run_dir / "report.md").read_text(),
         "dataset": {"train": dataset_stats["train"],
                     "val": dataset_stats["val"],
@@ -238,7 +241,8 @@ def prelabel_phase(run_name: str, run_root: Path | None = None) -> dict:
             print(f"[pipeline] janitor: removed stale {stale}", flush=True)
     cache_before = cached_stems()
     prelabel(_mirror_stems())
-    return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before)}
+    return {"run_name": run_name, "prelabels": fresh_prelabels(cache_before),
+            "labeler": LABELER_TAG}
 
 
 def jury_plan_phase(run_name: str, run_root: Path) -> dict:
@@ -261,6 +265,6 @@ def judge_chunk_phase(run_root: Path, stems: list[str]) -> dict:
 
 
 def finish_jury_phase(run_name: str, plan: dict, parts: list[dict]) -> dict:
-    auto_verdicts, disputes = finish_jury(plan, parts)
+    auto_verdicts, disputes, clear_auto = finish_jury(plan, parts)
     return {"run_name": run_name, "auto_verdicts": auto_verdicts,
-            "disputes": disputes}
+            "disputes": disputes, "clear_auto": clear_auto}

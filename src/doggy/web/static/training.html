@@ -215,6 +215,7 @@
         <button class="quiet" onclick="saveSettings()">Save recipe + schedule</button>
         <button class="primary" onclick="runJob('train')">Run training now</button>
         <button onclick="runJob('prelabel')">Fetch ·x boxes now</button>
+        <button onclick="runJob('labeler')">Train labeler</button>
         <button onclick="runJob('update')">Update software now</button>
         <span id="msg"></span>
       </div>
@@ -380,7 +381,7 @@ async function renderActive(){
     bar.style.width = (100 * parseInt(last[1], 10) / parseInt(last[2], 10)) + "%";
   } else {
     document.getElementById("epoch_text").textContent =
-      active.kind === "train" ? "" : "prelabel pass";
+      active.kind === "prelabel" ? "prelabel pass" : "";
     bar.style.width = reached >= 4 ? "100%" : "0%";
   }
   const pre = document.getElementById("live_log");
@@ -395,6 +396,8 @@ function badge(j){
   if (j.status === "running") return ["running", "running"];
   if (j.status === "queued") return ["queued", "queued"];
   if (j.kind === "prelabel") return ["done", "kept"];
+  if (j.kind === "labeler")
+    return /^SWAPPED/.test(j.detail || "") ? ["swapped", "deployed"] : ["kept", "kept"];
   return /DEPLOYED/.test(j.detail || "") ? ["deployed", "deployed"] : ["kept", "kept"];
 }
 function renderRuns(){
@@ -447,7 +450,7 @@ function renderRuns(){
       + '<span class="badge ' + cls + '">' + word + "</span>" + score
       + (j.detail && !j.summary ? "<span>" + esc(j.detail) + "</span>" : "")
       + '<a onclick="event.stopPropagation();showLog(\'' + esc(j.id) + '\')">log</a>'
-      + (j.kind === "train" && j.status === "done"
+      + ((j.kind === "train" || j.kind === "labeler") && j.status === "done"
          ? '<a onclick="event.stopPropagation();showReport(\'' + esc(j.id) + '\')">report</a>' : "")
       + "</div><div class='rundetail'>" + detail + "</div></div>";
   }).join("") || '<div class="fine">no runs yet — queue one above</div>';
@@ -507,10 +510,20 @@ async function runJob(kind){
     body.params = {epochs: s.epochs, batch: s.batch, freeze: s.freeze,
                    augment: s.augment};
   }
-  const d = await (await fetch("/api/training/request", {method:"POST",
+  if (kind === "labeler"){
+    // Job only, never saved: 100 is the full run, a probe uses a few.
+    const epochs = prompt("Labeler epochs: 100 is the full run (a few hours); "
+                          + "3 is a quick probe", "100");
+    if (epochs === null) return;
+    body.params = {epochs: parseInt(epochs, 10)};
+  }
+  const r = await fetch("/api/training/request", {method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify(body)})).json();
-  document.getElementById("msg").textContent = d.already_pending
+    body: JSON.stringify(body)});
+  const d = await r.json();
+  document.getElementById("msg").textContent = !r.ok
+    ? "not queued: " + (typeof d.detail === "string" ? d.detail : "invalid request")
+    : d.already_pending
     ? "already queued — trainer runs it within 30 min"
     : "queued — trainer runs it within 30 min";
   refresh();

@@ -1,4 +1,5 @@
-"""The two job runners: a prelabel pass and a full gated training run."""
+"""The job runners: a prelabel pass, a full gated training run, and a
+labeler run (self-updates live in trainer_daemon.update)."""
 from __future__ import annotations
 
 import json
@@ -10,13 +11,19 @@ from trainer_daemon.apply import (
     apply_cloud_results,
     apply_exam_suspects,
     install_bundle,
+    labeler_tag,
 )
 from trainer_daemon.billing import billing_summary, run_cost
 from trainer_daemon.cloud import batch, modal_run
 from trainer_daemon.env import DEPLOYED_BUNDLE, DOGGY_ROOT, JOBS_DIR, log, settings
+from trainer_daemon.queue import jobs, queue_auto
 from trainer_daemon.update import run_update_job
 
 FALLBACK_FIRE_CONF = 0.7
+# kitchen_training.labeler's defaults (the trainer venv cannot import it).
+# The cloud trains the labeler at its own LABELER_BATCH.
+LABELER_EPOCHS = 100
+LABELER_AUTO_SAMPLE = 8000
 
 
 def run_prelabel_job(job: dict) -> str:
@@ -26,13 +33,14 @@ def run_prelabel_job(job: dict) -> str:
         if DEPLOYED_BUNDLE.is_dir():
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff_prelabels", arguments, job["id"])
-        merged, autos, disputes = apply_cloud_results(
+        merged, autos, disputes, cleared = apply_cloud_results(
             Path(tmp) / "prelabels.json",
             Path(tmp) / "auto_verdicts.json",
-            Path(tmp) / "disputes.json")
+            Path(tmp) / "disputes.json", Path(tmp) / "clear_auto.json",
+            model=labeler_tag(Path(tmp)))
     cost = run_cost(before)
     return (f"{merged} frames prelabeled, {autos} auto-labeled, "
-            f"{disputes} labels disputed"
+            f"{disputes} labels disputed, {cleared} auto-labels cleared"
             + (f" (${cost:.2f})" if cost is not None else ""))
 
 
@@ -96,7 +104,8 @@ def run_train_job(job: dict) -> str:
             arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
         modal_run("kickoff", arguments, job["id"])
         out = Path(tmp)
-        merged, _, _ = apply_cloud_results(out / "prelabels.json")
+        merged = apply_cloud_results(out / "prelabels.json",
+                                     model=labeler_tag(out))[0]
         summary = json.loads((out / "summary.json").read_text())
         apply_exam_suspects(summary)
         (JOBS_DIR / f"{job['id']}.report.md").write_text(
@@ -115,5 +124,47 @@ def run_train_job(job: dict) -> str:
     return f"DEPLOYED new model ({verdict})"
 
 
+def run_labeler_job(job: dict) -> str:
+    """Fine-tune the labeler in the cloud. Its recipe is its own: the small
+    model's saved epochs and batch never apply. On a swap the cloud has
+    already written labeler.pt, so this queues the labeling pass that
+    relabels every frame and re-judges the auto-labels (the weekly
+    schedule would not queue it on its own)."""
+    before = billing_summary()
+    params = job.get("params") or {}
+    with tempfile.TemporaryDirectory() as tmp:
+        arguments = ["--out-dir", tmp,
+                     "--epochs", str(params.get("epochs", LABELER_EPOCHS)),
+                     "--auto-sample",
+                     str(params.get("auto_sample", LABELER_AUTO_SAMPLE))]
+        if DEPLOYED_BUNDLE.is_dir():
+            arguments += ["--deployed-dir", str(DEPLOYED_BUNDLE)]
+        modal_run("kickoff_labeler", arguments, job["id"])
+        out = Path(tmp)
+        results = json.loads((out / "labeler-run.json").read_text())
+        apply_exam_suspects(results)
+        # Queue the relabel first: everything after it is bookkeeping.
+        if results["promoted"]:
+            relabel = _queue_relabel()
+        (JOBS_DIR / f"{job['id']}.report.md").write_text(
+            (out / "report.md").read_text())
+    if results["decision"] == "failed":
+        raise RuntimeError(f"labeler run failed: {results['reason']}")
+    cost = run_cost(before)
+    detail = (f"SWAPPED in the fine-tuned labeler ({results['reason']}); {relabel}"
+              if results["promoted"]
+              else f"kept the active labeler ({results['reason']})")
+    return detail + (f" (${cost:.2f})" if cost is not None else "")
+
+
+def _queue_relabel() -> str:
+    """One labeling pass after a swap, reusing one already waiting."""
+    if any(j.get("kind") == "prelabel" and j.get("status") in ("queued", "running")
+           for j in jobs()):
+        return "a labeling pass was already queued"
+    queue_auto("prelabel", "labeler swapped: relabel every frame")
+    return "labeling pass queued"
+
+
 RUNNERS = {"prelabel": run_prelabel_job, "train": run_train_job,
-           "update": run_update_job}
+           "labeler": run_labeler_job, "update": run_update_job}

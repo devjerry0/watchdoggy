@@ -37,6 +37,20 @@ COMPLETED_MARKER = ".completed"
 TRAIN_IMAGES_PER_SECOND = {"L4": 150, "L40S": 350, "A100": 150}
 UNMEASURED_IMAGES_PER_SECOND = 60
 MEASURED_BATCH = 32  # the batch size behind every rate above
+# The labeler (yolo26x, freeze=10, imgsz 640, RAM cache) at its batch of
+# 16, steady rate from epoch 2 on (labeler._steady_rate). L40S: the Oct 12
+# 3-epoch probe (10,196 images per epoch, 75 img/s overall). Unmeasured
+# GPUs keep 40 for a margin.
+LABELER_IMAGES_PER_SECOND: dict[str, float] = {"L40S": 89}
+LABELER_UNMEASURED_IMAGES_PER_SECOND = 40
+LABELER_MEASURED_BATCH = 16
+# Throughput tables by model: (rates per GPU, unmeasured rate, their batch).
+RATE_TABLES = {
+    "detector": (TRAIN_IMAGES_PER_SECOND, UNMEASURED_IMAGES_PER_SECOND,
+                 MEASURED_BATCH),
+    "labeler": (LABELER_IMAGES_PER_SECOND, LABELER_UNMEASURED_IMAGES_PER_SECOND,
+                LABELER_MEASURED_BATCH),
+}
 OVERHEAD_SECONDS = 1.5 * 3600
 MIN_EPOCHS = 15
 
@@ -50,14 +64,17 @@ CORPSE_GRACE_SECONDS = 11 * 3600
 
 
 def fit_epochs(requested: int, corpus_images: int, ceiling_seconds: float,
-               gpu: str = "", batch: int = MEASURED_BATCH) -> int:
+               gpu: str = "", batch: int = MEASURED_BATCH,
+               model: str = "detector") -> int:
     """The requested epochs, capped only when they cannot finish inside the
     cloud-job ceiling on this GPU (better a trimmed run than a timed-out
-    corpse). Never below MIN_EPOCHS unless the request itself was."""
-    rate = TRAIN_IMAGES_PER_SECOND.get(gpu, UNMEASURED_IMAGES_PER_SECOND)
+    corpse). Never below MIN_EPOCHS unless the request itself was. model
+    picks the throughput table: "detector" (the small model) or "labeler"."""
+    rates, unmeasured, measured_batch = RATE_TABLES[model]
+    rate = rates.get(gpu, unmeasured)
     # Every GPU benchmarked is bound by per-step overhead, so img/s scales
     # with batch: a smaller batch is proportionally slower. Never scaled up.
-    rate *= min(1.0, batch / MEASURED_BATCH)
+    rate *= min(1.0, batch / measured_batch)
     budget = max(ceiling_seconds - OVERHEAD_SECONDS, 3600.0) * rate
     fits = int(budget // max(corpus_images, 1))
     return min(requested, max(MIN_EPOCHS, fits))
