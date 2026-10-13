@@ -259,7 +259,7 @@ def kickoff(dataset_dir: str, out_dir: str, deployed_dir: str = "",
           f"(gate @ {fire_conf}) ...")
     call = run_pipeline.spawn(run_name, recipe, fire_conf)
     _remember_call(call_file, call)
-    results, bundle_tar = call.get()
+    results, bundle_tar = _wait(call)
     _write_results(Path(out_dir), results, bundle_tar)
 
 
@@ -273,7 +273,7 @@ def kickoff_prelabels(dataset_dir: str, out_dir: str,
     print("[pipeline] labeling in the cloud ...")
     call = run_label_pass.spawn(run_name)
     _remember_call(call_file, call)
-    _write_label_results(Path(out_dir), call.get())
+    _write_label_results(Path(out_dir), _wait(call))
 
 
 @app.local_entrypoint()
@@ -290,7 +290,38 @@ def kickoff_labeler(dataset_dir: str, out_dir: str, deployed_dir: str = "",
           f"{auto_sample} auto-labels sampled) ...")
     call = run_labeler.spawn(run_name, epochs, auto_sample, GPU)
     _remember_call(call_file, call)
-    _write_labeler_results(Path(out_dir), call.get())
+    _write_labeler_results(Path(out_dir), _wait(call))
+
+
+# A waiting kickoff checks its cloud call this often, and gives up after
+# DEAD_CHECKS checks in a row find it ended (one could race the result).
+WAIT_POLL_SECONDS = 60
+DEAD_CHECKS = 2
+DEAD_STATUSES = {"FAILURE", "INIT_FAILURE", "TERMINATED", "TIMEOUT"}
+
+
+def _wait(call):
+    """call.get() that notices a dead run. On 2026-10-13 a labeler
+    container vanished mid-epoch: Modal marked the input FAILURE but get()
+    never returned, and the Pi waited 12 h with every other job queued."""
+    dead = 0
+    while True:
+        try:
+            return call.get(timeout=WAIT_POLL_SECONDS)
+        except TimeoutError:
+            statuses = _statuses(call.get_call_graph())
+            dead = dead + 1 if statuses & DEAD_STATUSES else 0
+            if dead >= DEAD_CHECKS:
+                raise RuntimeError(
+                    f"cloud call {call.object_id} ended without a result "
+                    f"({', '.join(sorted(statuses))})") from None
+
+
+def _statuses(nodes) -> set[str]:
+    """Every status in a call graph, children included: run_label_pass maps
+    run_consensus_chunk, and a dead chunk leaves the parent PENDING."""
+    return {status for node in nodes
+            for status in (node.status.name, *_statuses(node.children))}
 
 
 def _remember_call(call_file: str, call) -> None:
@@ -306,9 +337,10 @@ def _remember_call(call_file: str, call) -> None:
 @app.local_entrypoint()
 def collect(call_id: str, out_dir: str, kind: str) -> None:
     """Fetch a spawned run's result by call id (waits if it is still
-    running) and write the same out_dir files its kickoff would have."""
+    running, fails if it ended without a result) and write the same out_dir
+    files its kickoff would have."""
     print(f"[pipeline] collecting cloud call {call_id} ...", flush=True)
-    result = modal.FunctionCall.from_id(call_id).get()
+    result = _wait(modal.FunctionCall.from_id(call_id))
     if kind == "train":
         _write_results(Path(out_dir), *result)
     elif kind == "labeler":
