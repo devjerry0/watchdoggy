@@ -450,6 +450,19 @@ def test_a_winning_candidate_trains_on_the_recipe_and_is_swapped_in(run):
     assert (run.run_dir / ".completed").is_file()
 
 
+def test_the_candidate_disputes_exam_labels_it_sees_a_dog_in(run):
+    """A candidate held back by mislabeled exam frames puts them in front of
+    the human; a dispute the human already settled stays settled."""
+    run.fake.scores["last.pt"].update({QUIET[0]: (0.8, 0.0), QUIET[1]: (0.8, 0.0),
+                                       QUIET[2]: (0.3, 0.0)})
+    mirror = config.DATASET_MIRROR
+    (mirror / f"{QUIET[1]}.json").write_text(json.dumps(
+        {"human_label": "empty", "dispute_settled_at": 1.0}))
+    result = run.labeler.run_labeler("job1", run.run_root, epochs=3)
+    assert result["exam_suspects"] == {QUIET[0]: {"model_says": "dog", "nano_conf": 0.8}}
+    assert "Flagged 1 exam labels as Disputed" in result["report_md"]
+
+
 def test_the_labeler_trains_and_is_scored_with_its_end_to_end_head(run):
     """The labeler labels as a .pt with YOLO26's end-to-end head
     (dataset._label_batch), so it must train and sit the gate with that head.

@@ -386,9 +386,28 @@ def decide(gate: dict, replayed: dict | None) -> tuple[str, str]:
     return "swap", f"{errors}; {split}; jury replay no worse"
 
 
+def exam_suspects(truth: dict, candidate: dict) -> dict:
+    """The candidate audits its own exam, as gate.exam_suspects does for the
+    small model: a dog it would label on a frame the human labeled without
+    one becomes a Disputed flag (one direction only). The jury's audit runs
+    the ACTIVE labeler, which missed these dogs, so a candidate held back
+    by mislabeled exam frames would otherwise stay held back."""
+    suspects = {}
+    for stem, (is_dog, _) in truth.items():
+        conf = candidate[stem]["dog"]
+        if is_dog or conf < PRELABEL_CONF:
+            continue
+        if json.loads(mirror_path(f"{stem}.json").read_text()).get("dispute_settled_at"):
+            continue  # a human already arbitrated this one
+        suspects[stem] = {"model_says": "dog", "nano_conf": round(conf, 3)}
+    log(f"candidate disputes {len(suspects)} exam labels")
+    return suspects
+
+
 def _judge(exam: list[str], weights: Path, deployed_dir: Path,
-           timings: dict) -> tuple[dict, dict | None, dict]:
-    """(gate, replay or None without a deployed bundle, checkpoint rows)."""
+           timings: dict) -> tuple[dict, dict | None, dict, dict]:
+    """(gate, replay or None without a deployed bundle, checkpoint rows,
+    exam suspects)."""
     truth = _exam_truth(exam)
     with phase("gate", timings):
         images = [(stem, image) for stem, _, image in read_frames(list(truth))
@@ -398,6 +417,7 @@ def _judge(exam: list[str], weights: Path, deployed_dir: Path,
         active = _scores(PRELABEL_MODEL, images)
         candidate = _scores(weights / "last.pt", images)
         gate = {**score_gate(truth, active, candidate), "unreadable": unreadable}
+        suspects = exam_suspects(truth, candidate)
         replayed = None
         if deployed_dir.is_dir():
             nano = _nano(deployed_dir, images)
@@ -406,7 +426,7 @@ def _judge(exam: list[str], weights: Path, deployed_dir: Path,
     with phase("checkpoints", timings):
         rows = {name: _tally(truth, _scores(path, images), PRELABEL_CONF)
                 for name, path in _checkpoints(weights).items()}
-    return gate, replayed, rows
+    return gate, replayed, rows, suspects
 
 
 def promote(last: Path) -> Path:
@@ -485,6 +505,9 @@ def _report_md(result: dict) -> str:
              f"{result['gpu'] or 'unnamed'}, {rate}."]
     if result["gate"]:
         lines += _gate_md(result["gate"], result["replay"], result["checkpoints"])
+    if result["exam_suspects"]:
+        lines += ["", f"Flagged {len(result['exam_suspects'])} exam labels as "
+                  "Disputed: the candidate sees a dog the hand label lacks."]
     lines += ["", "Phase timings: " + " | ".join(
         f"{name} {duration(seconds)}" for name, seconds in result["timings"].items())]
     return "\n".join(lines) + "\n"
@@ -516,7 +539,8 @@ def run_labeler(run_name: str, run_root: Path, epochs: int = LABELER_EPOCHS,
     result = {"run_name": run_name, "labeler": LABELER_TAG,
               "decision": "failed", "promoted": False,
               "reason": "training crashed", "gate": None, "replay": None,
-              "checkpoints": {}, "epochs": fitted, "epochs_requested": epochs,
+              "checkpoints": {}, "exam_suspects": {},
+              "epochs": fitted, "epochs_requested": epochs,
               "batch": LABELER_BATCH, "gpu": gpu, "images_per_second": None,
               "dataset": {**{k: v for k, v in stats.items()
                              if k not in ("exam", "data_yaml")},
@@ -533,11 +557,11 @@ def run_labeler(run_name: str, run_root: Path, epochs: int = LABELER_EPOCHS,
             f"img/s overall, " + (f"{steady} img/s from epoch 2 on (use this "
                                   "one for LABELER_IMAGES_PER_SECOND)"
                                   if steady else "no steady rate (one epoch)"))
-        gate, replayed, rows = _judge(stats["exam"], weights,
-                                      run_root / "deployed_ncnn_model", timings)
+        gate, replayed, rows, suspects = _judge(
+            stats["exam"], weights, run_root / "deployed_ncnn_model", timings)
         decision, reason = decide(gate, replayed)
         result.update(decision=decision, reason=reason, gate=gate,
-                      replay=replayed, checkpoints=rows)
+                      replay=replayed, checkpoints=rows, exam_suspects=suspects)
         if decision == "swap":
             promote(weights / "last.pt")
             result["promoted"] = True

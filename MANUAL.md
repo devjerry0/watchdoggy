@@ -237,6 +237,10 @@ kitchen. It never runs on a schedule.
   rules with its boxes clears no more real dogs and invents no more dogs
   than the current labeler. A smaller win reads "inconclusive" and the
   current labeler stays. The run's report shows the full table.
+- **Exam labels it doubts.** Every exam frame you labeled without a dog
+  where the new labeler sees one is flagged Disputed for you, whatever the
+  decision. When those frames do show the dog, relabeling them can turn a
+  held-back labeler into a swap on its next run.
 - **After a swap.** The trainer queues a labeling pass. It relabels every
   frame with the new labeler, the jury forgets the frames it declined
   before, and it re-judges every auto-label once. Auto-labels it no longer

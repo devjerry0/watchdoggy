@@ -108,6 +108,20 @@ def test_kept_labeler_queues_nothing(tmp_path, monkeypatch, decision):
     assert detail.startswith("kept the active labeler")
 
 
+def test_exam_suspects_become_disputed_flags(tmp_path, monkeypatch):
+    from trainer_daemon import apply
+    _wire(tmp_path, monkeypatch)
+    suspects = {"sample_1": {"model_says": "dog", "nano_conf": 0.9}}
+    write = modal_pipeline._write_labeler_results
+    monkeypatch.setattr(modal_pipeline, "_write_labeler_results", lambda out, results:
+                        write(out, {**results, "exam_suspects": suspects}))
+    posts = []
+    monkeypatch.setattr(apply, "api_post", lambda path, body: posts.append((path, body)))
+    runs.run_labeler_job({"id": "job_1", "kind": "labeler"})
+    assert posts == [("/api/dataset/dispute",
+                      {"name": "sample_1", "model_says": "dog", "nano_conf": 0.9})]
+
+
 def test_failed_run_fails_the_job_and_queues_nothing(tmp_path, monkeypatch):
     _wire(tmp_path, monkeypatch, decision="failed")
     with pytest.raises(RuntimeError, match="25 exam errors"):

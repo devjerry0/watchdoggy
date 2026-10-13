@@ -142,6 +142,7 @@ def run_labeler_job(job: dict) -> str:
         modal_run("kickoff_labeler", arguments, job["id"])
         out = Path(tmp)
         results = json.loads((out / "labeler-run.json").read_text())
+        apply_exam_suspects(results)
         # Queue the relabel first: everything after it is bookkeeping.
         if results["promoted"]:
             relabel = _queue_relabel()
