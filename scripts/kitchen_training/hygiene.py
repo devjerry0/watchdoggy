@@ -38,9 +38,10 @@ TRAIN_IMAGES_PER_SECOND = {"L4": 150, "L40S": 350, "A100": 150}
 UNMEASURED_IMAGES_PER_SECOND = 60
 MEASURED_BATCH = 32  # the batch size behind every rate above
 # The labeler (yolo26x, freeze=10, imgsz 640, RAM cache) at its batch of
-# 16. Unmeasured: the plan's guess is 80-150 img/s on an L40S, and 40 keeps
-# a margin until the probe run measures the real rate and fills the table.
-LABELER_IMAGES_PER_SECOND: dict[str, float] = {}
+# 16, steady rate from epoch 2 on (labeler._steady_rate). L40S: the Oct 12
+# 3-epoch probe (10,196 images per epoch, 75 img/s overall). Unmeasured
+# GPUs keep 40 for a margin.
+LABELER_IMAGES_PER_SECOND: dict[str, float] = {"L40S": 89}
 LABELER_UNMEASURED_IMAGES_PER_SECOND = 40
 LABELER_MEASURED_BATCH = 16
 # Throughput tables by model: (rates per GPU, unmeasured rate, their batch).

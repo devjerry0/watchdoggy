@@ -32,6 +32,9 @@ With the optional `trainer` user set up (`scripts/setup-pi-trainer.sh`):
   current model is fine-tuned on everything labeled so far. A new model is
   installed only if it beats the current one on a held-out set of
   human-verified frames.
+- **Labeler fine-tune.** A button on the training page fine-tunes the big
+  labeling model (yolo26x) on your kitchen. It replaces the current labeler
+  only if it beats it on the same human-verified frames.
 - **Self-updates.** The Pi checks for new GitHub releases once a day, installs
   them, and rolls back if the detector doesn't come back up healthy.
 

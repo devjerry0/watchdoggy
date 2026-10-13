@@ -212,6 +212,48 @@ The training page can override the GPU, batch and copies settings, for
 example "all 3 copies" if the robustness table ever shows blur handling
 slipping.
 
+### Training the labeler
+
+The big model that draws the `·x` boxes and sits on the jury is stock
+yolo26x. Once the small model has trained on your kitchen, it can beat the
+big one: on this kitchen's exam the deployed small model caught 173 of 190
+dogs and stock yolo26x caught 96. The jury needs both models to agree, so a
+weak big model sends good frames to your queue and leaves dogs without boxes.
+
+The **Train labeler** button on the training page fine-tunes yolo26x on your
+kitchen. It never runs on a schedule.
+
+- **Data.** Every hand-labeled frame outside the exam, counted three times,
+  plus 8,000 auto-labels both models agreed on, picked the same way each run.
+  Frames taken within 30 seconds of an exam frame stay out of training, so
+  the exam stays a fair test. Labels keep COCO's classes, so the model keeps
+  everything stock yolo26x knows.
+- **Recipe.** 100 epochs from the stock weights, the first 10 layers frozen,
+  batch 16.
+- **Gate.** Both labelers label every exam frame at the label bar (0.45).
+  The new one is swapped in only when all three hold: it makes fewer
+  mistakes, it wins the frames where the two disagree by more than chance
+  would give (a one-sided sign test, p below 0.05), and replaying the jury's
+  rules with its boxes clears no more real dogs and invents no more dogs
+  than the current labeler. A smaller win reads "inconclusive" and the
+  current labeler stays. The run's report shows the full table.
+- **After a swap.** The trainer queues a labeling pass. It relabels every
+  frame with the new labeler, the jury forgets the frames it declined
+  before, and it re-judges every auto-label once. Auto-labels it no longer
+  backs go back to your queue. Hand labels are never touched.
+- **Cost.** It trains about 89 images a second on an L40S, so a full run
+  over this kitchen's 10,000-image epoch takes about 3.5 hours and costs
+  about $9. The 3-epoch probe took 15 minutes in the cloud and cost $0.77.
+
+To check the whole path cheaply first, enter 3 at the epochs prompt.
+
+**Rollback.** The stock model and its boxes stay on the volume. Delete the
+fine-tuned weights with
+`modal volume rm watchdoggy-train-3 pipeline/models/labeler.pt`, then press
+**Fetch ·x boxes now**. That pass reuses the stock boxes it already has
+(only frames added since the swap get labeled) and the jury re-judges the
+auto-labels with the stock model.
+
 ## The training console
 
 The `/training` page is the console: the live model's scorecard (scored at

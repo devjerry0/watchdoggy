@@ -351,3 +351,31 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   transfers, only `one2one_*` keys drop), and `evaluation.evaluate` scores
   `.pt` models with `end2end = False`. When a PyTorch score and an NCNN
   score disagree, compare `end2end` on vs off before blaming the export.
+- **2026-10-12 — The labeler (yolo26x) is fine-tunable; its identity is
+  its weights.** The active labeler is `pipeline/models/labeler.pt` when
+  present, else stock `yolo26x.pt` (`config.labeler_identity`, resolved
+  at import, so a container sees one labeler for its life). Stock keeps
+  `prelabel-cache.json`, tag `yolo26x` and today's jury id byte for byte;
+  a fine-tuned labeler gets `prelabel-cache-<digest12>.json`, tag
+  `yolo26x-kitchen-<digest8>` (the Pi re-sends boxes on a tag mismatch via
+  the index's 6th field) and its digest in `_jury_id`. After a labeler
+  change the jury re-judges every auto-label once (`jury-labeler.json` is
+  the labeler-of-record; missing = stock) and the Pi drops auto-labels it
+  no longer backs (`clear_auto`, never a human label). The record moves on
+  when the cloud pass ends, so every re-judge outcome waits in
+  `jury-pending-rejudge.json` until the shipped index shows it. **The
+  labeler trains and is scored with YOLO26's end-to-end head ON**: it
+  labels as a `.pt` (`dataset._label_batch`), the opposite of the NCNN
+  small model (2026-10-12 head entry). `kitchen_training.labeler`: COCO ids
+  (person 0, dog 16, all 80 names) so the head keeps its weights; hand
+  frames x3 plus 8,000 agreed autos; frames within 30 s of an exam frame
+  stay out; AdamW pinned at lr0 0.000119 (auto would pick MuSGD above 10k
+  iterations); swap only on fewer exam errors AND a one-sided sign test
+  p < 0.05 on the disagreements AND a jury replay no worse; promotion
+  (copy-then-rename `last.pt` -> `labeler.pt`) happens in the cloud, then
+  the Pi queues one prelabel pass. Rollback: `modal volume rm
+  watchdoggy-train-3 pipeline/models/labeler.pt` plus a labeling pass.
+  Fill `hygiene.LABELER_IMAGES_PER_SECOND` from a run's steady rate
+  (epoch 2 on, from results.csv); the overall rate includes warmup and
+  reads low. Oct 12 probe (3 epochs, 10,196 images per epoch): 89 img/s
+  steady on L40S at batch 16, 14.7 min and $0.77 in the cloud.
