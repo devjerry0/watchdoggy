@@ -349,7 +349,7 @@ def _jury_volume(monkeypatch, tmp_path, index, record=..., active=None):
     monkeypatch.setattr(consensus, "DATASET_MIRROR", tmp_path)
     monkeypatch.setattr(consensus, "JURY_MEMORY", tmp_path / "jury-no-action.json")
     monkeypatch.setattr(consensus, "JURY_LABELER", tmp_path / "jury-labeler.json")
-    monkeypatch.setattr(consensus, "PENDING_CLEARS", tmp_path / "pending.json")
+    monkeypatch.setattr(consensus, "PENDING_REJUDGE", tmp_path / "pending.json")
     monkeypatch.setattr(consensus, "LABELER_DIGEST", active)
     if record is not ...:
         consensus.JURY_LABELER.write_text(json.dumps({"labeler": record}))
@@ -416,24 +416,30 @@ def test_a_new_labeler_clears_auto_labels_the_jury_no_longer_vouches_for(
     assert consensus.jury_plan(list(index), cache, deployed)["rejudge"] == 0
 
 
-def test_pending_clears_are_resent_until_the_index_shows_them_gone(monkeypatch, tmp_path):
+def test_rejudge_results_are_resent_until_the_index_shows_them(monkeypatch, tmp_path):
     import json
-    index = {"lost": [None, "dog", 0, 0, 1, "yolo26x"],      # results never arrived
+    index = {"lost": [None, "dog", 0, 0, 1, "yolo26x"],      # clear never arrived
              "done": [None, None, 0, 0, 1, "yolo26x"],       # the Pi cleared it
              "human": ["dog", "dog", 0, 0, 1, "yolo26x"],    # a human label stands
              "relabeled": [None, "dog", 0, 0, 1, "yolo26x"],
-             "vouched": [None, "dog", 0, 0, 1, "yolo26x"]}  # a rollback re-judged it
+             "vouched": [None, "dog", 0, 0, 1, "yolo26x"],   # a rollback re-judged it
+             "lost_change": [None, "empty", 0, 0, 1, "yolo26x"],  # change never arrived
+             "applied_change": [None, "dog", 0, 0, 1, "yolo26x"]}
     consensus, _, _ = _jury_volume(monkeypatch, tmp_path, index)
-    consensus.PENDING_CLEARS.write_text(json.dumps(
-        ["done", "gone", "human", "lost", "relabeled", "vouched"]))
-    part = {"auto_verdicts": {"relabeled": "empty"}, "disputes": {},
-            "declined": ["new_clear"], "clear_auto": ["new_clear"], "changed": 1,
-            "judged": 3}
-    _, _, clears = consensus.finish_jury(
-        {"jury": "j", "no_action": [], "todo": ["new_clear", "relabeled", "vouched"]},
-        [part])
+    consensus.PENDING_REJUDGE.write_text(json.dumps(
+        {"done": None, "gone": None, "human": None, "lost": None,
+         "relabeled": None, "vouched": None, "lost_change": "dog",
+         "applied_change": "dog"}))
+    part = {"auto_verdicts": {"relabeled": "empty", "fresh": "person"},
+            "disputes": {}, "declined": ["new_clear"], "clear_auto": ["new_clear"],
+            "changed": ["relabeled"], "judged": 4}
+    verdicts, _, clears = consensus.finish_jury(
+        {"jury": "j", "no_action": [],
+         "todo": ["new_clear", "relabeled", "vouched", "fresh"]}, [part])
     assert clears == ["lost", "new_clear"]
-    assert json.loads(consensus.PENDING_CLEARS.read_text()) == clears
+    assert verdicts == {"relabeled": "empty", "fresh": "person", "lost_change": "dog"}
+    assert json.loads(consensus.PENDING_REJUDGE.read_text()) == {
+        "lost": None, "lost_change": "dog", "new_clear": None, "relabeled": "empty"}
 
 
 def test_a_pass_that_fails_after_judging_keeps_the_labeler_of_record(monkeypatch, tmp_path):

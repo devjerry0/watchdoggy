@@ -485,3 +485,14 @@ def test_failed_training_never_promotes_and_reports_failure(run, failure):
     assert result["gate"] is None and result["images_per_second"] is None
     assert "failed" in result["report_md"]
     assert not (run.run_dir / "dataset").exists()
+
+
+def test_measured_rate_skips_the_first_epoch(tmp_path):
+    labeler = importlib.import_module("kitchen_training.labeler")
+    csv = tmp_path / "results.csv"
+    # epoch, time (s since training began, at each epoch's end), a metric
+    csv.write_text("epoch,time,metrics/mAP50(B)\n1,400,0.1\n2,500,0.2\n3,600,0.3\n")
+    assert labeler._steady_rate(csv, corpus=10_000) == 100   # 2 epochs in 200 s
+    csv.write_text("epoch,time,metrics/mAP50(B)\n1,400,0.1\n")
+    assert labeler._steady_rate(csv, corpus=10_000) is None  # one epoch: no steady rate
+    assert labeler._steady_rate(tmp_path / "missing.csv", corpus=10_000) is None

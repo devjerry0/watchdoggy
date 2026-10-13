@@ -27,9 +27,11 @@ JURY_MEMORY = RUNS / "jury-no-action.json"
 # auto-label once. A missing record is the stock labeler, so the first pass
 # after deploy re-judges nothing.
 JURY_LABELER = RUNS / "jury-labeler.json"
-# Auto-labels the jury stopped vouching for, re-sent each pass until the
-# shipped index shows them gone (results that never reached the Pi).
-PENDING_CLEARS = RUNS / "jury-pending-clears.json"
+# What a re-judge decided for auto-labeled frames ({stem: new verdict, or
+# null to clear}), re-sent each pass until the shipped index shows it
+# (results that never reached the Pi). The labeler-of-record moves on as
+# soon as the cloud pass ends, so nothing else would re-send them.
+PENDING_REJUDGE = RUNS / "jury-pending-rejudge.json"
 
 # Bars backtested 2026-08-14 against 917 human-labeled frames with the
 # deployed champion as juror (scratch: rule_sim.py): this rule-set wrongly
@@ -194,7 +196,7 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
     disputes: dict = {}
     declined: list[str] = []
     clear_auto: list[str] = []
-    changed = 0
+    changed: list[str] = []
     for stem, _, image in read_frames(stems):
         if image is None:  # empty/corrupt file: nothing to judge
             continue
@@ -206,7 +208,8 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
             if verdict:
                 if verdict != auto:
                     auto_verdicts[stem] = verdict
-                    changed += bool(auto)
+                    if auto:
+                        changed.append(stem)
                 continue
             if nano_dog >= SOLO_DOG_DISPUTE_CONF and not cache[stem]["dogs"]:
                 disputes[stem] = {"model_says": "dog",
@@ -228,19 +231,22 @@ def judge_stems(stems: list[str], cache: dict, deployed_dir: Path) -> dict:
             "changed": changed, "judged": len(stems)}
 
 
-def _pending_clears(cleared: set[str], judged: list[str]) -> list[str]:
-    """This pass's clears plus earlier ones the shipped index still shows
-    as auto-labeled. A clear drops off once its auto-label is gone, a
+def _pending_rejudge(outcomes: dict, judged: list[str]) -> dict:
+    """This pass's re-judge outcomes plus earlier ones the shipped index
+    does not show yet. An entry drops off once the index matches it, a
     human label stands, or this pass judged the frame again."""
     try:
-        stored = set(json.loads(PENDING_CLEARS.read_text()))
+        stored = json.loads(PENDING_REJUDGE.read_text())
     except (OSError, ValueError):
-        stored = set()
-    still = {stem for stem, entry in _entries(sorted(stored)).items()
-             if entry[1] and not entry[0]} if stored else set()
-    pending = sorted((still - set(judged)) | cleared)
+        stored = {}
+    judged_now = set(judged)
+    entries = _entries(sorted(stored)) if stored else {}
+    pending = {stem: verdict for stem, verdict in stored.items()
+               if stem not in judged_now and not entries[stem][0]
+               and entries[stem][1] != verdict}
+    pending.update(outcomes)
     if stored or pending:
-        PENDING_CLEARS.write_text(json.dumps(pending))
+        PENDING_REJUDGE.write_text(json.dumps(pending, sort_keys=True))
     return pending
 
 
@@ -251,28 +257,34 @@ def finish_jury(plan: dict, parts: list[dict]) -> tuple[dict, dict, list[str]]:
     auto_verdicts: dict = {}
     disputes: dict = {}
     cleared: set[str] = set()
-    changed = 0
+    changed: set[str] = set()
     no_action = set(plan["no_action"])
     for part in parts:
         auto_verdicts.update(part["auto_verdicts"])
         disputes.update(part["disputes"])
         no_action.update(part["declined"])
         cleared.update(part["clear_auto"])
-        changed += part["changed"]
+        changed.update(part["changed"])
     if plan["jury"]:
         JURY_MEMORY.write_text(json.dumps({"jury": plan["jury"],
                                            "stems": sorted(no_action)}))
-    clear_auto = _pending_clears(cleared, plan["todo"])
+    pending = _pending_rejudge({**{stem: auto_verdicts[stem] for stem in changed},
+                                **dict.fromkeys(cleared)}, plan["todo"])
+    resent = {stem: verdict for stem, verdict in pending.items()
+              if verdict and stem not in auto_verdicts}
+    auto_verdicts.update(resent)
+    clear_auto = sorted(stem for stem, verdict in pending.items() if verdict is None)
     print(f"[pipeline] consensus auto-labeled {len(auto_verdicts)} "
           f"unlabeled frames; disputed {len(disputes)} existing labels",
           flush=True)
     if plan.get("rejudge"):
-        kept = plan["rejudge"] - changed - len(cleared)
+        kept = plan["rejudge"] - len(changed) - len(cleared)
         print(f"[pipeline] re-judged {plan['rejudge']} auto-labels: {kept} "
-              f"kept, {changed} changed, {len(cleared)} cleared", flush=True)
-    if len(clear_auto) > len(cleared):
-        print(f"[pipeline] re-sending {len(clear_auto) - len(cleared)} "
-              f"auto-label clears the Pi has not applied", flush=True)
+              f"kept, {len(changed)} changed, {len(cleared)} cleared", flush=True)
+    if resent or len(clear_auto) > len(cleared):
+        print(f"[pipeline] re-sending {len(resent)} auto-label changes and "
+              f"{len(clear_auto) - len(cleared)} clears the Pi has not "
+              f"applied", flush=True)
     if plan["jury"]:
         JURY_LABELER.write_text(json.dumps({"labeler": LABELER_DIGEST}))
     return auto_verdicts, disputes, clear_auto

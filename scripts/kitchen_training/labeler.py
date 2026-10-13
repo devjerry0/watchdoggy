@@ -10,6 +10,7 @@ head would relearn dogs from ~600 frames).
 from __future__ import annotations
 
 import bisect
+import csv
 import hashlib
 import json
 import math
@@ -209,6 +210,21 @@ def _train(run_dir: Path, data_yaml: Path, epochs: int) -> Path | None:
         log("labeler training FAILED")
         return None
     return Path(model.trainer.save_dir) / "weights"
+
+
+def _steady_rate(results_csv: Path, corpus: int) -> int | None:
+    """Trained images/s from epoch 2 on, from Ultralytics' results.csv
+    (its time column is seconds since training began, at each epoch's end).
+    The first epoch carries warmup and setup, which would make a short probe
+    under-report the rate a full run sees. None below two epochs."""
+    try:
+        times = [float(row["time"]) for row in
+                 csv.DictReader(results_csv.read_text().splitlines())]
+    except (OSError, KeyError, ValueError):
+        return None
+    if len(times) < 2 or times[-1] <= times[0]:
+        return None
+    return round(corpus * (len(times) - 1) / (times[-1] - times[0]))
 
 
 def _checkpoints(weights: Path) -> dict[str, Path]:
@@ -510,9 +526,13 @@ def run_labeler(run_name: str, run_root: Path, epochs: int = LABELER_EPOCHS,
         result["reason"] = "training produced no last.pt"
     elif weights is not None:
         seen = corpus * fitted
-        result["images_per_second"] = round(seen / max(timings["train"], 1))
-        log(f"trained {seen} images ({corpus} x {fitted} epochs) at "
-            f"{result['images_per_second']} img/s")
+        overall = round(seen / max(timings["train"], 1))
+        steady = _steady_rate(weights.parent / "results.csv", corpus)
+        result["images_per_second"] = steady or overall
+        log(f"trained {seen} images ({corpus} x {fitted} epochs): {overall} "
+            f"img/s overall, " + (f"{steady} img/s from epoch 2 on (use this "
+                                  "one for LABELER_IMAGES_PER_SECOND)"
+                                  if steady else "no steady rate (one epoch)"))
         gate, replayed, rows = _judge(stats["exam"], weights,
                                       run_root / "deployed_ncnn_model", timings)
         decision, reason = decide(gate, replayed)
