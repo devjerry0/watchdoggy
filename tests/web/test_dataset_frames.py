@@ -100,6 +100,28 @@ def test_dispute_lifecycle(tmp_path):
                   json={"name": "sample_1"}).status_code == 422
 
 
+def test_an_agreed_autolabel_answers_a_solo_dog_dispute(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1")
+    c.post("/api/dataset/dispute",
+           json={"name": "sample_1", "model_says": "dog", "nano_conf": 0.9})
+    c.post("/api/dataset/autolabel", json={"name": "sample_1", "verdict": "dog"})
+    d = c.get("/api/dataset/frames?filter=disputed").json()
+    assert d["counts"]["disputed"] == 0 and d["counts"]["auto"] == 1
+
+
+def test_disputed_human_labels_sort_first(tmp_path):
+    c, _, ddir = _client(tmp_path)
+    _seed_full(ddir, "sample_1", verdict="person", prelabel_dogs=1)
+    for i in range(2, 6):  # newer unlabeled solo-dog disputes
+        _seed_full(ddir, f"sample_{i}", wall=200.0 + i)
+    for i in range(1, 6):
+        c.post("/api/dataset/dispute",
+               json={"name": f"sample_{i}", "model_says": "dog", "nano_conf": 0.9})
+    frames = c.get("/api/dataset/frames?filter=disputed").json()["frames"]
+    assert frames[0]["name"] == "sample_1" and len(frames) == 5
+
+
 def test_settled_disputes_are_never_reopened(tmp_path):
     c, _, ddir = _client(tmp_path)
     _seed_full(ddir, "sample_1", verdict="person", prelabel_dogs=1)

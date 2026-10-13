@@ -36,11 +36,16 @@ def _chip_counts(sidecars: list[tuple[str, dict]]) -> dict:
 
 
 def _sort_key(filter_name: str, meta: dict) -> tuple:
-    """Unlabeled sorts highest-signal first (like the queue); everything
-    else newest first."""
+    """Unlabeled sorts highest-signal first (like the queue); disputed puts
+    challenged human labels first; everything else newest first."""
     if filter_name == "unlabeled":
         return (reason_priority(meta), -meta.get("wall_time", 0))
-    return (-meta.get("labeled_at", meta.get("wall_time", 0)),)
+    newest = -meta.get("labeled_at", meta.get("wall_time", 0))
+    if filter_name == "disputed":
+        # Unlabeled solo-dog disputes run to thousands (Oct 2026: 5,668) and
+        # pushed every disputed human label past FRAME_PAGE_LIMIT.
+        return (not meta.get("human_label"), newest)
+    return (newest,)
 
 
 def _frame_row(stem: str, verdict: str | None, meta: dict) -> dict:
