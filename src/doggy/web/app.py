@@ -17,7 +17,7 @@ from doggy.web.door import create_door_app
 from doggy.core.settings_store import save_tunables
 from doggy.web.sidecar_index import SidecarIndex
 from doggy.web.routers import dataset as dataset_router
-from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk
+from doggy.web.routers import events, snooze, soothing, sounds, speaker, talk, wifi
 from doggy.web.routers import settings as settings_router
 from doggy.web.routers import status as status_router
 from doggy.web.routers import training as training_router
@@ -84,6 +84,7 @@ def create_app(settings: Settings, runtime: RuntimeSettings,
     app.include_router(snooze.build_router(gate))
     app.include_router(talk.build_router(runtime))
     app.include_router(speaker.build_router())
+    app.include_router(wifi.build_router())
     app.include_router(dataset_router.build_router(settings, event_store,
                                                    sidecar_index))
     app.include_router(training_router.build_router(settings, sidecar_index))

@@ -6,6 +6,8 @@ __pycache__/
 settings.json
 settings.json.bad-*
 settings-changes.jsonl
+# dashboard -> doggy-netwatch request (scripts/netwatch.sh)
+wifi-repick.request
 /models/
 /events/
 /soothing/

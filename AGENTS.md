@@ -379,3 +379,36 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   (epoch 2 on, from results.csv); the overall rate includes warmup and
   reads low. Oct 12 probe (3 epochs, 10,196 images per epoch): 89 img/s
   steady on L40S at batch 16, 14.7 min and $0.77 in the cloud.
+- **2026-11-01 — "The Pi is unreachable" means WiFi died while Linux ran;
+  read netwatch's records before anything else.** Oct 28: the Pi dropped
+  off the LAN and needed a power cycle. systemd feeds a 1-min hardware
+  watchdog, so a kernel hang reboots by itself; the detector kept saving
+  frames, so only the network was gone. journald is volatile
+  (`reduce-sd-writes.sh`, user-decided), so the power cycle erased the
+  evidence. Risk factors found: two ASUS mesh nodes tied at -59 dBm on 5 GHz
+  channel 100 (DFS) with the Pi switching between them, WiFi power save on;
+  no undervoltage. Now `doggy-netwatch` (`scripts/netwatch.sh`, run as root
+  from the app dir by a unit `deploy-to-pi.sh` installs; it exits when its
+  file's cksum changes and systemd restarts the new version, so self-update
+  keeps it current with no SSH. The app user `doggy` has NOPASSWD sudo and
+  the service has NoNewPrivileges=no, so root running an app-user file adds
+  no privilege; if that sudo is ever removed, switch to a root-owned copy
+  installed by `doggy-install-code`): writes `/var/log/doggy-netwatch/incident-*`
+  after ~1 min down (snapshot + 30 min of journal, survives the reboot),
+  recovers via radio toggle -> node re-pick -> driver reload (unload the
+  `brcmfmac_cyw` helper first) -> reboot, and names the step the network came
+  back after. It auto-locks the NM profile's BSSID to the current node
+  (`nmcli connection modify` persists into `/etc/netplan/90-NM-*.yaml`). The
+  dashboard's "Re-pick WiFi node" (`web/routers/wifi.py`) only drops
+  `wifi-repick.request` in the app dir (the web user can't change NM
+  profiles); netwatch scans and pins the strongest 5 GHz node at >= -75 dBm
+  (2.4 GHz always reads stronger and shares the radio with the BT speaker).
+  In the first live test, NetworkManager left to itself joined the other
+  node instead of the 3 dB stronger one it had just left, so a re-pick scans
+  and pins. Power save stays ON on
+  purpose (one change at a time); if incidents show driver lock-ups, set
+  `wifi.powersave = 2` in NetworkManager conf.d. After any power cycle also check the speaker
+  (`bluetoothctl info <mac>` Connected): on Oct 28 it never reconnected and
+  the deterrent played into the headphone jack for 3.5 days. Dashboard API
+  is HTTPS on 8443 (8000 serves only the CA page); curl `doggypi.local` from
+  the Mac stalls on IPv6, so use the IP.
