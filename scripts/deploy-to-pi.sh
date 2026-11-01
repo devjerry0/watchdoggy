@@ -16,9 +16,8 @@
 #   rsync -az --delete --exclude __pycache__ src/     doggy@doggypi.local:doggy/src/
 #   rsync -az --delete --exclude __pycache__ scripts/ doggy@doggypi.local:doggy/scripts/
 #   ssh doggy@doggypi.local 'sudo systemctl restart doggy'
-# (the trainer timer picks up new scripts on its next pass by itself)
-# When scripts/netwatch.sh changed, also refresh its root-owned copy:
-#   ssh doggy@doggypi.local 'sudo install -m 755 doggy/scripts/netwatch.sh /usr/local/bin/doggy-netwatch && sudo systemctl restart doggy-netwatch'
+# (the trainer timer picks up new scripts on its next pass by itself, and
+# doggy-netwatch restarts itself when scripts/netwatch.sh changes)
 set -euo pipefail
 
 TARGET="${1:?usage: deploy-to-pi.sh <user@host> [remote_dir]}"
@@ -153,17 +152,17 @@ WantedBy=multi-user.target
 UNIT
 
 echo "==> installing doggy-netwatch (WiFi watchdog: scripts/netwatch.sh)"
-# It runs as root, so it runs a root-owned copy: a script the app user can
-# edit must never run as root. Self-update does not refresh this copy for the
-# same reason (see the header for the one-line refresh).
-sudo install -m 755 "$HOME/$REMOTE_DIR/scripts/netwatch.sh" /usr/local/bin/doggy-netwatch
+# Runs the app's own copy, so deploys and self-updates keep it current: it
+# restarts itself when the file changes (see the note in netwatch.sh on why
+# root running an app-user file is acceptable here).
+sudo rm -f /usr/local/bin/doggy-netwatch   # the root-owned copy older installs used
 sudo tee /etc/systemd/system/doggy-netwatch.service >/dev/null <<UNIT
 [Unit]
 Description=doggy network watchdog (WiFi node lock, drop records, recovery)
 After=NetworkManager.service
 
 [Service]
-ExecStart=/usr/local/bin/doggy-netwatch
+ExecStart=/bin/bash $HOME/$REMOTE_DIR/scripts/netwatch.sh
 Environment=NETWATCH_REPICK=$HOME/$REMOTE_DIR/wifi-repick.request
 SyslogIdentifier=doggy-netwatch
 Restart=always
