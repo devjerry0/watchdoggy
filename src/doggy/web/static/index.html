@@ -345,6 +345,11 @@
             <div class="desc">Overall speaker loudness. Scales the deterrent, soothing, and your voice.</div>
             <input id="speaker_volume" type="range" min="0" max="1" step="0.01" />
           </div>
+          <div class="field" id="wifi_field" style="margin:.8rem 0 0;display:none">
+            <div class="row"><label>WiFi node</label><span class="val" id="wifi_v"></span></div>
+            <div class="desc">The Pi stays on one mesh node. After moving it or the router, re-pick to join the strongest node in range.</div>
+            <div class="btnrow"><button id="wifi_repick" onclick="repickWifi()">Re-pick WiFi node</button></div>
+          </div>
           <div class="readout">
             <div class="stat"><div class="k" id="lbl_inview">Dogs in view</div><div class="v" id="dogs">–</div></div>
             <div class="stat"><div class="k">People in view</div><div class="v" id="people">–</div></div>
@@ -1357,7 +1362,27 @@ async function refreshSpeaker(){
   document.getElementById("speaker_volume_v").textContent = pct(d.volume);
 }
 
-loadSounds(); loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); refreshData();
+// ---- WiFi node (doggy-netwatch locks the Pi to one mesh node; see /api/wifi) ----
+async function refreshWifi(){
+  let d;
+  try { d = await (await fetch("/api/wifi")).json(); } catch(e){ return; }
+  const field = document.getElementById("wifi_field");
+  if (d.link == null){ field.style.display = "none"; return; }  // no iw (dev host)
+  field.style.display = "";
+  const l = d.link;
+  const band = l.freq_mhz ? (l.freq_mhz > 4000 ? "5 GHz" : "2.4 GHz") : "";
+  document.getElementById("wifi_v").textContent = d.repick_pending ? "re-picking..."
+    : l.node ? `${l.node.slice(-5)} \u2022 ${band} \u2022 ${l.signal_dbm} dBm` : "disconnected";
+  document.getElementById("wifi_repick").disabled = d.repick_pending;
+}
+async function repickWifi(){
+  if (!confirm("Drop this WiFi node and join the strongest one in range? The dashboard reconnects in about a minute.")) return;
+  await fetch("/api/wifi/repick", {method:"POST"});
+  refreshWifi();
+}
+
+loadSounds(); loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); refreshData(); refreshWifi();
+setInterval(refreshWifi, 30000);  // iw is cheap, but the detector owns the CPU
 setInterval(poll, 500); poll();
 setInterval(() => { loadEvents(); refreshStats(); refreshLab(); refreshSoothing(); refreshSpeaker(); refreshData(); }, 4000);
 </script>
