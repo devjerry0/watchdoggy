@@ -26,6 +26,7 @@ STUBS = {
     "ping": (
         'r=$(head -n1 "$STUB/ping_seq"); tail -n +2 "$STUB/ping_seq" > "$STUB/p" && mv "$STUB/p" "$STUB/ping_seq"\n'
         '[ -z "$r" ] && { kill "$PPID"; exit 1; }\n'
+        '[ "$r" = edit ] && { echo "# new version" >> "$NW_SCRIPT"; exit 0; }\n'
         'exit "$r"'
     ),
     "iw": (
@@ -62,6 +63,8 @@ STUBS = {
 
 
 def run(tmp_path, pings, lock="", hang=False, repick=False, noscan=False, **env):
+    script = tmp_path / "netwatch.sh"   # a copy: the self-update test edits it
+    script.write_text(SCRIPT.read_text())
     stub = tmp_path / "bin"
     stub.mkdir()
     for name, body in STUBS.items():
@@ -92,11 +95,12 @@ def run(tmp_path, pings, lock="", hang=False, repick=False, noscan=False, **env)
         "NETWATCH_MIN_UPTIME": "0",
         "NETWATCH_DIR": str(logdir),
         "NETWATCH_REPICK": str(request),
+        "NW_SCRIPT": str(script),
         **env,
     }
     # Output goes to a file: hung background stubs must not hold a pipe open.
     with open(tmp_path / "out", "w") as out:
-        subprocess.run(["bash", str(SCRIPT)], env=full_env, stdout=out,
+        done = subprocess.run(["bash", str(script)], env=full_env, stdout=out,
                        stderr=subprocess.STDOUT, timeout=15)
     hung = stub / "hung"
     if hung.exists():
@@ -113,6 +117,8 @@ def run(tmp_path, pings, lock="", hang=False, repick=False, noscan=False, **env)
         "lock": (stub / "lock").read_text().strip(),
         "incidents": incidents,
         "request_left": request.exists(),
+        "pings_left": (stub / "ping_seq").read_text().split(),
+        "exit_code": done.returncode,
     }
 
 
@@ -199,3 +205,10 @@ def test_repick_without_scan_results_unlocks_then_relocks_where_it_lands(tmp_pat
     assert actions(r)[:2] == ["nmcli connection modify home 802-11-wireless.bssid ",
                               "nmcli connection up home"]
     assert r["lock"] == NODE
+
+
+def test_exits_cleanly_when_its_script_changes_so_systemd_loads_the_update(tmp_path):
+    r = run(tmp_path, [0, "edit", 0, 0, 0])
+    assert r["exit_code"] == 0
+    assert "changed on disk" in r["out"]
+    assert r["pings_left"] == ["0", "0", "0"]   # left right after the edit

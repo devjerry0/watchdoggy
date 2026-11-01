@@ -30,6 +30,13 @@
 # minutes of the journal, dumps the journal again before a reboot, and records
 # which step the network came back after. Nothing is written to disk while the
 # network is up. A status line goes to the journal every STATUS_CHECKS checks.
+#
+# Updates: systemd runs this file straight from the app's scripts/ directory,
+# which deploys and self-updates replace. When the file's contents change it
+# exits, and systemd (Restart=always) starts the new version. Running an
+# app-user-writable file as root adds no privilege the app user lacks: it has
+# passwordless sudo. If that sudo is ever removed, install a root-owned copy
+# instead.
 set -u
 
 INTERVAL=${NETWATCH_INTERVAL:-20}
@@ -154,6 +161,7 @@ reload_driver() {
 }
 
 gw=""; ever_up=0; failed=0; step=0; checks=0; incident=""
+self_sum=$(cksum <"$0" 2>/dev/null)
 wifi_con=$(wifi_profile); lock=""; lock_checked=0
 
 # A radio toggle cut short (netwatch killed between off and on) would leave
@@ -161,6 +169,10 @@ wifi_con=$(wifi_profile); lock=""; lock_checked=0
 t 10 nmcli radio wifi on
 
 while :; do
+  if [ "$(cksum <"$0" 2>/dev/null)" != "$self_sum" ]; then
+    say 5 "netwatch.sh changed on disk; exiting so systemd starts the new version"
+    exit 0
+  fi
   # A regular file only: anything rm -f can't clear would re-pick forever.
   if [ -f "$REPICK" ] && rm -f "$REPICK"; then
     [ -n "$wifi_con" ] || ensure_lock
