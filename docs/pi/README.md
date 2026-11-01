@@ -205,6 +205,8 @@ record of network drops on the SD card for that reason.
 ## 9. WiFi watchdog
 
 `deploy-to-pi.sh` installs `doggy-netwatch`, so there is nothing extra to run.
+It runs `scripts/netwatch.sh` from the app directory and restarts itself when
+that file changes, so deploys and self-updates keep it current.
 
 The Pi's onboard WiFi can stop working while Linux and the detector keep
 running. The dashboard and SSH then stay unreachable until someone unplugs the

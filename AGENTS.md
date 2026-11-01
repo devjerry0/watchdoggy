@@ -387,9 +387,13 @@ learnings here (e.g. via /ce-compound). Keep entries terse; cite code paths.
   (`reduce-sd-writes.sh`, user-decided), so the power cycle erased the
   evidence. Risk factors found: two ASUS mesh nodes tied at -59 dBm on 5 GHz
   channel 100 (DFS) with the Pi switching between them, WiFi power save on;
-  no undervoltage. Now `doggy-netwatch` (`scripts/netwatch.sh`, root; a
-  root-owned copy installed by `deploy-to-pi.sh`, never refreshed by
-  self-update, because the trainer must not get a path to root): writes `/var/log/doggy-netwatch/incident-*`
+  no undervoltage. Now `doggy-netwatch` (`scripts/netwatch.sh`, run as root
+  from the app dir by a unit `deploy-to-pi.sh` installs; it exits when its
+  file's cksum changes and systemd restarts the new version, so self-update
+  keeps it current with no SSH. The app user `doggy` has NOPASSWD sudo and
+  the service has NoNewPrivileges=no, so root running an app-user file adds
+  no privilege; if that sudo is ever removed, switch to a root-owned copy
+  installed by `doggy-install-code`): writes `/var/log/doggy-netwatch/incident-*`
   after ~1 min down (snapshot + 30 min of journal, survives the reboot),
   recovers via radio toggle -> node re-pick -> driver reload (unload the
   `brcmfmac_cyw` helper first) -> reboot, and names the step the network came
