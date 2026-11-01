@@ -198,6 +198,50 @@ SD cards on a Pi mostly die from unstable power. Use a proper 5V/3A supply; a
 USB-C wall charger is fine, but laptop USB ports and cheap chargers are not.
 `vcgencmd get_throttled` should report `0x0`.
 
+Because the journal lives in RAM, unplugging the Pi erases every log from
+before the power cycle. The WiFi watchdog in the next section keeps its own
+record of network drops on the SD card for that reason.
+
+## 9. WiFi watchdog
+
+`deploy-to-pi.sh` installs `doggy-netwatch`, so there is nothing extra to run.
+
+The Pi's onboard WiFi can stop working while Linux and the detector keep
+running. The dashboard and SSH then stay unreachable until someone unplugs the
+Pi. `doggy-netwatch` pings the router every 20 seconds. When the router stops answering for about a minute, it writes an
+incident file to `/var/log/doggy-netwatch/` with a snapshot of the network
+state and the last 30 minutes of logs. It then tries to recover by itself: it
+toggles the WiFi radio after about 3 minutes, re-picks the WiFi node after
+about 6, reloads the WiFi driver after about 9, and reboots after about 12 (at
+most once an hour). The incident file names the step the network came back
+after, which tells you what broke. Nothing is written while the network is up.
+
+On a mesh network with two nodes at similar signal, the Pi otherwise switches
+between them several times a day. Netwatch locks the Pi's WiFi profile to the
+node it connects to. After you move the Pi or a mesh node, press **Re-pick WiFi
+node** on the dashboard: the Pi scans, locks to the strongest node broadcasting
+your network's name, and reconnects, which takes about a minute. It prefers a
+5 GHz node at -75 dBm or better over any 2.4 GHz one, because 2.4 GHz always
+reads stronger and on the Pi it shares the radio with the Bluetooth speaker.
+The recovery step re-picks the same way, so a locked node that disappears does
+not strand the Pi.
+
+WiFi power save stays on. Turning it off is the usual remedy for Pi WiFi
+drops and costs a fraction of a watt. Leave it on until an incident file points
+at the WiFi driver, so you can tell which change stopped the drops. To turn it
+off, add `wifi.powersave = 2` under `[connection]` in a file in
+`/etc/NetworkManager/conf.d/` and reload NetworkManager.
+
+Prefer a 5 GHz channel from 36 to 48 on the router. Channels 52 to 144 are
+radar (DFS) channels, and a router that detects radar must leave the channel
+at once, which disconnects every client on it.
+
+To read what happened after a drop:
+
+```sh
+ssh doggy@doggypi.local 'sudo journalctl -u doggy-netwatch; sudo ls /var/log/doggy-netwatch'
+```
+
 ## Performance
 
 YOLO26n through NCNN at 640px runs at about 2.4 FPS on a Pi 4 CPU (a Pi 5 is
